@@ -1,4 +1,4 @@
-const APP_BUILD = 22;
+const APP_BUILD = 23;
 const modules = [
   ['home', 'My Day'],
   ['attendance', 'Attendance'],
@@ -152,7 +152,7 @@ async function renderLogin(root, supabase) {
     const draw=()=>{
       const progress=Math.round((step/(steps.length-1))*100);
       let body='';
-      if(step===0)body=`<div class="onboard-hero"><div class="feature-icon large">${icon('user',28)}</div><span class="eyebrow">Welcome to CafeTracker</span><h2>Hi, ${escapeHtml(selectedPerson.name)}</h2><p>Let's set up your employee profile before you create your private PIN.</p><label>One-time setup code<div class="input-with-icon">${icon('lock',19)}<input id="ob-setup" inputmode="numeric" maxlength="6" placeholder="6-digit code" value="${escapeHtml(state.setup_code||'')}"></div></label></div>`;
+      if(step===0)body=`<div class="onboard-hero"><div class="feature-icon large">${icon('user',28)}</div><span class="eyebrow">Welcome to CafeTracker</span><h2>Hi, ${escapeHtml(selectedPerson.name)}</h2><p>Enter the temporary PIN sent by your employer. We’ll verify it before you fill the onboarding form.</p><label>Temporary login PIN<div class="input-with-icon">${icon('lock',19)}<input id="ob-setup" inputmode="numeric" maxlength="6" placeholder="6-digit temporary PIN" value="${escapeHtml(state.setup_code||'')}"></div></label></div>`;
       if(step===1)body=`<div class="onboard-title"><div class="feature-icon">${icon('user',22)}</div><div><span class="eyebrow">About you</span><h2>Personal details</h2></div></div><div class="form-stack"><label>Display name<input value="${escapeHtml(selectedPerson.name)}" disabled><small>Set by your employer</small></label><label>Full name as shown on your ID<input id="ob-full" value="${escapeHtml(state.full_legal_name||'')}" placeholder="Your full legal name"></label><div class="two-col"><label>Date of birth<input id="ob-dob" type="date" value="${escapeHtml(state.date_of_birth||'')}"></label><label>Nationality<input id="ob-nationality" value="${escapeHtml(state.nationality||'')}" placeholder="Nationality"></label></div><label>Father's name<input id="ob-father" value="${escapeHtml(state.father_name||'')}" placeholder="Father's full name"></label><label>Mobile number<input id="ob-mobile" inputmode="tel" value="${escapeHtml(state.mobile_phone||'')}" placeholder="Phone number"></label><label>Home address<textarea id="ob-address" rows="3" placeholder="Permanent/home address">${escapeHtml(state.home_address||'')}</textarea></label></div>`;
       if(step===2)body=`<div class="onboard-title"><div class="feature-icon">${icon('heart',22)}</div><div><span class="eyebrow">Emergency contact</span><h2>Who should we contact?</h2></div></div><div class="form-stack"><label>Contact name<input id="ob-ec-name" value="${escapeHtml(state.emergency_contact_name||'')}" placeholder="Full name"></label><label>Relationship<input id="ob-ec-rel" value="${escapeHtml(state.emergency_contact_relation||'')}" placeholder="e.g. Parent, spouse, sibling"></label><label>Phone number<input id="ob-ec-phone" inputmode="tel" value="${escapeHtml(state.emergency_contact_phone||'')}" placeholder="Emergency phone number"></label></div>`;
       if(step===3)body=`<div class="onboard-title"><div class="feature-icon">${icon('id',22)}</div><div><span class="eyebrow">Identity</span><h2>Verify your ID</h2></div></div><div class="form-stack"><label>Document type<select id="ob-id-type"><option value="">Choose document</option><option ${state.identity_type==='Aadhaar'?'selected':''}>Aadhaar</option><option ${state.identity_type==='Passport'?'selected':''}>Passport</option><option ${state.identity_type==='Other'?'selected':''}>Other</option></select></label><label>Document number<input id="ob-id-number" value="${escapeHtml(state.identity_number||'')}" placeholder="ID document number"></label><label class="upload-card">${icon('id',26)}<strong>Upload identity document</strong><span>JPG, PNG or PDF · max 6 MB</span><input id="ob-id-file" type="file" accept="image/jpeg,image/png,application/pdf"></label><div id="id-file-name" class="file-name">${state.identity_document?.name?escapeHtml(state.identity_document.name):''}</div></div>`;
@@ -164,7 +164,7 @@ async function renderLogin(root, supabase) {
       if(step>0)onboardingShell.querySelector('#ob-back').onclick=()=>{saveStep();step--;draw();};
       const idf=onboardingShell.querySelector('#ob-id-file');if(idf)idf.onchange=()=>{state.identity_document=idf.files[0];onboardingShell.querySelector('#id-file-name').textContent=state.identity_document?.name||'';};
       const pf=onboardingShell.querySelector('#ob-photo');if(pf)pf.onchange=()=>{state.profile_photo=pf.files[0];onboardingShell.querySelector('#photo-file-name').textContent=state.profile_photo?.name||'';};
-      onboardingShell.querySelector('#ob-next').onclick=async()=>{if(!validateStep())return;saveStep();if(step<steps.length-1){step++;draw();}else await submitOnboarding();};
+      onboardingShell.querySelector('#ob-next').onclick=async()=>{if(!validateStep())return;saveStep();if(step===0){const btn=onboardingShell.querySelector('#ob-next'),err=onboardingShell.querySelector('#ob-error');btn.disabled=true;btn.textContent='Verifying…';try{const response=await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chaitracker-onboarding`,{method:'POST',headers:{apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,'Content-Type':'application/json'},body:JSON.stringify({action:'validate_setup',user_id:selectedPerson.id,setup_code:state.setup_code})});const payload=await response.json();if(!response.ok||!payload.success)throw new Error(payload.error||'Temporary PIN could not be verified.');step++;draw();return;}catch(e){err.textContent=e.message||'Temporary PIN could not be verified.';err.hidden=false;btn.disabled=false;btn.innerHTML='Verify & continue <span>→</span>';return;}}if(step<steps.length-1){step++;draw();}else await submitOnboarding();};
     };
     const saveStep=()=>{
       const get=id=>onboardingShell.querySelector(id)?.value?.trim();
@@ -175,7 +175,7 @@ async function renderLogin(root, supabase) {
     };
     const validateStep=()=>{
       const err=onboardingShell.querySelector('#ob-error');let msg='';
-      if(step===0&&!/^\\d{6}$/.test(onboardingShell.querySelector('#ob-setup').value))msg='Enter the 6-digit setup code.';
+      if(step===0&&!/^\\d{6}$/.test(onboardingShell.querySelector('#ob-setup').value))msg='Enter the 6-digit temporary PIN.';
       if(step===1&&['#ob-full','#ob-dob','#ob-nationality','#ob-father','#ob-mobile','#ob-address'].some(id=>!onboardingShell.querySelector(id).value.trim()))msg='Please complete all personal details.';
       if(step===2&&['#ob-ec-name','#ob-ec-rel','#ob-ec-phone'].some(id=>!onboardingShell.querySelector(id).value.trim()))msg='Please complete the emergency contact details.';
       if(step===3&&(!onboardingShell.querySelector('#ob-id-type').value||!onboardingShell.querySelector('#ob-id-number').value.trim()||!state.identity_document))msg='Choose an ID type, enter its number and upload the document.';
@@ -634,7 +634,7 @@ async function renderPeople(view, supabase, profile) {
           <label><input type="checkbox" id="editSummary" ${perms.summary!==false?'checked':''}> Daily Summary</label>
           <label><input type="checkbox" id="editStock" ${perms.stock!==false?'checked':''}> Stock</label>
         </div></div>
-        <label class="toggle-row"><input type="checkbox" id="editActive" ${s.active?'checked':''}> Employee is active</label>
+        <div class="form-grid"><label>Employment status<select id="editEmploymentStatus">${[['ACTIVE','Active'],['VACATION','Vacation'],['LEAVE','On leave'],['INACTIVE','Inactive'],['LEFT','Left employment']].map(([v,l])=>`<option value="${v}" ${v===(s.employment_status||(s.active?'ACTIVE':'INACTIVE'))?'selected':''}>${l}</option>`).join('')}</select></label><label>Status effective from<input id="editStatusDate" type="date" value="${escapeHtml(s.status_effective_from||new Date().toISOString().slice(0,10))}"></label></div><label>Status note<textarea id="editStatusNote" rows="2" placeholder="Optional — e.g. annual vacation">${escapeHtml(s.status_note||'')}</textarea></label>
         <div id="editMsg"></div>
         <div class="action-row"><button id="saveStaff" class="primary">Save changes</button><button id="resetPin" class="secondary">Reset PIN setup</button></div>
       </div>`;
@@ -644,7 +644,10 @@ async function renderPeople(view, supabase, profile) {
       const permissions={attendance:view.querySelector('#editAttendance').checked,purchase:view.querySelector('#editPurchase').checked,summary:view.querySelector('#editSummary').checked,stock:view.querySelector('#editStock').checked,salary:false};
       btn.disabled=true;btn.textContent='Saving…';
       try{
-        const {error}=await supabase.rpc('owner_update_staff',{p_staff_id:staffId,p_name:view.querySelector('#editName').value.trim(),p_outlet_id:Number(view.querySelector('#editOutlet').value),p_role:view.querySelector('#editRole').value,p_basic_salary:Number(view.querySelector('#editSalary').value||0),p_joining_date:view.querySelector('#editJoining').value,p_active:view.querySelector('#editActive').checked,p_permissions:permissions,p_notes:view.querySelector('#editNotes').value});
+        const {error}=await supabase.rpc('owner_update_staff',{p_staff_id:staffId,p_name:view.querySelector('#editName').value.trim(),p_outlet_id:Number(view.querySelector('#editOutlet').value),p_role:view.querySelector('#editRole').value,p_basic_salary:Number(view.querySelector('#editSalary').value||0),p_joining_date:view.querySelector('#editJoining').value,p_active:!['INACTIVE','LEFT'].includes(view.querySelector('#editEmploymentStatus').value),p_permissions:permissions,p_notes:view.querySelector('#editNotes').value});
+        if(error)throw error;
+        const {error:statusError}=await supabase.rpc('owner_set_staff_status',{p_staff_id:staffId,p_status:view.querySelector('#editEmploymentStatus').value,p_effective_from:view.querySelector('#editStatusDate').value,p_note:view.querySelector('#editStatusNote').value.trim()||null});
+        if(statusError)throw statusError;
         if(error)throw error;
         ({outlets,staffRows}=await loadData()); view.querySelector('#staffList').innerHTML='<div class="notice">Staff profile updated.</div>'; renderList();
       }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to save changes.')+'</p>';}
