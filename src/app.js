@@ -1,4 +1,4 @@
-const APP_BUILD = 28;
+const APP_BUILD = 29;
 const modules = [
   ['home', 'My Day'],
   ['attendance', 'Attendance'],
@@ -606,19 +606,35 @@ async function renderPeople(view, supabase, profile) {
     <div id="peopleStaff" class="subsection"><div class="section-heading"><h3>Current staff</h3><span class="hint">Select a person to manage their employment and access</span></div><div id="staffList"></div></div>
   `;
 
-  const renderList = () => {
-    view.querySelector('#staffCount').textContent = `${staffRows.filter(s => s.active).length} active`;
-    const outletMap = new Map(outlets.map(o => [Number(o.id), o.name]));
-    view.querySelector('#staffList').innerHTML = staffRows.length ? `
-      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Outlet</th><th>Role</th><th>Joining</th><th>Salary</th><th>PIN</th><th>Status</th><th></th></tr></thead>
-      <tbody>${staffRows.map(s => {
-        const u=Array.isArray(s.users)?s.users[0]:s.users,status=s.employment_status||(s.active?'ACTIVE':'INACTIVE');
-        const statusLabel={ACTIVE:'Active',VACATION:'Vacation',LEAVE:'On leave',INACTIVE:'Inactive',LEFT:'Left'}[status]||status;
-        return `<tr><td><strong>${escapeHtml(s.name)}</strong></td><td>${escapeHtml(outletMap.get(Number(s.outlet_id))||'—')}</td><td>${escapeHtml(u?.role||'Staff')}</td><td>${escapeHtml(s.joining_date||'—')}</td><td>${Number(s.basic_salary||0).toFixed(2)}</td><td>${u?.pin_set_at?'<span class="status-ok">Set</span>':'<span class="status-warn">Not set</span>'}</td><td><button class="staff-status-btn status-${status.toLowerCase()}" data-status-id="${s.id}">${escapeHtml(statusLabel)}</button></td><td><button class="secondary manage-staff" data-id="${s.id}">Manage</button></td></tr>`;
-      }).join('')}</tbody></table></div>` : '<div class="notice">No staff records yet.</div>';
+  let peopleOutlet = profile.outlet_id ? String(profile.outlet_id) : 'all';
+  let peopleStatus = 'ALL';
+  let peopleSearch = '';
 
+  const staffStatus = s => s.employment_status || (s.active ? 'ACTIVE' : 'INACTIVE');
+  const statusText = status => ({ACTIVE:'Active',VACATION:'Vacation',LEAVE:'On leave',INACTIVE:'Inactive',LEFT:'Left'}[status] || status);
+
+  const renderList = () => {
+    const outletMap = new Map(outlets.map(o => [Number(o.id), o.name]));
+    const outletRows = peopleOutlet === 'all' ? staffRows : staffRows.filter(s => String(s.outlet_id) === peopleOutlet);
+    const counts = outletRows.reduce((a,s)=>{const st=staffStatus(s);a.ALL++;a[st]=(a[st]||0)+1;return a;},{ALL:0,ACTIVE:0,VACATION:0,LEAVE:0,INACTIVE:0,LEFT:0});
+    const q=peopleSearch.trim().toLowerCase();
+    const visible=outletRows.filter(s=>(peopleStatus==='ALL'||staffStatus(s)===peopleStatus)&&(!q||s.name.toLowerCase().includes(q)));
+    view.querySelector('#staffCount').textContent = `${counts.ACTIVE} active`;
+    view.querySelector('#staffList').innerHTML = `
+      <div class="people-tools">
+        <label class="people-outlet-label">Outlet<select id="peopleOutlet"><option value="all">All cafés</option>${outlets.map(o=>`<option value="${o.id}" ${String(o.id)===peopleOutlet?'selected':''}>${escapeHtml(o.name)}</option>`).join('')}</select></label>
+        <label class="people-search"><span>${icon('search',18)}</span><input id="peopleSearch" type="search" placeholder="Search staff by name…" value="${escapeHtml(peopleSearch)}"></label>
+      </div>
+      <div class="people-filter-row">
+        ${[['ALL','All'],['ACTIVE','Active'],['VACATION','Vacation'],['LEAVE','Leave'],['INACTIVE','Inactive'],['LEFT','Left']].map(([v,l])=>`<button type="button" class="people-filter ${peopleStatus===v?'active':''}" data-status="${v}">${l} <span>${counts[v]||0}</span></button>`).join('')}
+      </div>
+      <div class="people-compact-list">
+        ${visible.length?visible.map(s=>{const u=Array.isArray(s.users)?s.users[0]:s.users,st=staffStatus(s);return `<button type="button" class="person-row manage-staff" data-id="${s.id}"><span class="person-avatar">${escapeHtml((s.name||'?').trim().charAt(0).toUpperCase())}</span><span class="person-main"><strong>${escapeHtml(s.name)}</strong><small>${escapeHtml(u?.role||'Staff')} · ${escapeHtml(outletMap.get(Number(s.outlet_id))||'—')}</small></span><span class="person-status status-${st.toLowerCase()}">${escapeHtml(statusText(st))}</span><span class="person-chevron">›</span></button>`}).join(''):'<div class="notice">No staff match this view.</div>'}
+      </div>`;
+    const outlet=view.querySelector('#peopleOutlet'); if(outlet)outlet.onchange=e=>{peopleOutlet=e.target.value;peopleStatus='ALL';renderList();};
+    const search=view.querySelector('#peopleSearch'); if(search){search.oninput=e=>{peopleSearch=e.target.value;const pos=e.target.selectionStart;renderList();const next=view.querySelector('#peopleSearch');next?.focus();try{next?.setSelectionRange(pos,pos)}catch{}};}
+    view.querySelectorAll('.people-filter').forEach(btn=>btn.onclick=()=>{peopleStatus=btn.dataset.status;renderList();});
     view.querySelectorAll('.manage-staff').forEach(btn => btn.onclick = () => openEditor(Number(btn.dataset.id)));
-    view.querySelectorAll('.staff-status-btn').forEach(btn=>btn.onclick=()=>openStatusEditor(Number(btn.dataset.statusId)));
   };
 
   const openStatusEditor=(staffId)=>{
