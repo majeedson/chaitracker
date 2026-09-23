@@ -76,6 +76,7 @@ async function renderLogin(root, supabase) {
         <div id="pin-login-area"><div class="login-step"><label for="pin">PIN</label><input id="pin" inputmode="numeric" autocomplete="current-password" maxlength="8" type="password" placeholder="Enter PIN" disabled></div><button id="login-btn" class="primary full" disabled>Sign in</button></div>
         <div id="pin-setup-area" hidden><div class="notice">First login: enter the one-time setup code given by the owner, then choose your private PIN.</div><div class="login-step"><label for="setup-code">Setup code</label><input id="setup-code" inputmode="numeric" maxlength="6" placeholder="6-digit code"></div><div class="login-step"><label for="new-pin">Choose your PIN</label><input id="new-pin" inputmode="numeric" maxlength="8" type="password" placeholder="4–8 digits"></div><button id="setup-btn" class="primary full">Create my PIN</button></div>
 
+        <p id="login-error" class="login-note" hidden></p>
         <p class="login-note">Your PIN is private. The owner does not need to know it.</p>
       </section>
     </main>
