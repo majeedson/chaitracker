@@ -204,6 +204,7 @@ async function loadModule(view, supabase, profile, module) {
   if (module === 'attendance') { await renderAttendance(view, supabase, profile); return; }
   if (module === 'summary') { await renderDailySummary(view, supabase, profile); return; }
   if (module === 'salary') { await renderSalary(view, supabase, profile); return; }
+  if (module === 'purchase') { await renderPurchases(view, supabase, profile); return; }
 
   const labels = {
     home: ['My Day', profile.role === 'Owner' ? 'Owner command center foundation is ready.' : 'Your personal workspace is ready.'],
@@ -322,6 +323,226 @@ async function renderDailySummary(view, supabase, profile) {
     if(error) return alert(error.message);
     await renderDailySummary(view,supabase,profile);
   };
+}
+
+
+async function renderPurchases(view, supabase, profile) {
+  const { data: categories } = await supabase.from('categories').select('id,name').order('name');
+  const { data: items } = await supabase.from('items').select('id,name,category_id,unit,pack_size').eq('active', true).order('name');
+  const { data: bizDate, error: dateError } = await supabase.rpc('get_effective_business_day', {
+    p_outlet_id: profile.outlet_id,
+    p_timestamp: new Date().toISOString()
+  });
+  if (dateError) {
+    view.innerHTML = '<span class="eyebrow">Purchases</span><h2>Purchase entry unavailable</h2><p class="form-error">' + escapeHtml(dateError.message) + '</p>';
+    return;
+  }
+
+  const businessDate = bizDate;
+  const isOwner = profile.role === 'Owner';
+
+  view.innerHTML = `
+    <div class="section-heading">
+      <div><span class="eyebrow">Operations</span><h2>Purchases</h2></div>
+      <span class="soft-badge">${escapeHtml(String(businessDate))}</span>
+    </div>
+
+    <div class="purchase-tabs">
+      <button class="purchase-tab active" data-purchase-mode="item">Item-wise</button>
+      <button class="purchase-tab" data-purchase-mode="invoice">Invoice total</button>
+    </div>
+
+    <div class="form-grid">
+      <label>Category
+        <select id="purCategory">
+          <option value="">Select category</option>
+          ${(categories || []).map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
+        </select>
+      </label>
+      <label>Vendor
+        <input id="purVendor" placeholder="Vendor name (optional)">
+      </label>
+    </div>
+
+    <div id="purItemArea">
+      <div class="purchase-item-head"><span>Item</span><span>Qty</span><span>Unit</span><span>Amount</span></div>
+      <div id="purRows"></div>
+      <button id="addPurRow" class="secondary">+ Add item</button>
+    </div>
+
+    <div id="purInvoiceArea" hidden>
+      <label class="purchase-invoice-field">Invoice amount
+        <input id="purInvoice" type="number" min="0" step="0.01" placeholder="0.00">
+      </label>
+    </div>
+
+    <div class="purchase-total" id="purTotal">Invoice total: 0.00</div>
+    <div class="action-row">
+      <button id="savePurchase" class="primary">Save Purchase</button>
+    </div>
+
+    <div class="subsection">
+      <div class="section-heading"><h3>Recent purchases</h3><span class="soft-badge">${isOwner ? 'All entries' : 'This outlet'}</span></div>
+      <div id="purchaseHistory"><div class="loading">Loading…</div></div>
+    </div>
+  `;
+
+  let mode = 'item';
+
+  const categoryName = () => {
+    const id = Number(view.querySelector('#purCategory').value);
+    return (categories || []).find(c => Number(c.id) === id)?.name || '';
+  };
+
+  const availableItems = () => {
+    const cat = Number(view.querySelector('#purCategory').value);
+    return (items || []).filter(i => !cat || Number(i.category_id) === cat);
+  };
+
+  const itemOptions = (selected='') => availableItems().map(i =>
+    `<option value="${escapeHtml(i.id)}" ${i.id === selected ? 'selected' : ''}>${escapeHtml(i.name)}${i.pack_size ? ' · ' + escapeHtml(i.pack_size) : ''}</option>`
+  ).join('');
+
+  const updateTotal = () => {
+    let total = 0;
+    if (mode === 'invoice') total = Number(view.querySelector('#purInvoice')?.value || 0);
+    else total = [...view.querySelectorAll('.purAmount')].reduce((s, el) => s + Number(el.value || 0), 0);
+    view.querySelector('#purTotal').textContent = `Invoice total: ${total.toFixed(2)}`;
+  };
+
+  const addRow = (data={}) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'purchase-entry-row';
+    wrap.innerHTML = `
+      <select class="purItem"><option value="">Select item</option>${itemOptions(data.item_id || '')}</select>
+      <input class="purQty" type="number" min="0" step="0.01" placeholder="Qty" value="${data.qty || ''}">
+      <input class="purUnit" value="${escapeHtml(data.unit || '')}" readonly>
+      <input class="purAmount" type="number" min="0" step="0.01" placeholder="Amount" value="${data.invoice_amount || ''}">
+      <button class="ghost remove-pur-row" type="button">×</button>
+    `;
+    const itemSelect = wrap.querySelector('.purItem');
+    const unitInput = wrap.querySelector('.purUnit');
+    itemSelect.addEventListener('change', () => {
+      const item = (items || []).find(i => i.id === itemSelect.value);
+      unitInput.value = item?.unit || '';
+    });
+    wrap.querySelector('.remove-pur-row').onclick = () => { wrap.remove(); updateTotal(); };
+    wrap.querySelectorAll('input').forEach(el => el.addEventListener('input', updateTotal));
+    view.querySelector('#purRows').appendChild(wrap);
+  };
+
+  const refreshRows = () => {
+    const rows = [...view.querySelectorAll('.purchase-entry-row')];
+    rows.forEach(r => {
+      const selected = r.querySelector('.purItem').value;
+      r.querySelector('.purItem').innerHTML = '<option value="">Select item</option>' + itemOptions(selected);
+      const item = (items || []).find(i => i.id === selected);
+      r.querySelector('.purUnit').value = item?.unit || '';
+    });
+  };
+
+  addRow();
+  view.querySelector('#purCategory').addEventListener('change', () => refreshRows());
+
+  view.querySelectorAll('[data-purchase-mode]').forEach(btn => btn.onclick = () => {
+    mode = btn.dataset.purchaseMode;
+    view.querySelectorAll('[data-purchase-mode]').forEach(b => b.classList.toggle('active', b === btn));
+    view.querySelector('#purItemArea').hidden = mode !== 'item';
+    view.querySelector('#purInvoiceArea').hidden = mode !== 'invoice';
+    updateTotal();
+  });
+
+  view.querySelector('#addPurRow').onclick = () => addRow();
+  view.querySelector('#purInvoice').addEventListener('input', updateTotal);
+
+  const loadHistory = async () => {
+    let query = supabase
+      .from('purchases')
+      .select('id,business_date,vendor_id,item_id,qty,unit,invoice_amount,entry_type,items:item_id(name),categories:item_id(category_id)');
+    if (!isOwner) query = query.eq('outlet_id', profile.outlet_id);
+    query = query.eq('business_date', businessDate).order('created_at', { ascending: false }).limit(50);
+    const { data: history, error } = await query;
+    if (error) {
+      view.querySelector('#purchaseHistory').innerHTML = '<p class="form-error">' + escapeHtml(error.message) + '</p>';
+      return;
+    }
+    const itemMap = new Map((items || []).map(i => [i.id, i]));
+    const rows = history || [];
+    if (!rows.length) {
+      view.querySelector('#purchaseHistory').innerHTML = '<div class="notice">No purchases recorded for this business day.</div>';
+      return;
+    }
+    view.querySelector('#purchaseHistory').innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Entry</th><th>Item</th><th>Qty</th><th>Amount</th></tr></thead>
+        <tbody>
+          ${rows.map(r => {
+            const item = itemMap.get(r.item_id);
+            return `<tr><td>${escapeHtml(r.entry_type || 'item')}</td><td>${escapeHtml(item?.name || 'Invoice')}</td><td>${r.qty ? Number(r.qty) + ' ' + escapeHtml(r.unit || '') : '—'}</td><td>${r.invoice_amount ? Number(r.invoice_amount).toFixed(2) : '—'}</td></tr>`;
+          }).join('')}
+        </tbody>
+      </table></div>`;
+  };
+
+  view.querySelector('#savePurchase').onclick = async () => {
+    const categoryId = Number(view.querySelector('#purCategory').value) || null;
+    const vendorName = view.querySelector('#purVendor').value.trim();
+    if (!categoryId && !vendorName) return alert('Select a category or enter a vendor.');
+    let payloads = [];
+
+    if (mode === 'invoice') {
+      const amount = Number(view.querySelector('#purInvoice').value || 0);
+      if (amount <= 0) return alert('Enter the invoice amount.');
+      payloads = [{ item_id: null, qty: 0, unit: '', invoice_amount: amount, entry_type: 'invoice' }];
+    } else {
+      payloads = [...view.querySelectorAll('.purchase-entry-row')].map(row => {
+        const itemId = row.querySelector('.purItem').value;
+        const item = (items || []).find(i => i.id === itemId);
+        return {
+          item_id: itemId || null,
+          qty: Number(row.querySelector('.purQty').value || 0),
+          unit: row.querySelector('.purUnit').value || item?.unit || '',
+          invoice_amount: Number(row.querySelector('.purAmount').value || 0),
+          entry_type: 'item'
+        };
+      }).filter(r => r.item_id && r.qty > 0);
+      if (!payloads.length) return alert('Add at least one item with a quantity.');
+    }
+
+    const saveBtn = view.querySelector('#savePurchase');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+
+    try {
+      for (const row of payloads) {
+        const { error } = await supabase.from('purchases').insert({
+          id: `PUR-${profile.outlet_id}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
+          business_date: businessDate,
+          outlet_id: profile.outlet_id,
+          user_id: profile.id,
+          vendor_id: null,
+          item_id: row.item_id,
+          qty: row.qty,
+          unit: row.unit,
+          invoice_amount: row.invoice_amount,
+          entry_type: row.entry_type
+        });
+        if (error) throw error;
+      }
+      alert('Purchase saved.');
+      await loadHistory();
+      view.querySelector('#purRows').innerHTML = '';
+      if (mode === 'item') addRow(); else view.querySelector('#purInvoice').value = '';
+      updateTotal();
+    } catch (err) {
+      alert(err.message || 'Purchase could not be saved.');
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Purchase';
+    }
+  };
+
+  await loadHistory();
 }
 
 async function renderSalary(view, supabase, profile) {
