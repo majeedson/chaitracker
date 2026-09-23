@@ -399,7 +399,7 @@ async function renderDailySummary(view, supabase, profile) {
   const addRow=(container,type,data={})=>{
     const row=document.createElement('div');row.className='summary-entry-row '+type;
     const mode=v=>`<select class="row-mode"><option value="Cash" ${v!=='UPI'?'selected':''}>Cash</option><option value="UPI" ${v==='UPI'?'selected':''}>UPI</option></select>`;
-    if(type==='expense')row.innerHTML=`<input class="row-name e-cat" placeholder="Category" value="${escapeHtml(data.category||'')}"><input class="row-amount e-amt" type="number" inputmode="decimal" placeholder="₹0" value="${data.amount||''}">${mode(data.mode)}<button class="remove-row" type="button" aria-label="Remove">×</button>`;
+    if(type==='expense')row.innerHTML=`<input class="row-name e-cat" placeholder="Category" value="${escapeHtml(data.category||'')}" ${data.fixed?'readonly':''}><input class="row-amount e-amt" type="number" inputmode="decimal" placeholder="₹0" value="${data.amount||''}">${mode(data.mode)}<button class="remove-row" type="button" aria-label="Remove" ${data.fixed?'style="visibility:hidden" tabindex="-1"':''}>×</button>`;
     if(type==='vendor')row.innerHTML=`<select class="row-name v-name"><option value="">Select vendor</option>${(vendors||[]).map(v=>`<option value="${escapeHtml(v.name)}" ${v.name===(data.vendor_name||'')?'selected':''}>${escapeHtml(v.name)}</option>`).join('')}</select><input class="row-amount v-amt" type="number" inputmode="decimal" placeholder="₹0" value="${data.amount||''}">${mode(data.mode)}<button class="remove-row" type="button" aria-label="Remove">×</button>`;
     if(type==='staff')row.innerHTML=`<div class="staff-payment-grid"><select class="p-name"><option value="">Select staff</option>${(staff||[]).map(p=>`<option value="${escapeHtml(p.name)}" ${p.name===(data.staff_name||'')?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select><select class="p-type"><option ${data.payout_type==='Salary'?'selected':''}>Salary</option><option ${data.payout_type==='Advance'?'selected':''}>Advance</option><option ${data.payout_type==='Reimbursement'?'selected':''}>Reimbursement</option><option ${data.payout_type==='Other'?'selected':''}>Other</option></select><input class="p-amt" type="number" inputmode="decimal" placeholder="₹ Amount" value="${data.amount||''}">${mode(data.mode)}</div><button class="remove-row" type="button" aria-label="Remove">×</button>`;
     row.querySelector('.remove-row').onclick=()=>{row.remove();calc();};
@@ -412,7 +412,13 @@ async function renderDailySummary(view, supabase, profile) {
     supabase.from('summary_vendor_payouts').select('*').eq('summary_id',existing?.id||'__none__'),
     supabase.from('summary_staff_payouts').select('*').eq('summary_id',existing?.id||'__none__')
   ]);
-  (ev.data||[]).forEach(x=>addRow(view.querySelector('#expenseRows'),'expense',x));
+  const fixedExpenseCategories=['Pigmy','Petrol','Utility','Maintenance','Other'];
+  const savedExpenses=ev.data||[];
+  fixedExpenseCategories.forEach(category=>{
+    const found=savedExpenses.find(x=>String(x.category||'').toLowerCase()===category.toLowerCase() || (category==='Maintenance'&&String(x.category||'').toLowerCase()==='mainten'));
+    addRow(view.querySelector('#expenseRows'),'expense',found||{category,amount:0,mode:'Cash',fixed:true});
+  });
+  savedExpenses.filter(x=>!fixedExpenseCategories.some(category=>String(x.category||'').toLowerCase()===category.toLowerCase() || (category==='Maintenance'&&String(x.category||'').toLowerCase()==='mainten'))).forEach(x=>addRow(view.querySelector('#expenseRows'),'expense',x));
   (vv.data||[]).forEach(x=>addRow(view.querySelector('#vendorRows'),'vendor',x));
   (sv.data||[]).forEach(x=>addRow(view.querySelector('#staffRows'),'staff',x));
 
@@ -432,6 +438,7 @@ async function renderDailySummary(view, supabase, profile) {
   view.querySelectorAll('#sOpen,#sCash,#sUpi,#sSwGross,#sSwPay,#sZoGross,#sZoPay,#sOwn,#sDisc,#sPhysical').forEach(el=>el.addEventListener('input',calc));
   view.querySelector('#sSwGross').addEventListener('input',e=>{view.querySelector('#sSwPay').value=(Number(e.target.value||0)*swRate).toFixed(2);calc();});
   view.querySelector('#sZoGross').addEventListener('input',e=>{view.querySelector('#sZoPay').value=(Number(e.target.value||0)*zoRate).toFixed(2);calc();});
+  view.querySelector('#addExpense').textContent='＋ Add other expense';
   view.querySelector('#addExpense').onclick=()=>addRow(view.querySelector('#expenseRows'),'expense');
   view.querySelector('#addVendor').onclick=()=>addRow(view.querySelector('#vendorRows'),'vendor');
   view.querySelector('#addStaff').onclick=()=>addRow(view.querySelector('#staffRows'),'staff');
