@@ -1,4 +1,4 @@
-const APP_BUILD = 15;
+const APP_BUILD = 16;
 const modules = [
   ['home', 'My Day'],
   ['attendance', 'Attendance'],
@@ -389,7 +389,7 @@ async function renderDailySummary(view, supabase, profile) {
 
       <div class="summary-actions">
         <button id="saveSummary" class="primary" type="button">Save Summary</button>
-        <button id="closeSummary" class="close-day" type="button">Close Day</button>\n        <button id="whatsappSummary" class="summary-add full" type="button">WhatsApp Summary</button>
+        <button id="closeSummary" class="close-day" type="button">Close Day</button>\n        <button id="whatsappSummary" class="summary-add full" type="button">Generate WhatsApp message</button>\n        <div id="whatsappPreview" class="whatsapp-preview" hidden><div class="whatsapp-preview-head"><strong>WhatsApp message</strong><button id="copyWhatsappSummary" type="button" class="summary-add">Copy</button></div><textarea id="whatsappText" readonly></textarea><p id="copyStatus" class="summary-inline-status" hidden></p></div>
       </div>
       <p id="summaryMessage" class="form-error" hidden></p>
       ${existing?.is_closed?'<div class="notice warning">This day is closed and cannot be edited.</div>':''}
@@ -504,9 +504,20 @@ async function renderDailySummary(view, supabase, profile) {
       '_CafeTracker · '+businessDate+'_'
     ];
     const text=lines.join('\\n');
-    window.open('https://wa.me/?text='+encodeURIComponent(text),'_blank','noopener,noreferrer');
+    const preview=view.querySelector('#whatsappPreview'),box=view.querySelector('#whatsappText');
+    box.value=text;preview.hidden=false;box.style.height='auto';box.style.height=Math.min(box.scrollHeight,520)+'px';
+    preview.scrollIntoView({behavior:'smooth',block:'center'});
   };
   view.querySelector('#whatsappSummary').onclick=whatsappSummary;
+  view.querySelector('#copyWhatsappSummary').onclick=async()=>{
+    const box=view.querySelector('#whatsappText'),status=view.querySelector('#copyStatus');
+    try{
+      if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(box.value);
+      else{box.focus();box.select();document.execCommand('copy');box.setSelectionRange(0,0);}
+      status.textContent='Copied to clipboard';status.className='summary-inline-status ok';status.hidden=false;
+      setTimeout(()=>{if(status.isConnected)status.hidden=true;},2200);
+    }catch(e){status.textContent='Could not copy. Press and hold the message to copy it.';status.className='summary-inline-status bad';status.hidden=false;}
+  };
   view.querySelector('#saveSummary').onclick=save;
   view.querySelector('#closeSummary').onclick=async()=>{if(!existing){const ok=await save();if(!ok)return;await renderDailySummary(view,supabase,profile);return;}const {error}=await supabase.rpc('close_daily_summary',{p_summary_id:existing.id,p_user_id:profile.id});if(error){const msg=view.querySelector('#summaryMessage');msg.textContent=error.message;msg.hidden=false;return;}await renderDailySummary(view,supabase,profile);};
 }
