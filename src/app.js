@@ -458,7 +458,7 @@ async function renderPurchases(view, supabase, profile) {
   const loadHistory = async () => {
     let query = supabase
       .from('purchases')
-      .select('id,business_date,vendor_id,item_id,qty,unit,invoice_amount,entry_type,items:item_id(name),categories:item_id(category_id)');
+      .select('id,business_date,vendor_name,item_id,qty,unit,invoice_amount,entry_type');
     if (!isOwner) query = query.eq('outlet_id', profile.outlet_id);
     query = query.eq('business_date', businessDate).order('created_at', { ascending: false }).limit(50);
     const { data: history, error } = await query;
@@ -521,6 +521,7 @@ async function renderPurchases(view, supabase, profile) {
           outlet_id: profile.outlet_id,
           user_id: profile.id,
           vendor_id: null,
+          vendor_name: vendorName || null,
           item_id: row.item_id,
           qty: row.qty,
           unit: row.unit,
