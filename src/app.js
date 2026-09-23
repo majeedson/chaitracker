@@ -15,6 +15,34 @@ function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+function icon(name, size=20) {
+  const paths={
+    home:'<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/><path d="M9 20v-6h6v6"/>',
+    attendance:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    stock:'<path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
+    purchase:'<path d="M6 7h15l-2 8H8L6 3H3"/><circle cx="9" cy="19" r="1"/><circle cx="18" cy="19" r="1"/>',
+    po:'<path d="M6 3h12v18H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>',
+    summary:'<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>',
+    delta:'<path d="m7 7 5-4 5 4M12 3v8"/><path d="m17 17-5 4-5-4M12 21v-8"/>',
+    salary:'<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 9H5v6h2M17 9h2v6h-2"/>',
+    dashboard:'<path d="M4 13a8 8 0 1 1 16 0"/><path d="m12 13 4-4"/><path d="M5 18h14"/>',
+    people:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-4 2-7 6-7s6 3 6 7"/><circle cx="17" cy="9" r="2"/><path d="M16 14c3 0 5 2 5 5"/>',
+    user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-5 3-8 8-8s8 3 8 8"/>',
+    heart:'<path d="M20.8 5.8c-2-2-5.2-2-7.2 0L12 7.4l-1.6-1.6a5.1 5.1 0 0 0-7.2 7.2L12 21l8.8-8a5.1 5.1 0 0 0 0-7.2Z"/>',
+    id:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8" cy="11" r="2"/><path d="M5.5 16c.7-2 4.3-2 5 0M13 10h5M13 14h5"/>',
+    camera:'<path d="M4 8h4l2-3h4l2 3h4v11H4z"/><circle cx="12" cy="13" r="3"/>',
+    check:'<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+    lock:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>'
+  };
+  return `<svg class="ui-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]||paths.home}</svg>`;
+}
+
+function applyTheme(outlet) {
+  const color=outlet?.theme_color||'#CB202D';
+  document.documentElement.style.setProperty('--accent',color);
+  document.documentElement.style.setProperty('--accent-soft',color+'18');
+}
+
 export async function renderApp(root, supabase) {
   const { data: sessionData } = await supabase.auth.getSession();
   const authSession = sessionData?.session;
@@ -28,7 +56,7 @@ export async function renderApp(root, supabase) {
   const authId = authUser?.user?.id;
   const { data: profile } = await supabase
     .from('users')
-    .select('id,name,role,outlet_id,can_switch_outlet,active')
+    .select('id,name,role,outlet_id,can_switch_outlet,active,outlets(name,theme_key,theme_color)')
     .eq('auth_user_id', authId)
     .maybeSingle();
 
@@ -38,168 +66,135 @@ export async function renderApp(root, supabase) {
     return;
   }
 
+  applyTheme(profile.outlets);
   renderWorkspace(root, supabase, profile);
 }
 
 async function renderLogin(root, supabase) {
   const [{ data: outlets }, { data: directory, error }] = await Promise.all([
-    supabase.from('outlets').select('id,name').order('id'),
-    supabase.from('login_directory').select('id,name,role,outlet_id,outlet_name,can_switch_outlet,auth_enrolled,pin_set').order('name')
+    supabase.from('outlets').select('id,name,theme_key,theme_color').order('id'),
+    supabase.from('login_directory').select('id,name,role,outlet_id,outlet_name,can_switch_outlet,auth_enrolled,pin_set,theme_key,theme_color,onboarding_status').order('name')
   ]);
+  if (error) { root.innerHTML='<main class="login-shell"><section class="login-card"><h1>CafeTracker</h1><p>Login setup unavailable.</p></section></main>'; return; }
 
-  if (error) {
-    root.innerHTML = '<main class="login-shell"><section class="card"><div class="eyebrow">ChaiTracker</div><h1>Login setup unavailable</h1><p class="muted">The login directory could not be loaded.</p></section></main>';
-    return;
-  }
-
-  root.innerHTML = `
+  root.innerHTML=`
     <main class="login-shell">
       <section class="login-card">
-        <div class="login-brand">ChaiTracker</div>
-        <div class="muted" style="font-size:12px;margin-top:4px">Staging build 7 · login diagnostics</div>
-        <p class="login-subtitle">Choose your café and name to continue.</p>
-
-        <div class="login-step">
-          <label for="outlet-select">Café</label>
-          <select id="outlet-select">
-            <option value="">Select your café</option>
-            ${(outlets || []).map(o => `<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}
-          </select>
+        <div class="brand-lockup"><div class="brand-mark">${icon('home',22)}</div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day.</div></div></div>
+        <div id="login-picker">
+          <div class="login-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
+          <div class="login-step"><label>Your name</label><select id="name-select" disabled><option value="">Select your café first</option></select></div>
+          <div id="pin-login-area"><div class="login-step"><label>PIN</label><div class="input-with-icon">${icon('lock',19)}<input id="pin" inputmode="numeric" autocomplete="current-password" maxlength="8" type="password" placeholder="Enter PIN" disabled></div></div><button id="login-btn" type="button" class="primary full" disabled>Sign in <span>→</span></button></div>
+          <div id="onboarding-start" hidden>
+            <div class="onboard-invite"><div class="feature-icon">${icon('user',22)}</div><div><strong>Complete your profile</strong><span>First login takes about 3 minutes.</span></div></div>
+            <button id="start-onboarding" type="button" class="primary full">Start onboarding <span>→</span></button>
+          </div>
+          <p id="login-error" class="login-status" hidden></p>
         </div>
-
-        <div class="login-step">
-          <label for="name-select">Your name</label>
-          <select id="name-select" disabled>
-            <option value="">Select your café first</option>
-          </select>
-        </div>
-
-        <div id="pin-login-area"><div class="login-step"><label for="pin">PIN</label><input id="pin" inputmode="numeric" autocomplete="current-password" maxlength="8" type="password" placeholder="Enter PIN" disabled></div><button id="login-btn" type="button" class="primary full" disabled>Sign in</button></div>
-        <div id="pin-setup-area" hidden><div class="notice">First login: enter the one-time setup code given by the owner, then choose your private PIN.</div><div class="login-step"><label for="setup-code">Setup code</label><input id="setup-code" inputmode="numeric" maxlength="6" placeholder="6-digit code"></div><div class="login-step"><label for="new-pin">Choose your PIN</label><input id="new-pin" inputmode="numeric" maxlength="8" type="password" placeholder="4–8 digits"></div><button id="setup-btn" class="primary full">Create my PIN</button></div>
-
-        <p id="login-error" class="login-note" hidden></p>
-        <p class="login-note">Your PIN is private. The owner does not need to know it.</p>
+        <div id="onboarding-shell" hidden></div>
       </section>
-    </main>
-  `;
+    </main>`;
 
-  const outletSelect = root.querySelector('#outlet-select');
-  const nameSelect = root.querySelector('#name-select');
-  const pin = root.querySelector('#pin');
-  const loginBtn = root.querySelector('#login-btn');
-  const loginArea = root.querySelector('#pin-login-area');
-  const setupArea = root.querySelector('#pin-setup-area');
-  const setupBtn = root.querySelector('#setup-btn');
-  const setupCode = root.querySelector('#setup-code');
-  const newPin = root.querySelector('#new-pin');
-  const errorBox = root.querySelector('#login-error');
-  let selectedOutlet = null;
-  let selectedPerson = null;
+  const outletSelect=root.querySelector('#outlet-select'),nameSelect=root.querySelector('#name-select'),pin=root.querySelector('#pin'),loginBtn=root.querySelector('#login-btn');
+  const loginArea=root.querySelector('#pin-login-area'),onboardingStart=root.querySelector('#onboarding-start'),picker=root.querySelector('#login-picker'),onboardingShell=root.querySelector('#onboarding-shell'),errorBox=root.querySelector('#login-error');
+  let selectedPerson=null;
 
-  outletSelect.addEventListener('change', () => {
-    selectedOutlet = Number(outletSelect.value) || null;
-    selectedPerson = null;
-
-    const people = selectedOutlet
-      ? (directory || []).filter(u => Number(u.outlet_id) === selectedOutlet)
-      : [];
-
-    nameSelect.disabled = !selectedOutlet;
-    nameSelect.innerHTML = selectedOutlet
-      ? '<option value="">Select your name</option>' +
-        people.map(u => `<option value="${u.id}">${escapeHtml(u.name)} — ${escapeHtml(u.role)}</option>`).join('')
-      : '<option value="">Select your café first</option>';
-
-    pin.value = '';
-    pin.disabled = true;
-    loginBtn.disabled = true;
-    setupArea.hidden = true;
-    loginArea.hidden = false;
-  });
-
-  nameSelect.addEventListener('change', () => {
-    selectedPerson = (directory || []).find(u => u.id === nameSelect.value) || null;
-    const isStagingOwner = selectedPerson?.name === 'Jazeel' && selectedPerson?.role === 'Owner';
-    const needsSetup = !!selectedPerson && !selectedPerson.pin_set && !isStagingOwner;
-    setupArea.hidden = !needsSetup; loginArea.hidden = needsSetup;
-    pin.disabled = !nameSelect.value || needsSetup;
-    loginBtn.disabled = !nameSelect.value || needsSetup;
-    errorBox.hidden = true;
-    if (!nameSelect.value) { setupArea.hidden = true; loginArea.hidden = false; return; }
-    if (!needsSetup) {
-      errorBox.textContent = 'Enter your PIN and tap Sign in.';
-      errorBox.hidden = false;
-      pin.focus();
-    }
-  });
-
-  setupBtn.addEventListener('click', async () => {
-    errorBox.hidden = true;
-    const code = setupCode.value.replace(/\D/g,'').slice(0,6), chosenPin = newPin.value.replace(/\D/g,'').slice(0,8);
-    setupCode.value=code; newPin.value=chosenPin;
-    if(!selectedPerson || code.length!==6 || chosenPin.length<4){errorBox.textContent='Enter the 6-digit setup code and a 4–8 digit PIN.';errorBox.hidden=false;return;}
-    setupBtn.disabled=true;setupBtn.textContent='Creating PIN…';
-    try{
-      const url = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/chaitracker-login';
-      const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY},body:JSON.stringify({user_id:selectedPerson.id,mode:'setup',setup_code:code,new_pin:chosenPin})});
-      const payload=await response.json(); if(!response.ok||!payload.success)throw new Error(payload.error||'PIN setup failed.');
-      setupArea.hidden=true;loginArea.hidden=false;pin.disabled=false;pin.value=chosenPin;loginBtn.disabled=false;errorBox.textContent='PIN created. You can now sign in.';errorBox.hidden=false;
-    }catch(err){errorBox.textContent=err.message||'PIN setup failed.';errorBox.hidden=false;}finally{setupBtn.disabled=false;setupBtn.textContent='Create my PIN';}
-  });
-
-  pin.addEventListener('input', () => {
-    pin.value = pin.value.replace(/\D/g, '').slice(0, 8);
-  });
-
-  const submitLogin = async () => {
-    const enteredPin = pin.value.replace(/\D/g, '').slice(0, 8);
-    if (enteredPin.length < 4) {
-      errorBox.textContent = 'Enter at least 4 digits.';
-      errorBox.hidden = false;
-      return;
-    }
-    errorBox.textContent = 'Contacting secure login…';
-    errorBox.hidden = false;
-    loginBtn.disabled = true;
-    loginBtn.textContent = 'Signing in…';
-
-    try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chaitracker-login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
-        },
-        body: JSON.stringify({ user_id: nameSelect.value, pin: enteredPin })
-      });
-
-      const payload = await response.json();
-      if (!response.ok || !payload.session) throw new Error(payload.error || 'Sign-in failed.');
-
-      const { error: sessionError } = await supabase.auth.setSession({
-        access_token: payload.session.access_token,
-        refresh_token: payload.session.refresh_token
-      });
-      if (sessionError) throw sessionError;
-
-      await renderApp(root, supabase);
-    } catch (err) {
-      errorBox.textContent = err.message || 'Unable to sign in.';
-      errorBox.hidden = false;
-      loginBtn.disabled = false;
-      loginBtn.textContent = 'Sign in';
-    }
+  outletSelect.onchange=()=>{
+    const outlet=(outlets||[]).find(o=>Number(o.id)===Number(outletSelect.value)); applyTheme(outlet);
+    selectedPerson=null; const people=(directory||[]).filter(u=>Number(u.outlet_id)===Number(outletSelect.value));
+    nameSelect.disabled=!outletSelect.value;
+    nameSelect.innerHTML=outletSelect.value?'<option value="">Select your name</option>'+people.map(u=>`<option value="${u.id}">${escapeHtml(u.name)} — ${escapeHtml(u.role)}</option>`).join(''):'<option value="">Select your café first</option>';
+    pin.value='';pin.disabled=true;loginBtn.disabled=true;loginArea.hidden=false;onboardingStart.hidden=true;errorBox.hidden=true;
   };
 
-  loginBtn.addEventListener('click', submitLogin);
-  pin.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' && pin.value.length >= 4) {
-      event.preventDefault();
-      submitLogin();
-    }
-  });
-}
+  nameSelect.onchange=()=>{
+    selectedPerson=(directory||[]).find(u=>u.id===nameSelect.value)||null;
+    if(selectedPerson)applyTheme(selectedPerson);
+    const isFrozenOwner=selectedPerson?.name==='Jazeel'&&selectedPerson?.role==='Owner';
+    const needsOnboarding=!!selectedPerson&&!selectedPerson.pin_set&&!isFrozenOwner;
+    loginArea.hidden=needsOnboarding; onboardingStart.hidden=!needsOnboarding;
+    pin.disabled=!selectedPerson||needsOnboarding; loginBtn.disabled=!selectedPerson||needsOnboarding; errorBox.hidden=true;
+    if(selectedPerson&&!needsOnboarding)pin.focus();
+  };
 
+  pin.oninput=()=>{pin.value=pin.value.replace(/\\D/g,'').slice(0,8);};
+  const submitLogin=async()=>{
+    const enteredPin=pin.value.replace(/\\D/g,'').slice(0,8);
+    if(enteredPin.length<4){errorBox.textContent='Enter at least 4 digits.';errorBox.hidden=false;return;}
+    errorBox.textContent='Signing you in…';errorBox.hidden=false;loginBtn.disabled=true;
+    try{
+      const response=await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chaitracker-login`,{method:'POST',headers:{'Content-Type':'application/json',apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY},body:JSON.stringify({user_id:selectedPerson.id,pin:enteredPin})});
+      const payload=await response.json();if(!response.ok||!payload.session)throw new Error(payload.error||'Sign-in failed.');
+      const {error:sessionError}=await supabase.auth.setSession({access_token:payload.session.access_token,refresh_token:payload.session.refresh_token});if(sessionError)throw sessionError;
+      await renderApp(root,supabase);
+    }catch(err){errorBox.textContent=err.message||'Unable to sign in.';errorBox.hidden=false;loginBtn.disabled=false;}
+  };
+  loginBtn.onclick=submitLogin;pin.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();submitLogin();}};
+
+  root.querySelector('#start-onboarding').onclick=()=>renderOnboarding();
+
+  function renderOnboarding(){
+    picker.hidden=true;onboardingShell.hidden=false;
+    const steps=[
+      {key:'welcome',label:'Welcome',icon:'user'},
+      {key:'personal',label:'About you',icon:'user'},
+      {key:'emergency',label:'Emergency',icon:'heart'},
+      {key:'identity',label:'Identity',icon:'id'},
+      {key:'photo',label:'Photo',icon:'camera'},
+      {key:'review',label:'Review',icon:'check'},
+      {key:'pin',label:'PIN',icon:'lock'}
+    ];
+    let step=0; const state={};
+    const draw=()=>{
+      const progress=Math.round((step/(steps.length-1))*100);
+      let body='';
+      if(step===0)body=`<div class="onboard-hero"><div class="feature-icon large">${icon('user',28)}</div><span class="eyebrow">Welcome to CafeTracker</span><h2>Hi, ${escapeHtml(selectedPerson.name)}</h2><p>Let's set up your employee profile before you create your private PIN.</p><label>One-time setup code<div class="input-with-icon">${icon('lock',19)}<input id="ob-setup" inputmode="numeric" maxlength="6" placeholder="6-digit code" value="${escapeHtml(state.setup_code||'')}"></div></label></div>`;
+      if(step===1)body=`<div class="onboard-title"><div class="feature-icon">${icon('user',22)}</div><div><span class="eyebrow">About you</span><h2>Personal details</h2></div></div><div class="form-stack"><label>Display name<input value="${escapeHtml(selectedPerson.name)}" disabled><small>Set by your employer</small></label><label>Full name as shown on your ID<input id="ob-full" value="${escapeHtml(state.full_legal_name||'')}" placeholder="Your full legal name"></label><div class="two-col"><label>Date of birth<input id="ob-dob" type="date" value="${escapeHtml(state.date_of_birth||'')}"></label><label>Nationality<input id="ob-nationality" value="${escapeHtml(state.nationality||'')}" placeholder="Nationality"></label></div><label>Father's name<input id="ob-father" value="${escapeHtml(state.father_name||'')}" placeholder="Father's full name"></label><label>Mobile number<input id="ob-mobile" inputmode="tel" value="${escapeHtml(state.mobile_phone||'')}" placeholder="Phone number"></label><label>Home address<textarea id="ob-address" rows="3" placeholder="Permanent/home address">${escapeHtml(state.home_address||'')}</textarea></label></div>`;
+      if(step===2)body=`<div class="onboard-title"><div class="feature-icon">${icon('heart',22)}</div><div><span class="eyebrow">Emergency contact</span><h2>Who should we contact?</h2></div></div><div class="form-stack"><label>Contact name<input id="ob-ec-name" value="${escapeHtml(state.emergency_contact_name||'')}" placeholder="Full name"></label><label>Relationship<input id="ob-ec-rel" value="${escapeHtml(state.emergency_contact_relation||'')}" placeholder="e.g. Parent, spouse, sibling"></label><label>Phone number<input id="ob-ec-phone" inputmode="tel" value="${escapeHtml(state.emergency_contact_phone||'')}" placeholder="Emergency phone number"></label></div>`;
+      if(step===3)body=`<div class="onboard-title"><div class="feature-icon">${icon('id',22)}</div><div><span class="eyebrow">Identity</span><h2>Verify your ID</h2></div></div><div class="form-stack"><label>Document type<select id="ob-id-type"><option value="">Choose document</option><option ${state.identity_type==='Aadhaar'?'selected':''}>Aadhaar</option><option ${state.identity_type==='Passport'?'selected':''}>Passport</option><option ${state.identity_type==='Other'?'selected':''}>Other</option></select></label><label>Document number<input id="ob-id-number" value="${escapeHtml(state.identity_number||'')}" placeholder="ID document number"></label><label class="upload-card">${icon('id',26)}<strong>Upload identity document</strong><span>JPG, PNG or PDF · max 6 MB</span><input id="ob-id-file" type="file" accept="image/jpeg,image/png,application/pdf"></label><div id="id-file-name" class="file-name">${state.identity_document?.name?escapeHtml(state.identity_document.name):''}</div></div>`;
+      if(step===4)body=`<div class="onboard-title"><div class="feature-icon">${icon('camera',22)}</div><div><span class="eyebrow">Profile photo</span><h2>Add a clear photo</h2></div></div><label class="upload-card photo-upload">${icon('camera',30)}<strong>Take or upload photo</strong><span>Clear front-facing photo · max 5 MB</span><input id="ob-photo" type="file" accept="image/jpeg,image/png,image/webp" capture="user"></label><div id="photo-file-name" class="file-name">${state.profile_photo?.name?escapeHtml(state.profile_photo.name):''}</div>`;
+      if(step===5)body=`<div class="onboard-title"><div class="feature-icon">${icon('check',22)}</div><div><span class="eyebrow">Almost done</span><h2>Review your details</h2></div></div><div class="review-list"><div><span>Employee</span><strong>${escapeHtml(selectedPerson.name)}</strong></div><div><span>Full legal name</span><strong>${escapeHtml(state.full_legal_name||'—')}</strong></div><div><span>Nationality</span><strong>${escapeHtml(state.nationality||'—')}</strong></div><div><span>Emergency contact</span><strong>${escapeHtml(state.emergency_contact_name||'—')} · ${escapeHtml(state.emergency_contact_relation||'')}</strong></div><div><span>Identity</span><strong>${escapeHtml(state.identity_type||'—')} · on file</strong></div></div><label class="confirm-row"><input id="ob-confirm" type="checkbox"> I confirm these details are correct.</label>`;
+      if(step===6)body=`<div class="onboard-hero"><div class="feature-icon large">${icon('lock',28)}</div><span class="eyebrow">Secure your account</span><h2>Create your private PIN</h2><p>Use 4–8 digits. Your employer does not need to know this PIN.</p><label>New PIN<input id="ob-pin" type="password" inputmode="numeric" maxlength="8" placeholder="4–8 digits"></label><label>Confirm PIN<input id="ob-pin2" type="password" inputmode="numeric" maxlength="8" placeholder="Repeat PIN"></label></div>`;
+      onboardingShell.innerHTML=`<div class="onboard-progress"><div><button id="ob-close" class="icon-button" aria-label="Back to login">←</button><span>${step+1} of ${steps.length}</span></div><div class="progress-track"><i style="width:${progress}%"></i></div></div><div class="onboard-body">${body}<p id="ob-error" class="form-error" hidden></p></div><div class="onboard-actions">${step>0?'<button id="ob-back" class="secondary">Back</button>':''}<button id="ob-next" class="primary">${step===steps.length-1?'Finish & create PIN':'Continue'} <span>→</span></button></div>`;
+      onboardingShell.querySelector('#ob-close').onclick=()=>{onboardingShell.hidden=true;picker.hidden=false;};
+      if(step>0)onboardingShell.querySelector('#ob-back').onclick=()=>{saveStep();step--;draw();};
+      const idf=onboardingShell.querySelector('#ob-id-file');if(idf)idf.onchange=()=>{state.identity_document=idf.files[0];onboardingShell.querySelector('#id-file-name').textContent=state.identity_document?.name||'';};
+      const pf=onboardingShell.querySelector('#ob-photo');if(pf)pf.onchange=()=>{state.profile_photo=pf.files[0];onboardingShell.querySelector('#photo-file-name').textContent=state.profile_photo?.name||'';};
+      onboardingShell.querySelector('#ob-next').onclick=async()=>{if(!validateStep())return;saveStep();if(step<steps.length-1){step++;draw();}else await submitOnboarding();};
+    };
+    const saveStep=()=>{
+      const get=id=>onboardingShell.querySelector(id)?.value?.trim();
+      if(step===0)state.setup_code=get('#ob-setup')||state.setup_code;
+      if(step===1)Object.assign(state,{full_legal_name:get('#ob-full'),date_of_birth:get('#ob-dob'),nationality:get('#ob-nationality'),father_name:get('#ob-father'),mobile_phone:get('#ob-mobile'),home_address:get('#ob-address')});
+      if(step===2)Object.assign(state,{emergency_contact_name:get('#ob-ec-name'),emergency_contact_relation:get('#ob-ec-rel'),emergency_contact_phone:get('#ob-ec-phone')});
+      if(step===3)Object.assign(state,{identity_type:get('#ob-id-type'),identity_number:get('#ob-id-number')});
+    };
+    const validateStep=()=>{
+      const err=onboardingShell.querySelector('#ob-error');let msg='';
+      if(step===0&&!/^\\d{6}$/.test(onboardingShell.querySelector('#ob-setup').value))msg='Enter the 6-digit setup code.';
+      if(step===1&&['#ob-full','#ob-dob','#ob-nationality','#ob-father','#ob-mobile','#ob-address'].some(id=>!onboardingShell.querySelector(id).value.trim()))msg='Please complete all personal details.';
+      if(step===2&&['#ob-ec-name','#ob-ec-rel','#ob-ec-phone'].some(id=>!onboardingShell.querySelector(id).value.trim()))msg='Please complete the emergency contact details.';
+      if(step===3&&(!onboardingShell.querySelector('#ob-id-type').value||!onboardingShell.querySelector('#ob-id-number').value.trim()||!state.identity_document))msg='Choose an ID type, enter its number and upload the document.';
+      if(step===4&&!state.profile_photo)msg='Please add a profile photo.';
+      if(step===5&&!onboardingShell.querySelector('#ob-confirm').checked)msg='Please confirm that your details are correct.';
+      if(step===6){const a=onboardingShell.querySelector('#ob-pin').value,b=onboardingShell.querySelector('#ob-pin2').value;if(!/^\\d{4,8}$/.test(a))msg='Choose a 4–8 digit PIN.';else if(a!==b)msg='The PINs do not match.';}
+      if(msg){err.textContent=msg;err.hidden=false;return false;}return true;
+    };
+    const submitOnboarding=async()=>{
+      const btn=onboardingShell.querySelector('#ob-next'),err=onboardingShell.querySelector('#ob-error');btn.disabled=true;btn.textContent='Creating your account…';
+      try{
+        const fd=new FormData();Object.entries(state).forEach(([k,v])=>{if(v instanceof File)fd.append(k==='identity_document'?'identity_document':'profile_photo',v);else if(v!=null)fd.append(k,String(v));});
+        fd.append('user_id',selectedPerson.id);fd.append('new_pin',onboardingShell.querySelector('#ob-pin').value);
+        const response=await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chaitracker-onboarding`,{method:'POST',headers:{apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY},body:fd});
+        const payload=await response.json();if(!response.ok||!payload.success)throw new Error(payload.error||'Onboarding failed.');
+        if(payload.session){await supabase.auth.setSession({access_token:payload.session.access_token,refresh_token:payload.session.refresh_token});await renderApp(root,supabase);return;}
+        onboardingShell.innerHTML='<div class="onboard-success">'+icon('check',34)+'<h2>You're all set</h2><p>Your CafeTracker profile is ready. Sign in with your new PIN.</p><button id="return-login" class="primary full">Back to sign in</button></div>';
+        onboardingShell.querySelector('#return-login').onclick=()=>renderLogin(root,supabase);
+      }catch(e){err.textContent=e.message||'Unable to complete onboarding.';err.hidden=false;btn.disabled=false;btn.innerHTML='Finish & create PIN <span>→</span>';}
+    };
+    draw();
+  }
+}
 function renderWorkspace(root, supabase, profile) {
   const isOwner = profile.role === 'Owner';
 
@@ -207,7 +202,7 @@ function renderWorkspace(root, supabase, profile) {
     <div class="app-shell">
       <header class="topbar">
         <div>
-          <div class="brand">ChaiTracker</div>
+          <div class="brand">CafeTracker</div>
           <div class="subtitle">${escapeHtml(profile.name)} · ${escapeHtml(profile.role)}</div>
         </div>
         <div class="topbar-actions">
@@ -220,14 +215,14 @@ function renderWorkspace(root, supabase, profile) {
         <section class="hero card">
           <div>
             <span class="eyebrow">${isOwner ? 'Operations Center' : 'My Day'}</span>
-            <h1>${isOwner ? 'Good to see you.' : 'Your ChaiTracker day.'}</h1>
+            <h1>${isOwner ? 'Good to see you.' : 'Your CafeTracker day.'}</h1>
             <p>${isOwner ? 'One place for people, attendance and café operations.' : 'Attendance, leave and your daily tasks in one place.'}</p>
           </div>
         </section>
 
         <nav class="module-grid">
           ${modules.filter(([id]) => isOwner || !['salary','dashboard','delta'].includes(id)).map(([id,label]) =>
-            `<button class="module-card" data-module="${id}"><span class="module-name">${label}</span><span class="module-state">Open</span></button>`
+            `<button class="module-card" data-module="${id}"><span class="module-icon">${icon(id,22)}</span><span class="module-name">${label}</span><span class="module-state">Open →</span></button>`
           ).join('')}
         </nav>
 
@@ -270,7 +265,7 @@ async function loadModule(view, supabase, profile, module) {
 
   const [title, copy] = labels[module] || labels.home;
   view.innerHTML = `
-    <span class="eyebrow">ChaiTracker</span>
+    <span class="eyebrow">CafeTracker</span>
     <h2>${title}</h2>
     <p class="muted">${copy}</p>
     <div class="coming-soon">Module foundation connected</div>
