@@ -396,6 +396,20 @@ async function renderDailySummary(view, supabase, profile) {
 
   if(isOwner)view.querySelector('#sumOutlet').onchange=async e=>{profile.outlet_id=Number(e.target.value);await renderDailySummary(view,supabase,profile);};
 
+  function n(id){return Number(view.querySelector('#'+id)?.value||0);}
+  function calc(){
+    const net=n('sCash')+n('sUpi')+n('sSwPay')+n('sZoPay')+n('sOwn')-n('sDisc');
+    const cashExpenses=[...view.querySelectorAll('#expenseRows .summary-entry-row')].reduce((sum,r)=>sum+(r.querySelector('.row-mode')?.value==='Cash'?Number(r.querySelector('.e-amt')?.value||0):0),0);
+    const cashVendors=[...view.querySelectorAll('#vendorRows .summary-entry-row')].reduce((sum,r)=>sum+(r.querySelector('.row-mode')?.value==='Cash'?Number(r.querySelector('.v-amt')?.value||0):0),0);
+    const cashStaff=[...view.querySelectorAll('#staffRows .summary-entry-row')].reduce((sum,r)=>sum+(r.querySelector('.row-mode')?.value==='Cash'?Number(r.querySelector('.p-amt')?.value||0):0),0);
+    const expected=n('sOpen')+n('sCash')-cashExpenses-cashVendors-cashStaff;
+    const diff=n('sPhysical')-expected,openDiff=n('sOpen')-systemOpening;
+    view.querySelector('#netSale').textContent=money(net);view.querySelector('#expectedCash').textContent=money(expected);view.querySelector('#cashDiff').textContent=money(Math.abs(diff));
+    const dc=view.querySelector('#differenceCard');dc.classList.toggle('negative',diff<0);dc.classList.toggle('positive',diff>0);
+    view.querySelector('#cashStatus').innerHTML=diff===0?'<span class="ok">Cash matches expected</span>':`<span class="${diff<0?'bad':'warn'}">${diff<0?'Short':'Excess'} ${money(Math.abs(diff))}</span>`;
+    view.querySelector('#openingVariance').innerHTML=openDiff===0?'<span class="ok">Matches previous closing</span>':`<span class="warn">${openDiff<0?'Opening short':'Opening excess'} ${money(Math.abs(openDiff))}</span>`;
+  }
+
   const addRow=(container,type,data={})=>{
     const row=document.createElement('div');row.className='summary-entry-row '+type;
     const mode=v=>`<select class="row-mode"><option value="Cash" ${v!=='UPI'?'selected':''}>Cash</option><option value="UPI" ${v==='UPI'?'selected':''}>UPI</option></select>`;
@@ -416,25 +430,12 @@ async function renderDailySummary(view, supabase, profile) {
   const savedExpenses=ev.data||[];
   fixedExpenseCategories.forEach(category=>{
     const found=savedExpenses.find(x=>String(x.category||'').toLowerCase()===category.toLowerCase() || (category==='Maintenance'&&String(x.category||'').toLowerCase()==='mainten'));
-    addRow(view.querySelector('#expenseRows'),'expense',found||{category,amount:0,mode:'Cash',fixed:true});
+    addRow(view.querySelector('#expenseRows'),'expense',found?{...found,fixed:true}:{category,amount:0,mode:'Cash',fixed:true});
   });
   savedExpenses.filter(x=>!fixedExpenseCategories.some(category=>String(x.category||'').toLowerCase()===category.toLowerCase() || (category==='Maintenance'&&String(x.category||'').toLowerCase()==='mainten'))).forEach(x=>addRow(view.querySelector('#expenseRows'),'expense',x));
   (vv.data||[]).forEach(x=>addRow(view.querySelector('#vendorRows'),'vendor',x));
   (sv.data||[]).forEach(x=>addRow(view.querySelector('#staffRows'),'staff',x));
 
-  const n=id=>Number(view.querySelector('#'+id)?.value||0);
-  const calc=()=>{
-    const net=n('sCash')+n('sUpi')+n('sSwPay')+n('sZoPay')+n('sOwn')-n('sDisc');
-    const cashExpenses=[...view.querySelectorAll('#expenseRows .summary-entry-row')].reduce((sum,r)=>sum+(r.querySelector('.row-mode')?.value==='Cash'?Number(r.querySelector('.e-amt')?.value||0):0),0);
-    const cashVendors=[...view.querySelectorAll('#vendorRows .summary-entry-row')].reduce((sum,r)=>sum+(r.querySelector('.row-mode')?.value==='Cash'?Number(r.querySelector('.v-amt')?.value||0):0),0);
-    const cashStaff=[...view.querySelectorAll('#staffRows .summary-entry-row')].reduce((sum,r)=>sum+(r.querySelector('.row-mode')?.value==='Cash'?Number(r.querySelector('.p-amt')?.value||0):0),0);
-    const expected=n('sOpen')+n('sCash')-cashExpenses-cashVendors-cashStaff;
-    const diff=n('sPhysical')-expected,openDiff=n('sOpen')-systemOpening;
-    view.querySelector('#netSale').textContent=money(net);view.querySelector('#expectedCash').textContent=money(expected);view.querySelector('#cashDiff').textContent=money(Math.abs(diff));
-    const dc=view.querySelector('#differenceCard');dc.classList.toggle('negative',diff<0);dc.classList.toggle('positive',diff>0);
-    view.querySelector('#cashStatus').innerHTML=diff===0?'<span class="ok">Cash matches expected</span>':`<span class="${diff<0?'bad':'warn'}">${diff<0?'Short':'Excess'} ${money(Math.abs(diff))}</span>`;
-    view.querySelector('#openingVariance').innerHTML=openDiff===0?'<span class="ok">Matches previous closing</span>':`<span class="warn">${openDiff<0?'Opening short':'Opening excess'} ${money(Math.abs(openDiff))}</span>`;
-  };
   view.querySelectorAll('#sOpen,#sCash,#sUpi,#sSwGross,#sSwPay,#sZoGross,#sZoPay,#sOwn,#sDisc,#sPhysical').forEach(el=>el.addEventListener('input',calc));
   view.querySelector('#sSwGross').addEventListener('input',e=>{view.querySelector('#sSwPay').value=(Number(e.target.value||0)*swRate).toFixed(2);calc();});
   view.querySelector('#sZoGross').addEventListener('input',e=>{view.querySelector('#sZoPay').value=(Number(e.target.value||0)*zoRate).toFixed(2);calc();});
