@@ -72,14 +72,10 @@ async function renderLogin(root, supabase) {
           </select>
         </div>
 
-        <div class="login-step">
-          <label for="pin">PIN</label>
-          <input id="pin" inputmode="numeric" autocomplete="current-password" maxlength="8" type="password" placeholder="Enter PIN" disabled>
-        </div>
+        <div id="pin-login-area"><div class="login-step"><label for="pin">PIN</label><input id="pin" inputmode="numeric" autocomplete="current-password" maxlength="8" type="password" placeholder="Enter PIN" disabled></div><button id="login-btn" class="primary full" disabled>Sign in</button></div>
+        <div id="pin-setup-area" hidden><div class="notice">First login: enter the one-time setup code given by the owner, then choose your private PIN.</div><div class="login-step"><label for="setup-code">Setup code</label><input id="setup-code" inputmode="numeric" maxlength="6" placeholder="6-digit code"></div><div class="login-step"><label for="new-pin">Choose your PIN</label><input id="new-pin" inputmode="numeric" maxlength="8" type="password" placeholder="4–8 digits"></div><button id="setup-btn" class="primary full">Create my PIN</button></div>
 
-        <button id="login-btn" class="primary full" disabled>Sign in</button>
-        <div id="login-error" class="form-error" hidden></div>
-        <p class="login-note">First-time PIN setup and account activation will be managed through the owner workflow.</p>
+        <p class="login-note">Your PIN is private. The owner does not need to know it.</p>
       </section>
     </main>
   `;
@@ -88,8 +84,14 @@ async function renderLogin(root, supabase) {
   const nameSelect = root.querySelector('#name-select');
   const pin = root.querySelector('#pin');
   const loginBtn = root.querySelector('#login-btn');
+  const loginArea = root.querySelector('#pin-login-area');
+  const setupArea = root.querySelector('#pin-setup-area');
+  const setupBtn = root.querySelector('#setup-btn');
+  const setupCode = root.querySelector('#setup-code');
+  const newPin = root.querySelector('#new-pin');
   const errorBox = root.querySelector('#login-error');
   let selectedOutlet = null;
+  let selectedPerson = null;
 
   outletChoice.addEventListener('click', e => {
     const button = e.target.closest('[data-outlet]');
@@ -106,10 +108,26 @@ async function renderLogin(root, supabase) {
   });
 
   nameSelect.addEventListener('change', () => {
-    pin.disabled = !nameSelect.value;
-    loginBtn.disabled = true;
-    if (!nameSelect.value) return;
-    pin.focus();
+    selectedPerson = (directory || []).find(u => u.id === nameSelect.value) || null;
+    const needsSetup = !!selectedPerson && !selectedPerson.pin_set;
+    setupArea.hidden = !needsSetup; loginArea.hidden = needsSetup;
+    pin.disabled = !nameSelect.value || needsSetup; loginBtn.disabled = true; errorBox.hidden = true;
+    if (!nameSelect.value) { setupArea.hidden = true; loginArea.hidden = false; return; }
+    if (!needsSetup) pin.focus();
+  });
+
+  setupBtn.addEventListener('click', async () => {
+    errorBox.hidden = true;
+    const code = setupCode.value.replace(/\D/g,'').slice(0,6), chosenPin = newPin.value.replace(/\D/g,'').slice(0,8);
+    setupCode.value=code; newPin.value=chosenPin;
+    if(!selectedPerson || code.length!==6 || chosenPin.length<4){errorBox.textContent='Enter the 6-digit setup code and a 4–8 digit PIN.';errorBox.hidden=false;return;}
+    setupBtn.disabled=true;setupBtn.textContent='Creating PIN…';
+    try{
+      const url = import.meta.env.VITE_SUPABASE_URL + '/functions/v1/chaitracker-login';
+      const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY},body:JSON.stringify({user_id:selectedPerson.id,mode:'setup',setup_code:code,new_pin:chosenPin})});
+      const payload=await response.json(); if(!response.ok||!payload.success)throw new Error(payload.error||'PIN setup failed.');
+      setupArea.hidden=true;loginArea.hidden=false;pin.disabled=false;pin.value=chosenPin;loginBtn.disabled=false;errorBox.textContent='PIN created. You can now sign in.';errorBox.hidden=false;
+    }catch(err){errorBox.textContent=err.message||'PIN setup failed.';errorBox.hidden=false;}finally{setupBtn.disabled=false;setupBtn.textContent='Create my PIN';}
   });
 
   pin.addEventListener('input', () => {
