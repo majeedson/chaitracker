@@ -35,3 +35,4 @@ button{cursor:pointer}
 @media(max-width:600px){.purchase-item-head{display:none}.purchase-entry-row{grid-template-columns:1fr 1fr}.purchase-entry-row .purItem{grid-column:1 / -1}.purchase-entry-row .remove-pur-row{grid-column:2}.purchase-entry-row .purUnit{grid-column:1}.purchase-total{text-align:left}}
 
 .permissions-box{margin:14px 0;padding:14px;border:1px solid #eee;border-radius:12px;background:#fafafa}.permission-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}.permission-grid label{font-size:13px;font-weight:650}.permission-grid input{margin-right:7px}.status-ok{font-weight:750}.status-warn{font-weight:750}
+.setup-code{display:inline-block;margin-top:7px;padding:8px 12px;border-radius:9px;background:#fff;font-family:'DM Mono',monospace;letter-spacing:.15em;font-size:18px}
