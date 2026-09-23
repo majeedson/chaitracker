@@ -1,14 +1,13 @@
-const APP_BUILD = 29;
+const APP_BUILD = 30;
 const modules = [
-  ['home', 'My Day'],
-  ['attendance', 'Attendance'],
-  ['stock', 'Stock'],
-  ['purchase', 'Purchases'],
-  ['po', 'Purchase Order'],
-  ['summary', 'Daily Summary'],
-  ['delta', 'Delta'],
-  ['salary', 'Salary'],
   ['dashboard', 'Dashboard'],
+  ['attendance', 'Attendance'],
+  ['salary', 'Salary'],
+  ['stock', 'Stock'],
+  ['purchase', 'Purchase'],
+  ['summary', 'Daily Summary'],
+  ['po', 'Purchase Order'],
+  ['delta', 'Delta'],
   ['people', 'People']
 ];
 
@@ -60,7 +59,7 @@ export async function renderApp(root, supabase) {
   const authId = authUser?.user?.id;
   const { data: profile } = await supabase
     .from('users')
-    .select('id,name,role,outlet_id,can_switch_outlet,active,outlets(name,theme_key,theme_color)')
+    .select('id,name,role,outlet_id,can_switch_outlet,active,access_class,is_super_user,outlets(name,theme_key,theme_color)')
     .eq('auth_user_id', authId)
     .maybeSingle();
 
@@ -209,74 +208,53 @@ async function renderLogin(root, supabase) {
   }
 }
 function renderWorkspace(root, supabase, profile) {
-  const isOwner = profile.role === 'Owner';
-  const visibleModules = modules.filter(([id]) => isOwner || !['salary','dashboard','delta'].includes(id));
+  const isAdmin = profile.access_class === 'ADMIN';
+  const isManager = ['Manager','Ops Manager'].includes(profile.role);
+  const allowedIds = isAdmin
+    ? ['dashboard','attendance','salary','stock','purchase','summary','po','delta','people']
+    : isManager
+      ? ['attendance','salary','stock','purchase','summary']
+      : ['attendance','salary','stock','purchase'];
+  const visibleModules = modules.filter(([id]) => allowedIds.includes(id));
+  const landing = isAdmin ? 'dashboard' : 'attendance';
 
   root.innerHTML = `
     <div class="app-shell">
       <header class="topbar app-topbar">
         <div class="topbar-leading">
           <button id="drawer-open" class="nav-icon-button" aria-label="Open app menu">${icon('menu',22)}</button>
-          <button id="brand-home" class="brand-button" aria-label="Go to My Day">
+          <button id="brand-home" class="brand-button" aria-label="Go to landing page">
             <span class="brand">CafeTracker</span>
-            <span class="subtitle">${escapeHtml(profile.name)} · ${escapeHtml(profile.role)}</span>
+            <span class="subtitle">${escapeHtml(profile.name)} · ${isAdmin?'Admin':escapeHtml(profile.role)}</span>
           </button>
         </div>
         <div class="topbar-actions">
-          <span class="outlet-badge">${isOwner ? 'All outlets' : 'Assigned outlet'}</span>
+          <span class="outlet-badge">${isAdmin ? 'All cafés' : escapeHtml(profile.outlets?.name||'Assigned outlet')}</span>
           <button id="logout" class="nav-icon-button" aria-label="Logout">${icon('logout',20)}</button>
         </div>
       </header>
-
       <div id="drawer-scrim" class="drawer-scrim" hidden></div>
       <aside id="app-drawer" class="app-drawer" aria-hidden="true">
-        <div class="drawer-head">
-          <div><div class="drawer-brand">CafeTracker</div><div class="drawer-caption">Navigate</div></div>
-          <button id="drawer-close" class="nav-icon-button" aria-label="Close menu">${icon('close',22)}</button>
-        </div>
-        <nav class="drawer-nav">
-          ${visibleModules.map(([id,label]) => `
-            <button class="drawer-item" data-module="${id}">
-              <span class="drawer-item-icon">${icon(id,21)}</span>
-              <span>${label}</span>
-              <span class="drawer-chevron">›</span>
-            </button>`).join('')}
-        </nav>
-        <div class="drawer-footer">
-          <span class="outlet-dot"></span>
-          <div><strong>${escapeHtml(profile.outlets?.name || (isOwner ? 'All outlets' : 'CafeTracker'))}</strong><small>${escapeHtml(profile.name)}</small></div>
-        </div>
+        <div class="drawer-head"><div><div class="drawer-brand">CafeTracker</div><div class="drawer-caption">${isAdmin?'Administration':'Your workspace'}</div></div><button id="drawer-close" class="nav-icon-button" aria-label="Close menu">${icon('close',22)}</button></div>
+        <nav class="drawer-nav">${visibleModules.map(([id,label])=>`<button class="drawer-item" data-module="${id}"><span class="drawer-item-icon">${icon(id,21)}</span><span>${label}</span><span class="drawer-chevron">›</span></button>`).join('')}</nav>
+        <div class="drawer-footer"><span class="outlet-dot"></span><div><strong>${escapeHtml(profile.outlets?.name || (isAdmin?'All cafés':'CafeTracker'))}</strong><small>${escapeHtml(profile.name)}</small></div></div>
       </aside>
-
-      <main class="content app-content">
-        <section id="module-view" class="card module-view"></section>
-      </main>
-    </div>
-  `;
+      <main class="content app-content"><section id="module-view" class="card module-view"></section></main>
+    </div>`;
 
   const drawer=root.querySelector('#app-drawer'),scrim=root.querySelector('#drawer-scrim'),view=root.querySelector('#module-view');
   const openDrawer=()=>{drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');scrim.hidden=false;requestAnimationFrame(()=>scrim.classList.add('show'));};
   const closeDrawer=()=>{drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');scrim.classList.remove('show');setTimeout(()=>{scrim.hidden=true;},180);};
-  const openModule=async(module,button=null)=>{
+  const openModule=async module=>{
     root.querySelectorAll('.drawer-item').forEach(b=>b.classList.toggle('active',b.dataset.module===module));
-    closeDrawer();
-    window.scrollTo({top:0,behavior:'instant'});
-    await loadModule(view,supabase,profile,module);
-    view.scrollIntoView({block:'start',behavior:'instant'});
+    closeDrawer();window.scrollTo({top:0,behavior:'instant'});await loadModule(view,supabase,profile,module);view.scrollIntoView({block:'start',behavior:'instant'});
   };
-
-  root.querySelector('#drawer-open').onclick=openDrawer;
-  root.querySelector('#drawer-close').onclick=closeDrawer;
-  scrim.onclick=closeDrawer;
-  root.querySelector('#brand-home').onclick=()=>openModule(isOwner?'home':'attendance');
-  root.querySelector('#logout').addEventListener('click', async () => {
-    await supabase.auth.signOut();
-    await renderApp(root, supabase);
-  });
-  root.querySelectorAll('.drawer-item').forEach(button=>button.addEventListener('click',()=>openModule(button.dataset.module,button)));
+  root.querySelector('#drawer-open').onclick=openDrawer;root.querySelector('#drawer-close').onclick=closeDrawer;scrim.onclick=closeDrawer;
+  root.querySelector('#brand-home').onclick=()=>openModule(landing);
+  root.querySelector('#logout').addEventListener('click',async()=>{await supabase.auth.signOut();await renderApp(root,supabase);});
+  root.querySelectorAll('.drawer-item').forEach(button=>button.addEventListener('click',()=>openModule(button.dataset.module)));
   document.onkeydown=e=>{if(e.key==='Escape')closeDrawer();};
-
-  openModule(isOwner ? 'home' : 'attendance');
+  openModule(landing);
 }
 async function loadModule(view, supabase, profile, module) {
   view.innerHTML = '<div class="loading">Loading…</div>';
@@ -288,7 +266,6 @@ async function loadModule(view, supabase, profile, module) {
   if (module === 'people') { await renderPeople(view, supabase, profile); return; }
 
   const labels = {
-    home: ['My Day', profile.role === 'Owner' ? 'Owner command center foundation is ready.' : 'Your personal workspace is ready.'],
     stock: ['Stock', 'Inventory workflow is the next operations module.'],
     purchase: ['Purchases', 'Purchase entry will connect to vendors, items and business dates.'],
     po: ['Purchase Order', 'Purchase orders will be generated from stock intelligence.'],
@@ -298,7 +275,7 @@ async function loadModule(view, supabase, profile, module) {
     dashboard: ['Dashboard', 'The owner dashboard will aggregate operational performance.']
   };
 
-  const [title, copy] = labels[module] || labels.home;
+  const [title, copy] = labels[module] || ['CafeTracker','Module unavailable.'];
   view.innerHTML = `
     <span class="eyebrow">CafeTracker</span>
     <h2>${title}</h2>
