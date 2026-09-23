@@ -28,6 +28,8 @@ jobs:
           VITE_SUPABASE_URL: https://vfplweiufinrcasuntgn.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_5j3rxmlGUbsllKoSInzkGQ_qQ41k-Ba
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
