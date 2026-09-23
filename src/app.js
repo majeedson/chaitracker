@@ -346,97 +346,121 @@ async function renderDailySummary(view, supabase, profile) {
 }
 
 
-async function renderPeople(view, supabase, profile) {
+async async function renderPeople(view, supabase, profile) {
   if (profile.role !== 'Owner') {
     view.innerHTML = '<span class="eyebrow">People</span><h2>Owner access required</h2>';
     return;
   }
 
-  const [{ data: outlets }, { data: staffRows }] = await Promise.all([
-    supabase.from('outlets').select('id,name').order('id'),
-    supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,users:users!staff_id(id,role,pin_set_at)').order('name')
-  ]);
+  const loadData = async () => {
+    const [{ data: outlets }, { data: staffRows }] = await Promise.all([
+      supabase.from('outlets').select('id,name').order('id'),
+      supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,notes,users:users!staff_id(id,role,pin_set_at,permissions)').order('name')
+    ]);
+    return { outlets: outlets || [], staffRows: staffRows || [] };
+  };
+
+  let { outlets, staffRows } = await loadData();
 
   view.innerHTML = `
-    <div class="section-heading">
-      <div><span class="eyebrow">People</span><h2>Staff & Users</h2></div>
-      <span class="soft-badge">${(staffRows || []).filter(s => s.active).length} active</span>
-    </div>
-
+    <div class="section-heading"><div><span class="eyebrow">People</span><h2>Staff & Users</h2></div><span class="soft-badge" id="staffCount"></span></div>
     <div class="subsection">
-      <div class="section-heading"><h3>Add staff member</h3><span class="hint">PIN is set by the staff member later</span></div>
+      <div class="section-heading"><h3>Add staff member</h3><span class="hint">Employee creates their own private PIN</span></div>
       <div class="form-grid">
         <label>Full name<input id="staffName" placeholder="Staff name"></label>
-        <label>Outlet<select id="staffOutlet">${(outlets || []).map(o => `<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></label>
+        <label>Outlet<select id="staffOutlet">${outlets.map(o => `<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></label>
         <label>Role<select id="staffRole"><option>Staff</option><option>Manager</option><option>Ops Manager</option></select></label>
         <label>Joining date<input id="staffJoining" type="date" value="${new Date().toISOString().slice(0,10)}"></label>
         <label>Agreed basic salary<input id="staffSalary" type="number" min="0" step="0.01" placeholder="0.00"></label>
       </div>
-      <div class="permissions-box">
-        <div class="card-label">Access permissions</div>
-        <div class="permission-grid">
-          <label><input type="checkbox" id="permAttendance" checked> Attendance</label>
-          <label><input type="checkbox" id="permPurchase" checked> Purchases</label>
-          <label><input type="checkbox" id="permSummary" checked> Daily Summary</label>
-          <label><input type="checkbox" id="permStock" checked> Stock</label>
-        </div>
-      </div>
-      <button id="addStaffBtn" class="primary">Add staff member</button>
-      <div id="staffFormMsg"></div>
+      <div class="permissions-box"><div class="card-label">Access permissions</div><div class="permission-grid">
+        <label><input type="checkbox" id="permAttendance" checked> Attendance</label>
+        <label><input type="checkbox" id="permPurchase" checked> Purchases</label>
+        <label><input type="checkbox" id="permSummary" checked> Daily Summary</label>
+        <label><input type="checkbox" id="permStock" checked> Stock</label>
+      </div></div>
+      <button id="addStaffBtn" class="primary">Add staff member</button><div id="staffFormMsg"></div>
     </div>
-
-    <div class="subsection">
-      <div class="section-heading"><h3>Current staff</h3><span class="hint">Employment and login status</span></div>
-      <div id="staffList"></div>
-    </div>
+    <div class="subsection"><div class="section-heading"><h3>Current staff</h3><span class="hint">Select a person to manage their employment and access</span></div><div id="staffList"></div></div>
   `;
 
   const renderList = () => {
-    const outletMap = new Map((outlets || []).map(o => [Number(o.id), o.name]));
-    const rows = staffRows || [];
-    view.querySelector('#staffList').innerHTML = rows.length ? `
-      <div class="table-wrap"><table>
-        <thead><tr><th>Name</th><th>Outlet</th><th>Role</th><th>Joining</th><th>Salary</th><th>PIN</th><th>Status</th></tr></thead>
-        <tbody>${rows.map(s => {
-          const u = Array.isArray(s.users) ? s.users[0] : s.users;
-          return `<tr>
-            <td><strong>${escapeHtml(s.name)}</strong></td>
-            <td>${escapeHtml(outletMap.get(Number(s.outlet_id)) || '—')}</td>
-            <td>${escapeHtml(u?.role || 'Staff')}</td>
-            <td>${escapeHtml(s.joining_date || '—')}</td>
-            <td>${Number(s.basic_salary || 0).toFixed(2)}</td>
-            <td>${u?.pin_set_at ? '<span class="status-ok">Set</span>' : '<span class="status-warn">Not set</span>'}</td>
-            <td>${s.active ? '<span class="status-ok">Active</span>' : '<span class="status-warn">Inactive</span>'}</td>
-          </tr>`;
-        }).join('')}</tbody>
-      </table></div>` : '<div class="notice">No staff records yet.</div>';
+    view.querySelector('#staffCount').textContent = `${staffRows.filter(s => s.active).length} active`;
+    const outletMap = new Map(outlets.map(o => [Number(o.id), o.name]));
+    view.querySelector('#staffList').innerHTML = staffRows.length ? `
+      <div class="table-wrap"><table><thead><tr><th>Name</th><th>Outlet</th><th>Role</th><th>Joining</th><th>Salary</th><th>PIN</th><th>Status</th><th></th></tr></thead>
+      <tbody>${staffRows.map(s => {
+        const u=Array.isArray(s.users)?s.users[0]:s.users;
+        return `<tr><td><strong>${escapeHtml(s.name)}</strong></td><td>${escapeHtml(outletMap.get(Number(s.outlet_id))||'—')}</td><td>${escapeHtml(u?.role||'Staff')}</td><td>${escapeHtml(s.joining_date||'—')}</td><td>${Number(s.basic_salary||0).toFixed(2)}</td><td>${u?.pin_set_at?'<span class="status-ok">Set</span>':'<span class="status-warn">Not set</span>'}</td><td>${s.active?'<span class="status-ok">Active</span>':'<span class="status-warn">Inactive</span>'}</td><td><button class="secondary manage-staff" data-id="${s.id}">Manage</button></td></tr>`;
+      }).join('')}</tbody></table></div>` : '<div class="notice">No staff records yet.</div>';
+
+    view.querySelectorAll('.manage-staff').forEach(btn => btn.onclick = () => openEditor(Number(btn.dataset.id)));
   };
+
+  const openEditor = (staffId) => {
+    const s=staffRows.find(x=>Number(x.id)===staffId); if(!s)return;
+    const u=Array.isArray(s.users)?s.users[0]:s.users;
+    const perms=u?.permissions||{};
+    view.querySelector('#staffList').innerHTML=`
+      <div class="card staff-editor">
+        <div class="section-heading"><div><span class="eyebrow">Staff profile</span><h3>${escapeHtml(s.name)}</h3></div><button id="cancelEdit" class="ghost">Cancel</button></div>
+        <div class="form-grid">
+          <label>Full name<input id="editName" value="${escapeHtml(s.name)}"></label>
+          <label>Outlet<select id="editOutlet">${outlets.map(o=>`<option value="${o.id}" ${Number(o.id)===Number(s.outlet_id)?'selected':''}>${escapeHtml(o.name)}</option>`).join('')}</select></label>
+          <label>Role<select id="editRole">${['Staff','Manager','Ops Manager'].map(r=>`<option ${r===(u?.role||'Staff')?'selected':''}>${r}</option>`).join('')}</select></label>
+          <label>Joining date<input id="editJoining" type="date" value="${escapeHtml(s.joining_date||'')}"></label>
+          <label>Basic salary<input id="editSalary" type="number" min="0" step="0.01" value="${Number(s.basic_salary||0)}"></label>
+        </div>
+        <label>Notes<textarea id="editNotes" rows="3" placeholder="Optional employment notes">${escapeHtml(s.notes||'')}</textarea>
+        <div class="permissions-box"><div class="card-label">Access permissions</div><div class="permission-grid">
+          <label><input type="checkbox" id="editAttendance" ${perms.attendance!==false?'checked':''}> Attendance</label>
+          <label><input type="checkbox" id="editPurchase" ${perms.purchase!==false?'checked':''}> Purchases</label>
+          <label><input type="checkbox" id="editSummary" ${perms.summary!==false?'checked':''}> Daily Summary</label>
+          <label><input type="checkbox" id="editStock" ${perms.stock!==false?'checked':''}> Stock</label>
+        </div></div>
+        <label class="toggle-row"><input type="checkbox" id="editActive" ${s.active?'checked':''}> Employee is active</label>
+        <div id="editMsg"></div>
+        <div class="action-row"><button id="saveStaff" class="primary">Save changes</button><button id="resetPin" class="secondary">Reset PIN setup</button></div>
+      </div>`;
+    view.querySelector('#cancelEdit').onclick=renderList;
+    view.querySelector('#saveStaff').onclick=async()=>{
+      const msg=view.querySelector('#editMsg'),btn=view.querySelector('#saveStaff');
+      const permissions={attendance:view.querySelector('#editAttendance').checked,purchase:view.querySelector('#editPurchase').checked,summary:view.querySelector('#editSummary').checked,stock:view.querySelector('#editStock').checked,salary:false};
+      btn.disabled=true;btn.textContent='Saving…';
+      try{
+        const {error}=await supabase.rpc('owner_update_staff',{p_staff_id:staffId,p_name:view.querySelector('#editName').value.trim(),p_outlet_id:Number(view.querySelector('#editOutlet').value),p_role:view.querySelector('#editRole').value,p_basic_salary:Number(view.querySelector('#editSalary').value||0),p_joining_date:view.querySelector('#editJoining').value,p_active:view.querySelector('#editActive').checked,p_permissions:permissions,p_notes:view.querySelector('#editNotes').value});
+        if(error)throw error;
+        ({outlets,staffRows}=await loadData()); view.querySelector('#staffList').innerHTML='<div class="notice">Staff profile updated.</div>'; renderList();
+      }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to save changes.')+'</p>';}
+      finally{btn.disabled=false;btn.textContent='Save changes';}
+    };
+    view.querySelector('#resetPin').onclick=async()=>{
+      const msg=view.querySelector('#editMsg'),btn=view.querySelector('#resetPin');
+      btn.disabled=true;btn.textContent='Resetting…';
+      try{
+        const {data,error}=await supabase.rpc('owner_reset_staff_pin_setup',{p_staff_id:staffId});
+        if(error)throw error;
+        msg.innerHTML='<div class="notice"><strong>New setup code:</strong> <strong class="setup-code">'+escapeHtml(data.setup_code)+'</strong><br><span class="hint">Give this code to the employee. It expires in 24 hours. Their old PIN no longer works.</span></div>';
+        ({outlets,staffRows}=await loadData());
+      }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to reset PIN.')+'</p>';}
+      finally{btn.disabled=false;btn.textContent='Reset PIN setup';}
+    };
+  };
+
   renderList();
 
-  view.querySelector('#addStaffBtn').onclick = async () => {
-    const btn=view.querySelector('#addStaffBtn'), msg=view.querySelector('#staffFormMsg');
-    const name=view.querySelector('#staffName').value.trim();
-    const outletId=Number(view.querySelector('#staffOutlet').value);
-    const role=view.querySelector('#staffRole').value;
-    const joining=view.querySelector('#staffJoining').value;
-    const salary=Number(view.querySelector('#staffSalary').value || 0);
-    const permissions={
-      attendance:view.querySelector('#permAttendance').checked,
-      purchase:view.querySelector('#permPurchase').checked,
-      summary:view.querySelector('#permSummary').checked,
-      stock:view.querySelector('#permStock').checked,
-      salary:false
-    };
-    if(!name || !joining || salary<=0){msg.innerHTML='<p class="form-error">Name, joining date and agreed salary are required.</p>';return;}
+  view.querySelector('#addStaffBtn').onclick=async()=>{
+    const btn=view.querySelector('#addStaffBtn'),msg=view.querySelector('#staffFormMsg');
+    const name=view.querySelector('#staffName').value.trim(),outletId=Number(view.querySelector('#staffOutlet').value),role=view.querySelector('#staffRole').value,joining=view.querySelector('#staffJoining').value,salary=Number(view.querySelector('#staffSalary').value||0);
+    const permissions={attendance:view.querySelector('#permAttendance').checked,purchase:view.querySelector('#permPurchase').checked,summary:view.querySelector('#permSummary').checked,stock:view.querySelector('#permStock').checked,salary:false};
+    if(!name||!joining||salary<=0){msg.innerHTML='<p class="form-error">Name, joining date and agreed salary are required.</p>';return;}
     btn.disabled=true;btn.textContent='Adding…';msg.innerHTML='';
     try{
       const {data:created,error}=await supabase.rpc('owner_add_staff',{p_name:name,p_outlet_id:outletId,p_role:role,p_basic_salary:salary,p_joining_date:joining,p_permissions:permissions});
-      if(error) throw error;
-      const setupCode=created?.setup_code || '';
-      msg.innerHTML='<div class="notice"><strong>Staff member added.</strong><br>Give this one-time setup code to the employee: <strong class="setup-code">'+escapeHtml(setupCode)+'</strong><br><span class="hint">It expires in 24 hours and is used only to create their private PIN.</span></div>';
+      if(error)throw error;
+      msg.innerHTML='<div class="notice"><strong>Staff member added.</strong><br>Give this one-time setup code to the employee: <strong class="setup-code">'+escapeHtml(created?.setup_code||'')+'</strong><br><span class="hint">It expires in 24 hours and is used only to create their private PIN.</span></div>';
       view.querySelector('#staffName').value='';view.querySelector('#staffSalary').value='';
-      const {data}=await supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,users:users!staff_id(id,role,pin_set_at)').order('name');
-      staffRows.splice(0,staffRows.length,...(data||[])); renderList();
+      ({outlets,staffRows}=await loadData());renderList();
     }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to add staff.')+'</p>';}
     finally{btn.disabled=false;btn.textContent='Add staff member';}
   };
