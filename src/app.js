@@ -1,4 +1,4 @@
-const APP_BUILD = 26;
+const APP_BUILD = 27;
 const modules = [
   ['home', 'My Day'],
   ['attendance', 'Attendance'],
@@ -571,14 +571,16 @@ async function renderPeople(view, supabase, profile) {
   }
 
   const loadData = async () => {
-    const [{ data: outlets }, { data: staffRows }] = await Promise.all([
+    const [{ data: outlets, error: outletError }, { data: staffRows, error: staffError }, { data: adminRows, error: adminError }] = await Promise.all([
       supabase.from('outlets').select('id,name').order('id'),
-      supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status,status_effective_from,status_note,notes,users:users!staff_id(id,role,pin_set_at,permissions)').order('name')
+      supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status,status_effective_from,status_note,notes,users:users!staff_id(id,role,pin_set_at,permissions)').order('name'),
+      supabase.from('login_directory').select('id,name,active,is_super_user,access_class').eq('access_class','ADMIN').order('name')
     ]);
-    return { outlets: outlets || [], staffRows: staffRows || [] };
+    if(outletError)throw outletError;if(staffError)throw staffError;if(adminError)throw adminError;
+    return { outlets: outlets || [], staffRows: staffRows || [], adminRows: adminRows || [] };
   };
 
-  let { outlets, staffRows } = await loadData();
+  let { outlets, staffRows, adminRows } = await loadData();
 
   view.innerHTML = `
     <div class="section-heading"><div><span class="eyebrow">People</span><h2>Staff & Users</h2></div><span class="soft-badge" id="staffCount"></span></div>
@@ -673,7 +675,7 @@ async function renderPeople(view, supabase, profile) {
         const {error:statusError}=await supabase.rpc('owner_set_staff_status',{p_staff_id:staffId,p_status:view.querySelector('#editEmploymentStatus').value,p_effective_from:view.querySelector('#editStatusDate').value,p_note:view.querySelector('#editStatusNote').value.trim()||null});
         if(statusError)throw statusError;
         if(error)throw error;
-        ({outlets,staffRows}=await loadData()); view.querySelector('#staffList').innerHTML='<div class="notice">Staff profile updated.</div>'; renderList();
+        ({outlets,staffRows,adminRows}=await loadData()); view.querySelector('#staffList').innerHTML='<div class="notice">Staff profile updated.</div>'; renderList();
       }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to save changes.')+'</p>';}
       finally{btn.disabled=false;btn.textContent='Save changes';}
     };
