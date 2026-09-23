@@ -430,9 +430,10 @@ async function renderPeople(view, supabase, profile) {
     if(!name || !joining || salary<=0){msg.innerHTML='<p class="form-error">Name, joining date and agreed salary are required.</p>';return;}
     btn.disabled=true;btn.textContent='Adding…';msg.innerHTML='';
     try{
-      const {error}=await supabase.rpc('owner_add_staff',{p_name:name,p_outlet_id:outletId,p_role:role,p_basic_salary:salary,p_joining_date:joining,p_permissions:permissions});
+      const {data:created,error}=await supabase.rpc('owner_add_staff',{p_name:name,p_outlet_id:outletId,p_role:role,p_basic_salary:salary,p_joining_date:joining,p_permissions:permissions});
       if(error) throw error;
-      msg.innerHTML='<p class="status-ok">Staff member added. They can set their PIN through the first-time login flow.</p>';
+      const setupCode=created?.setup_code || '';
+      msg.innerHTML='<div class="notice"><strong>Staff member added.</strong><br>Give this one-time setup code to the employee: <strong class="setup-code">'+escapeHtml(setupCode)+'</strong><br><span class="hint">It expires in 24 hours and is used only to create their private PIN.</span></div>';
       view.querySelector('#staffName').value='';view.querySelector('#staffSalary').value='';
       const {data}=await supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,users:users!staff_id(id,role,pin_set_at)').order('name');
       staffRows.splice(0,staffRows.length,...(data||[])); renderList();
