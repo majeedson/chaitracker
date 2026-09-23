@@ -56,6 +56,7 @@ async function renderLogin(root, supabase) {
     <main class="login-shell">
       <section class="login-card">
         <div class="login-brand">ChaiTracker</div>
+        <div class="muted" style="font-size:12px;margin-top:4px">Staging build 7 · login diagnostics</div>
         <p class="login-subtitle">Choose your café and name to continue.</p>
 
         <div class="login-step">
