@@ -1,4 +1,4 @@
-const APP_BUILD = 14;
+const APP_BUILD = 15;
 const modules = [
   ['home', 'My Day'],
   ['attendance', 'Attendance'],
@@ -446,9 +446,9 @@ async function renderDailySummary(view, supabase, profile) {
   view.querySelector('#addStaff').onclick=()=>addRow(view.querySelector('#staffRows'),'staff');
 
   let counted=0;
-  const calcCounter=()=>{counted=0;view.querySelectorAll('.denom-count').forEach(input=>{const subtotal=Number(input.dataset.value)*Math.max(0,Number(input.value||0));counted+=subtotal;input.closest('label').querySelector('.denom-total').textContent=money(subtotal);});view.querySelector('#countedCash').textContent=money(counted);};
+  const calcCounter=()=>{counted=0;view.querySelectorAll('.denom-count').forEach(input=>{const subtotal=Number(input.dataset.value)*Math.max(0,Number(input.value||0));counted+=subtotal;input.closest('label').querySelector('.denom-total').textContent=money(subtotal);});view.querySelector('#countedCash').textContent=money(counted);view.querySelector('#sPhysical').value=counted;calc();};
   view.querySelectorAll('.denom-count').forEach(i=>i.addEventListener('input',calcCounter));
-  view.querySelector('#useCountedCash').onclick=()=>{view.querySelector('#sPhysical').value=counted;calc();view.querySelector('#sPhysical').scrollIntoView({behavior:'smooth',block:'center'});};
+  const useCountedBtn=view.querySelector('#useCountedCash');if(useCountedBtn)useCountedBtn.hidden=true;
 
   const disabled=!!existing?.is_closed;
   if(disabled)view.querySelectorAll('input,select,button').forEach(el=>el.disabled=true);
