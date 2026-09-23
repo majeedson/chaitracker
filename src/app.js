@@ -1,4 +1,4 @@
-const APP_BUILD = 17;
+const APP_BUILD = 18;
 const modules = [
   ['home', 'My Day'],
   ['attendance', 'Attendance'],
@@ -300,6 +300,8 @@ async function loadModule(view, supabase, profile, module) {
 
 async function renderDailySummary(view, supabase, profile) {
   const isOwner=profile.role==='Owner';
+  const canManageSummary=['Owner','Manager','Ops Manager'].includes(profile.role);
+  if(!canManageSummary){view.innerHTML='<span class="eyebrow">Daily Summary</span><h2>Manager access required</h2><p class="section-help">Daily Summary is available to managers and owners only.</p>';return;}
   const businessDate=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   let outletId=Number(profile.outlet_id||1);
   let outlets=[];
@@ -451,7 +453,20 @@ async function renderDailySummary(view, supabase, profile) {
   const useCountedBtn=view.querySelector('#useCountedCash');if(useCountedBtn)useCountedBtn.hidden=true;
 
   const disabled=!!existing?.is_closed;
-  if(disabled)view.querySelectorAll('input,select,button').forEach(el=>el.disabled=true);
+  let reopenDeadline=null,canReopen=false;
+  if(disabled){
+    const {data:deadline}=await supabase.rpc('get_daily_summary_reopen_deadline',{p_summary_id:existing.id});
+    reopenDeadline=deadline?new Date(deadline):null;
+    canReopen=isOwner||(reopenDeadline&&new Date()<reopenDeadline);
+    view.querySelectorAll('input,select,button').forEach(el=>el.disabled=true);
+    const shareBtn=view.querySelector('#whatsappSummary');if(shareBtn)shareBtn.disabled=false;
+    const actionBar=view.querySelector('.summary-actions')||view.querySelector('#closeSummary')?.parentElement;
+    if(actionBar){
+      const b=document.createElement('button');b.id='reopenSummary';b.className='primary';b.type='button';
+      b.textContent=canReopen?'Reopen Day':'Owner required to reopen';b.disabled=!canReopen;actionBar.appendChild(b);
+      if(canReopen)b.onclick=async()=>{b.disabled=true;const {error}=await supabase.rpc('reopen_daily_summary',{p_summary_id:existing.id,p_user_id:profile.id});if(error){const msg=view.querySelector('#summaryMessage');msg.textContent=error.message;msg.hidden=false;b.disabled=false;return;}await renderDailySummary(view,supabase,profile);};
+    }
+  }
   calc();calcCounter();
 
   const collect=()=>{
