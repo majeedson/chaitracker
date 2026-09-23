@@ -298,106 +298,172 @@ async function loadModule(view, supabase, profile, module) {
 }
 
 async function renderDailySummary(view, supabase, profile) {
-  const isOwner = profile.role === 'Owner';
-  const today = new Date().toISOString().slice(0,10);
-  let outletId = profile.outlet_id;
-  let outlets = [];
-  if (isOwner) {
-    const { data } = await supabase.from('outlets').select('id,name').order('id');
-    outlets = data || [];
-    outletId = outletId || outlets[0]?.id;
-  }
+  const isOwner=profile.role==='Owner';
+  const businessDate=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+  let outletId=Number(profile.outlet_id||1);
+  let outlets=[];
+  if(isOwner){const {data}=await supabase.from('outlets').select('id,name,theme_key,theme_color').order('id');outlets=data||[];outletId=Number(profile.outlet_id||outlets[0]?.id||1);}
+  const [{data:vendors},{data:staff},{data:existing},{data:previous},{data:outlet}]=await Promise.all([
+    supabase.from('vendors').select('id,name').order('name'),
+    supabase.from('staff').select('id,name,outlet_id').eq('active',true).eq('outlet_id',outletId).order('name'),
+    supabase.from('daily_summaries').select('*').eq('outlet_id',outletId).eq('business_date',businessDate).maybeSingle(),
+    supabase.from('daily_summaries').select('business_date,physical_cash').eq('outlet_id',outletId).lt('business_date',businessDate).order('business_date',{ascending:false}).limit(1).maybeSingle(),
+    supabase.from('outlets').select('name,swiggy_payout_rate,zomato_payout_rate,theme_key,theme_color').eq('id',outletId).maybeSingle()
+  ]);
+  applyTheme(outlet);
+  const swRate=Number(outlet?.swiggy_payout_rate??.5),zoRate=Number(outlet?.zomato_payout_rate??.5);
+  const systemOpening=Number(existing?.opening_cash_system??previous?.physical_cash??0);
+  const actualOpening=Number(existing?.opening_cash_actual??systemOpening);
+  const money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2});
+  const statusText=existing?('Editing · '+businessDate):('New summary · '+businessDate);
 
-  const { data: vendors } = await supabase.from('vendors').select('id,name').order('name');
+  view.innerHTML=`
+    <div class="summary-page">
+      <div class="summary-title-row">
+        <div><span class="eyebrow">Daily closing</span><h2>Daily Summary</h2><p>${escapeHtml(outlet?.name||'')} · ${businessDate}</p></div>
+        <span class="summary-state">${escapeHtml(statusText)}</span>
+      </div>
+      ${isOwner?`<section class="summary-section compact"><label class="summary-label">Café<select id="sumOutlet">${outlets.map(o=>`<option value="${o.id}" ${Number(o.id)===outletId?'selected':''}>${escapeHtml(o.name)}</option>`).join('')}</select></label></section>`:''}
 
-  const { data: existing } = await supabase
-    .from('daily_summaries')
-    .select('*')
-    .eq('outlet_id', outletId)
-    .eq('business_date', today)
-    .maybeSingle();
+      <section class="summary-section">
+        <div class="summary-section-title"><span></span><h3>Opening cash</h3></div>
+        <div class="summary-two">
+          <label class="summary-label">From previous closing<input value="${systemOpening}" disabled></label>
+          <label class="summary-label">Actual opening ₹<input id="sOpen" type="number" inputmode="decimal" value="${actualOpening}"></label>
+        </div>
+        <div id="openingVariance" class="summary-inline-status"></div>
+      </section>
 
-  const { data: outlet } = await supabase.from('outlets').select('name,swiggy_payout_rate,zomato_payout_rate').eq('id', outletId).maybeSingle();
-  const swRate = Number(outlet?.swiggy_payout_rate ?? 0.5);
-  const zoRate = Number(outlet?.zomato_payout_rate ?? 0.5);
+      <section class="summary-section">
+        <div class="summary-section-title"><span></span><h3>Sales</h3></div>
+        <div class="summary-two">
+          <label class="summary-label">Cash ₹<input id="sCash" type="number" inputmode="decimal" value="${existing?.cash_sale??0}"></label>
+          <label class="summary-label">UPI ₹<input id="sUpi" type="number" inputmode="decimal" value="${existing?.upi_sale??0}"></label>
+          <label class="summary-label">Swiggy on app ₹<input id="sSwGross" type="number" inputmode="decimal" value="${existing?.swiggy_gross??0}"></label>
+          <label class="summary-label">Swiggy payout ₹ <small>(${Math.round(swRate*100)}%)</small><input id="sSwPay" type="number" inputmode="decimal" value="${existing?.swiggy_payout??0}"></label>
+          <label class="summary-label">Zomato on app ₹<input id="sZoGross" type="number" inputmode="decimal" value="${existing?.zomato_gross??0}"></label>
+          <label class="summary-label">Zomato payout ₹ <small>(${Math.round(zoRate*100)}%)</small><input id="sZoPay" type="number" inputmode="decimal" value="${existing?.zomato_payout??0}"></label>
+        </div>
+        <label class="summary-label full-field">Own digital ₹<input id="sOwn" type="number" inputmode="decimal" value="${existing?.own_digital??0}"></label>
+        <label class="summary-label full-field">Discount ₹<input id="sDisc" type="number" inputmode="decimal" value="${existing?.discount??0}"></label>
+        <div class="summary-total accent"><span>Net sale</span><strong id="netSale">₹0</strong></div>
+      </section>
 
-  view.innerHTML = `
-    <div class="section-heading"><div><span class="eyebrow">Closing</span><h2>Daily Summary</h2></div><span class="soft-badge">${escapeHtml(outlet?.name || '')} · ${today}</span></div>
-    ${isOwner ? `<div class="field-row"><label>Outlet<select id="sumOutlet">${outlets.map(o => `<option value="${o.id}" ${Number(o.id)===Number(outletId)?'selected':''}>${escapeHtml(o.name)}</option>`).join('')}</select></label></div>` : ''}
-    <div class="form-grid">
-      <label>Cash sale<input id="sCash" type="number" step="0.01" value="${existing?.cash_sale ?? 0}"></label>
-      <label>UPI sale<input id="sUpi" type="number" step="0.01" value="${existing?.upi_sale ?? 0}"></label>
-      <label>Swiggy gross<input id="sSwGross" type="number" step="0.01" value="${existing?.swiggy_gross ?? 0}"></label>
-      <label>Swiggy payout <span class="hint">rate ${Math.round(swRate*100)}%</span><input id="sSwPay" type="number" step="0.01" value="${existing?.swiggy_payout ?? 0}"></label>
-      <label>Zomato gross<input id="sZoGross" type="number" step="0.01" value="${existing?.zomato_gross ?? 0}"></label>
-      <label>Zomato payout <span class="hint">rate ${Math.round(zoRate*100)}%</span><input id="sZoPay" type="number" step="0.01" value="${existing?.zomato_payout ?? 0}"></label>
-      <label>Own digital<input id="sOwn" type="number" step="0.01" value="${existing?.own_digital ?? 0}"></label>
-      <label>Discount<input id="sDisc" type="number" step="0.01" value="${existing?.discount ?? 0}"></label>
-      <label>Opening cash actual<input id="sOpen" type="number" step="0.01" value="${existing?.opening_cash_actual ?? 0}"></label>
-      <label>Physical cash<input id="sPhysical" type="number" step="0.01" value="${existing?.physical_cash ?? 0}"></label>
-    </div>
-    <div class="summary-preview" id="sumPreview"></div>
-    <div class="subsection"><h3>Expenses</h3><div id="expenseRows"></div><button id="addExpense" class="secondary">+ Add expense</button></div>
-    <div class="subsection"><h3>Vendor payments</h3><div id="vendorRows"></div><button id="addVendor" class="secondary">+ Add vendor payment</button></div>
-    <div class="subsection"><h3>Staff payments</h3><div id="staffRows"></div><button id="addStaff" class="secondary">+ Add staff payment</button></div>
-    <div class="action-row"><button id="saveSummary" class="primary">Save Summary</button><button id="closeSummary" class="secondary">Close Day</button></div>
-    ${existing?.is_closed ? '<div class="notice warning">This summary is closed. It cannot be edited.</div>' : ''}
-  `;
+      <section class="summary-section">
+        <div class="summary-section-title"><span></span><h3>Expenses</h3></div>
+        <div class="entry-head"><span>Category</span><span>Amount</span><span>Mode</span><i></i></div>
+        <div id="expenseRows"></div>
+        <button id="addExpense" class="summary-add" type="button">＋ Add expense</button>
+      </section>
 
-  const disabled = !!existing?.is_closed;
-  view.querySelectorAll('input,select,button').forEach(el => { if (disabled) el.disabled = true; });
+      <section class="summary-section">
+        <div class="summary-section-title"><span></span><h3>Vendor payments</h3></div>
+        <div class="entry-head"><span>Vendor</span><span>Amount</span><span>Mode</span><i></i></div>
+        <div id="vendorRows"></div>
+        <button id="addVendor" class="summary-add" type="button">＋ Add vendor payment</button>
+      </section>
+
+      <section class="summary-section">
+        <div class="summary-section-title"><span></span><h3>Staff payments</h3></div>
+        <div id="staffRows"></div>
+        <button id="addStaff" class="summary-add" type="button">＋ Add staff payment</button>
+      </section>
+
+      <section class="summary-section">
+        <div class="summary-section-title"><span></span><h3>Cash counter</h3></div>
+        <p class="section-help">Count the cash drawer by denomination. The total becomes Physical Cash in Hand.</p>
+        <div class="cash-counter">
+          ${[500,200,100,50,20,10,5,2,1].map(d=>`<label><span>₹${d}</span><span class="cash-multiply">×</span><input class="denom-count" data-value="${d}" type="number" min="0" step="1" inputmode="numeric" placeholder="0"><strong class="denom-total">₹0</strong></label>`).join('')}
+        </div>
+        <div class="summary-total neutral"><span>Counted cash</span><strong id="countedCash">₹0</strong></div>
+        <button id="useCountedCash" class="summary-add full" type="button">Use counted total as physical cash</button>
+      </section>
+
+      <section class="summary-section">
+        <div class="summary-section-title"><span></span><h3>Cash position</h3></div>
+        <label class="summary-label full-field">Physical cash in hand ₹<input id="sPhysical" type="number" inputmode="decimal" value="${existing?.physical_cash??0}"></label>
+        <div class="cash-position-grid"><div><span>Expected cash</span><strong id="expectedCash">₹0</strong></div><div id="differenceCard"><span>Short / excess</span><strong id="cashDiff">₹0</strong></div></div>
+        <div id="cashStatus" class="summary-inline-status"></div>
+      </section>
+
+      <div class="summary-actions">
+        <button id="saveSummary" class="primary" type="button">Save Summary</button>
+        <button id="closeSummary" class="close-day" type="button">Close Day</button>
+      </div>
+      <p id="summaryMessage" class="form-error" hidden></p>
+      ${existing?.is_closed?'<div class="notice warning">This day is closed and cannot be edited.</div>':''}
+    </div>`;
+
+  if(isOwner)view.querySelector('#sumOutlet').onchange=async e=>{profile.outlet_id=Number(e.target.value);await renderDailySummary(view,supabase,profile);};
 
   const addRow=(container,type,data={})=>{
-    const wrap=document.createElement('div'); wrap.className='entry-row';
-    if(type==='expense') wrap.innerHTML=`<input class="e-cat" placeholder="Category" value="${escapeHtml(data.category||'')}"><input class="e-amt" type="number" step="0.01" placeholder="Amount" value="${data.amount||''}"><select class="e-mode"><option ${data.mode==='UPI'?'selected':''}>Cash</option><option ${data.mode==='UPI'?'selected':''}>UPI</option></select><button class="remove-row ghost">×</button>`;
-    if(type==='vendor') wrap.innerHTML=`<select class="v-name"><option value="">Select vendor</option>${(vendors||[]).map(v=>`<option value="${escapeHtml(v.name)}" ${v.name===(data.vendor_name||'')?'selected':''}>${escapeHtml(v.name)}</option>`).join('')}</select><input class="v-amt" type="number" step="0.01" placeholder="Amount" value="${data.amount||''}"><select class="v-mode"><option ${data.mode==='UPI'?'selected':''}>Cash</option><option ${data.mode==='UPI'?'selected':''}>UPI</option></select><button class="remove-row ghost">×</button>`;
-    if(type==='staff') wrap.innerHTML=`<input class="p-name" placeholder="Staff" value="${escapeHtml(data.staff_name||'')}"><input class="p-type" placeholder="Type" value="${escapeHtml(data.payout_type||'Salary')}"><input class="p-amt" type="number" step="0.01" placeholder="Amount" value="${data.amount||''}"><select class="p-mode"><option ${data.mode==='UPI'?'selected':''}>Cash</option><option ${data.mode==='UPI'?'selected':''}>UPI</option></select><button class="remove-row ghost">×</button>`;
-    wrap.querySelector('.remove-row').onclick=()=>{wrap.remove();calc();}; container.appendChild(wrap);
-    wrap.querySelectorAll('input,select').forEach(e=>e.addEventListener('input',calc));
+    const row=document.createElement('div');row.className='summary-entry-row '+type;
+    const mode=v=>`<select class="row-mode"><option value="Cash" ${v!=='UPI'?'selected':''}>Cash</option><option value="UPI" ${v==='UPI'?'selected':''}>UPI</option></select>`;
+    if(type==='expense')row.innerHTML=`<input class="row-name e-cat" placeholder="Category" value="${escapeHtml(data.category||'')}"><input class="row-amount e-amt" type="number" inputmode="decimal" placeholder="₹0" value="${data.amount||''}">${mode(data.mode)}<button class="remove-row" type="button" aria-label="Remove">×</button>`;
+    if(type==='vendor')row.innerHTML=`<select class="row-name v-name"><option value="">Select vendor</option>${(vendors||[]).map(v=>`<option value="${escapeHtml(v.name)}" ${v.name===(data.vendor_name||'')?'selected':''}>${escapeHtml(v.name)}</option>`).join('')}</select><input class="row-amount v-amt" type="number" inputmode="decimal" placeholder="₹0" value="${data.amount||''}">${mode(data.mode)}<button class="remove-row" type="button" aria-label="Remove">×</button>`;
+    if(type==='staff')row.innerHTML=`<div class="staff-payment-grid"><select class="p-name"><option value="">Select staff</option>${(staff||[]).map(p=>`<option value="${escapeHtml(p.name)}" ${p.name===(data.staff_name||'')?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select><select class="p-type"><option ${data.payout_type==='Salary'?'selected':''}>Salary</option><option ${data.payout_type==='Advance'?'selected':''}>Advance</option><option ${data.payout_type==='Reimbursement'?'selected':''}>Reimbursement</option><option ${data.payout_type==='Other'?'selected':''}>Other</option></select><input class="p-amt" type="number" inputmode="decimal" placeholder="₹ Amount" value="${data.amount||''}">${mode(data.mode)}</div><button class="remove-row" type="button" aria-label="Remove">×</button>`;
+    row.querySelector('.remove-row').onclick=()=>{row.remove();calc();};
+    row.querySelectorAll('input,select').forEach(el=>el.addEventListener('input',calc));
+    container.appendChild(row);
   };
-  const expensesView=await supabase.from('summary_expenses').select('*').eq('summary_id',existing?.id||'');
-  const vendorsView=await supabase.from('summary_vendor_payouts').select('*').eq('summary_id',existing?.id||'');
-  const staffView=await supabase.from('summary_staff_payouts').select('*').eq('summary_id',existing?.id||'');
-  (expensesView.data||[]).forEach(x=>addRow(view.querySelector('#expenseRows'),'expense',x));
-  (vendorsView.data||[]).forEach(x=>addRow(view.querySelector('#vendorRows'),'vendor',x));
-  (staffView.data||[]).forEach(x=>addRow(view.querySelector('#staffRows'),'staff',x));
-  if(!expensesView.data?.length) addRow(view.querySelector('#expenseRows'),'expense');
+
+  const [ev,vv,sv]=await Promise.all([
+    supabase.from('summary_expenses').select('*').eq('summary_id',existing?.id||'__none__'),
+    supabase.from('summary_vendor_payouts').select('*').eq('summary_id',existing?.id||'__none__'),
+    supabase.from('summary_staff_payouts').select('*').eq('summary_id',existing?.id||'__none__')
+  ]);
+  (ev.data||[]).forEach(x=>addRow(view.querySelector('#expenseRows'),'expense',x));
+  (vv.data||[]).forEach(x=>addRow(view.querySelector('#vendorRows'),'vendor',x));
+  (sv.data||[]).forEach(x=>addRow(view.querySelector('#staffRows'),'staff',x));
+
+  const n=id=>Number(view.querySelector('#'+id)?.value||0);
   const calc=()=>{
-    const n=id=>Number(view.querySelector('#'+id)?.value||0);
     const net=n('sCash')+n('sUpi')+n('sSwPay')+n('sZoPay')+n('sOwn')-n('sDisc');
-    const cashExpenses=[...view.querySelectorAll('.e-amt')].reduce((s,e,i)=>s+(view.querySelectorAll('.e-mode')[i]?.value==='Cash'?Number(e.value||0):0),0);
-    const cashVendors=[...view.querySelectorAll('.v-amt')].reduce((s,e,i)=>s+(view.querySelectorAll('.v-mode')[i]?.value==='Cash'?Number(e.value||0):0),0);
-    const cashStaff=[...view.querySelectorAll('.p-amt')].reduce((s,e,i)=>s+(view.querySelectorAll('.p-mode')[i]?.value==='Cash'?Number(e.value||0):0),0);
+    const cashExpenses=[...view.querySelectorAll('#expenseRows .summary-entry-row')].reduce((sum,r)=>sum+(r.querySelector('.row-mode')?.value==='Cash'?Number(r.querySelector('.e-amt')?.value||0):0),0);
+    const cashVendors=[...view.querySelectorAll('#vendorRows .summary-entry-row')].reduce((sum,r)=>sum+(r.querySelector('.row-mode')?.value==='Cash'?Number(r.querySelector('.v-amt')?.value||0):0),0);
+    const cashStaff=[...view.querySelectorAll('#staffRows .summary-entry-row')].reduce((sum,r)=>sum+(r.querySelector('.row-mode')?.value==='Cash'?Number(r.querySelector('.p-amt')?.value||0):0),0);
     const expected=n('sOpen')+n('sCash')-cashExpenses-cashVendors-cashStaff;
-    const diff=n('sPhysical')-expected;
-    view.querySelector('#sumPreview').innerHTML=`<div class="stats-grid"><div class="stat"><strong>${net.toFixed(2)}</strong><span>Net sale</span></div><div class="stat"><strong>${expected.toFixed(2)}</strong><span>Expected cash</span></div><div class="stat"><strong>${diff.toFixed(2)}</strong><span>Short / excess</span></div></div>`;
+    const diff=n('sPhysical')-expected,openDiff=n('sOpen')-systemOpening;
+    view.querySelector('#netSale').textContent=money(net);view.querySelector('#expectedCash').textContent=money(expected);view.querySelector('#cashDiff').textContent=money(Math.abs(diff));
+    const dc=view.querySelector('#differenceCard');dc.classList.toggle('negative',diff<0);dc.classList.toggle('positive',diff>0);
+    view.querySelector('#cashStatus').innerHTML=diff===0?'<span class="ok">Cash matches expected</span>':`<span class="${diff<0?'bad':'warn'}">${diff<0?'Short':'Excess'} ${money(Math.abs(diff))}</span>`;
+    view.querySelector('#openingVariance').innerHTML=openDiff===0?'<span class="ok">Matches previous closing</span>':`<span class="warn">${openDiff<0?'Opening short':'Opening excess'} ${money(Math.abs(openDiff))}</span>`;
   };
-  view.querySelectorAll('#sCash,#sUpi,#sSwGross,#sSwPay,#sZoGross,#sZoPay,#sOwn,#sDisc,#sOpen,#sPhysical').forEach(e=>e.addEventListener('input',calc));
+  view.querySelectorAll('#sOpen,#sCash,#sUpi,#sSwGross,#sSwPay,#sZoGross,#sZoPay,#sOwn,#sDisc,#sPhysical').forEach(el=>el.addEventListener('input',calc));
+  view.querySelector('#sSwGross').addEventListener('input',e=>{view.querySelector('#sSwPay').value=(Number(e.target.value||0)*swRate).toFixed(2);calc();});
+  view.querySelector('#sZoGross').addEventListener('input',e=>{view.querySelector('#sZoPay').value=(Number(e.target.value||0)*zoRate).toFixed(2);calc();});
   view.querySelector('#addExpense').onclick=()=>addRow(view.querySelector('#expenseRows'),'expense');
   view.querySelector('#addVendor').onclick=()=>addRow(view.querySelector('#vendorRows'),'vendor');
   view.querySelector('#addStaff').onclick=()=>addRow(view.querySelector('#staffRows'),'staff');
-  calc();
 
-  view.querySelector('#saveSummary').onclick=async()=>{
-    const id=existing?.id || `SUM-${outletId}-${today}`;
-    const collect=(selector,map)=>[...view.querySelectorAll(selector)].map(row=>map(row)).filter(x=>x.amount||x.category||x.vendor_name||x.staff_name);
-    const expenses=collect('#expenseRows .entry-row',r=>({category:r.querySelector('.e-cat').value.trim(),amount:Number(r.querySelector('.e-amt').value||0),mode:r.querySelector('.e-mode').value}));
-    const vendors=collect('#vendorRows .entry-row',r=>({vendor_name:r.querySelector('.v-name').value.trim(),amount:Number(r.querySelector('.v-amt').value||0),mode:r.querySelector('.v-mode').value}));
-    const staff=collect('#staffRows .entry-row',r=>({staff_name:r.querySelector('.p-name').value.trim(),payout_type:r.querySelector('.p-type').value.trim()||'Salary',amount:Number(r.querySelector('.p-amt').value||0),mode:r.querySelector('.p-mode').value}));
-    const args={p_summary_id:id,p_outlet_id:Number(outletId),p_business_date:today,p_user_id:profile.id,p_user_name:profile.name,p_role:profile.role,p_cash_sale:Number(view.querySelector('#sCash').value||0),p_upi_sale:Number(view.querySelector('#sUpi').value||0),p_swiggy_gross:Number(view.querySelector('#sSwGross').value||0),p_swiggy_payout:Number(view.querySelector('#sSwPay').value||0),p_zomato_gross:Number(view.querySelector('#sZoGross').value||0),p_zomato_payout:Number(view.querySelector('#sZoPay').value||0),p_own_digital:Number(view.querySelector('#sOwn').value||0),p_discount:Number(view.querySelector('#sDisc').value||0),p_opening_cash_system:Number(existing?.opening_cash_system||0),p_opening_cash_actual:Number(view.querySelector('#sOpen').value||0),p_physical_cash:Number(view.querySelector('#sPhysical').value||0),p_expenses:expenses,p_vendor_payouts:vendors,p_staff_payouts:staff};
-    const {error}=await supabase.rpc('save_daily_summary',args);
-    if(error) return alert(error.message);
-    alert('Daily summary saved.');
-    await renderDailySummary(view,supabase,profile);
+  let counted=0;
+  const calcCounter=()=>{counted=0;view.querySelectorAll('.denom-count').forEach(input=>{const subtotal=Number(input.dataset.value)*Math.max(0,Number(input.value||0));counted+=subtotal;input.closest('label').querySelector('.denom-total').textContent=money(subtotal);});view.querySelector('#countedCash').textContent=money(counted);};
+  view.querySelectorAll('.denom-count').forEach(i=>i.addEventListener('input',calcCounter));
+  view.querySelector('#useCountedCash').onclick=()=>{view.querySelector('#sPhysical').value=counted;calc();view.querySelector('#sPhysical').scrollIntoView({behavior:'smooth',block:'center'});};
+
+  const disabled=!!existing?.is_closed;
+  if(disabled)view.querySelectorAll('input,select,button').forEach(el=>el.disabled=true);
+  calc();calcCounter();
+
+  const collect=()=>{
+    const expenses=[...view.querySelectorAll('#expenseRows .summary-entry-row')].map(r=>({category:r.querySelector('.e-cat').value.trim(),amount:Number(r.querySelector('.e-amt').value||0),mode:r.querySelector('.row-mode').value})).filter(x=>x.category&&x.amount>0);
+    const vendorPayouts=[...view.querySelectorAll('#vendorRows .summary-entry-row')].map(r=>({vendor_name:r.querySelector('.v-name').value,amount:Number(r.querySelector('.v-amt').value||0),mode:r.querySelector('.row-mode').value})).filter(x=>x.vendor_name&&x.amount>0);
+    const staffPayouts=[...view.querySelectorAll('#staffRows .summary-entry-row')].map(r=>({staff_name:r.querySelector('.p-name').value,payout_type:r.querySelector('.p-type').value,amount:Number(r.querySelector('.p-amt').value||0),mode:r.querySelector('.row-mode').value})).filter(x=>x.staff_name&&x.amount>0);
+    return {expenses,vendorPayouts,staffPayouts};
   };
-  view.querySelector('#closeSummary').onclick=async()=>{
-    const id=existing?.id || `SUM-${outletId}-${today}`;
-    const {error}=await supabase.rpc('close_daily_summary',{p_summary_id:id,p_user_id:profile.id});
-    if(error) return alert(error.message);
-    await renderDailySummary(view,supabase,profile);
+  const save=async()=>{
+    const msg=view.querySelector('#summaryMessage'),btn=view.querySelector('#saveSummary');msg.hidden=true;btn.disabled=true;btn.textContent='Saving…';
+    try{
+      const {expenses,vendorPayouts,staffPayouts}=collect();
+      const id=existing?.id||`SUM-${outletId}-${businessDate}`;
+      const args={p_summary_id:id,p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_user_name:profile.name,p_role:profile.role,p_cash_sale:n('sCash'),p_upi_sale:n('sUpi'),p_swiggy_gross:n('sSwGross'),p_swiggy_payout:n('sSwPay'),p_zomato_gross:n('sZoGross'),p_zomato_payout:n('sZoPay'),p_own_digital:n('sOwn'),p_discount:n('sDisc'),p_opening_cash_system:systemOpening,p_opening_cash_actual:n('sOpen'),p_physical_cash:n('sPhysical'),p_expenses:expenses,p_vendor_payouts:vendorPayouts,p_staff_payouts:staffPayouts};
+      const {error}=await supabase.rpc('save_daily_summary',args);if(error)throw error;
+      await renderDailySummary(view,supabase,profile);return true;
+    }catch(e){msg.textContent=e.message||'Could not save summary.';msg.hidden=false;return false;}finally{if(btn.isConnected){btn.disabled=false;btn.textContent='Save Summary';}}
   };
+  view.querySelector('#saveSummary').onclick=save;
+  view.querySelector('#closeSummary').onclick=async()=>{if(!existing){const ok=await save();if(!ok)return;await renderDailySummary(view,supabase,profile);return;}const {error}=await supabase.rpc('close_daily_summary',{p_summary_id:existing.id,p_user_id:profile.id});if(error){const msg=view.querySelector('#summaryMessage');msg.textContent=error.message;msg.hidden=false;return;}await renderDailySummary(view,supabase,profile);};
 }
-
 
 async function renderPeople(view, supabase, profile) {
   if (profile.role !== 'Owner') {
