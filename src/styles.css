@@ -123,3 +123,11 @@ input,select,textarea{font-weight:400;font-size:15px}
 .staff-payment-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .staff-payment-grid input,.staff-payment-grid select{height:52px;min-height:52px}
 @media(max-width:560px){.summary-entry-row,.entry-head{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr) minmax(0,.9fr) 42px;gap:8px}.summary-entry-row.staff{grid-template-columns:minmax(0,1fr) 42px}.staff-payment-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}
+
+/* Build 16 — WhatsApp summary preview */
+.whatsapp-preview{margin-top:14px;border:1px solid #e1e1e6;background:#fff;border-radius:18px;padding:14px}
+.whatsapp-preview-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.whatsapp-preview-head strong{font-size:13px;text-transform:uppercase;letter-spacing:.045em;color:#68686f}
+.whatsapp-preview-head .summary-add{margin:0;min-height:40px;padding:0 18px}
+#whatsappText{width:100%;box-sizing:border-box;min-height:280px;resize:vertical;border:1px solid #e1e1e6;background:#f7f7f9;border-radius:14px;padding:14px;font:inherit;font-size:13px;line-height:1.55;color:#242428;outline:none;white-space:pre-wrap}
+#whatsappText:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
