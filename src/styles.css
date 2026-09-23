@@ -1,5 +1,6 @@
+@import url('https://fonts.cdnfonts.com/css/metropolis-2');
 :root {
-  font-family:'Plus Jakarta Sans',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  font-family: 'Metropolis', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color:#171717;background:#f7f7f7;font-synthesis:none;
 }
 *{box-sizing:border-box}
@@ -35,7 +36,7 @@ button{cursor:pointer}
 @media(max-width:600px){.purchase-item-head{display:none}.purchase-entry-row{grid-template-columns:1fr 1fr}.purchase-entry-row .purItem{grid-column:1 / -1}.purchase-entry-row .remove-pur-row{grid-column:2}.purchase-entry-row .purUnit{grid-column:1}.purchase-total{text-align:left}}
 
 .permissions-box{margin:14px 0;padding:14px;border:1px solid #eee;border-radius:12px;background:#fafafa}.permission-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:10px}.permission-grid label{font-size:13px;font-weight:650}.permission-grid input{margin-right:7px}.status-ok{font-weight:750}.status-warn{font-weight:750}
-.setup-code{display:inline-block;margin-top:7px;padding:8px 12px;border-radius:9px;background:#fff;font-family:'DM Mono',monospace;letter-spacing:.15em;font-size:18px}
+.setup-code{display:inline-block;margin-top:7px;padding:8px 12px;border-radius:9px;background:#fff;font-family: 'Metropolis', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;letter-spacing:.15em;font-size:18px}
 
 /* CafeTracker 2026 mobile design system */
 :root{--accent:#CB202D;--accent-soft:#CB202D18;--ink:#171717;--muted:#737373;--surface:#fff;--canvas:#f7f7f8;--line:#e9e9ec}
@@ -75,3 +76,14 @@ body{background:var(--canvas);color:var(--ink)}
 .onboard-actions{display:flex;gap:10px;margin-top:20px}.onboard-actions>*{flex:1}.onboard-success{text-align:center;padding:50px 8px}.onboard-success>.ui-icon{margin:0 auto 16px;color:var(--accent)}.onboard-success h2{font-size:26px;margin:0 0 8px}.onboard-success p{color:var(--muted);margin:0 0 28px}
 .module-card{position:relative;display:grid;grid-template-columns:44px 1fr auto;align-items:center;gap:12px;text-align:left}.module-icon{width:44px;height:44px}.module-state{font-size:12px;color:var(--muted)}
 @media(max-width:600px){.login-shell{padding:0;background:#fff;align-items:stretch}.login-card{width:100%;max-width:none;min-height:100dvh;border:0;border-radius:0;box-shadow:none;padding:26px 20px}.two-col{grid-template-columns:1fr}.onboard-body{min-height:390px}.module-card{grid-template-columns:42px 1fr auto}}
+
+/* Zomato-inspired typography scale, based on Metropolis/Okra foundations */
+:root{--font-ui:'Metropolis','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+html,body,button,input,select,textarea{font-family:var(--font-ui)}
+body{font-weight:400;letter-spacing:0;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+h1,h2,h3,.login-brand{font-family:var(--font-ui);font-weight:700;letter-spacing:-.025em}
+.login-brand{font-size:24px;font-weight:700}
+.login-subtitle,.hint,.muted,.module-state{font-weight:400}
+.eyebrow,.card-label,label{font-weight:500;letter-spacing:0}
+.primary,.secondary,.module-name{font-weight:600}
+input,select,textarea{font-weight:400;font-size:15px}
