@@ -348,7 +348,7 @@ async function renderDailySummary(view, supabase, profile) {
 }
 
 
-async async function renderPeople(view, supabase, profile) {
+async function renderPeople(view, supabase, profile) {
   if (profile.role !== 'Owner') {
     view.innerHTML = '<span class="eyebrow">People</span><h2>Owner access required</h2>';
     return;
