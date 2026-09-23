@@ -151,3 +151,7 @@ input,select,textarea{font-weight:400;font-size:15px}
 
 /* Build 24 — staff welcome message preview */
 .message-preview{white-space:pre-wrap;background:#f7f7f8;border:1px solid #e8e8eb;border-radius:14px;padding:14px;font-size:12px;line-height:1.55;color:#3d3d42}.share-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}.share-actions .whatsapp-action,.share-actions .secondary{margin:0;width:100%}
+
+/* Build 25 — Staff/Admin access */
+.login-mode-tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#f2f2f5;padding:5px;border-radius:16px;margin:18px 0}.login-mode-tabs button{border:0;background:transparent;border-radius:12px;min-height:44px;font:inherit;font-size:13px;font-weight:650;color:#73737a}.login-mode-tabs button.active{background:#fff;color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.06)}
+.people-tabs.three{grid-template-columns:1fr 1fr 1fr}.admin-list{display:grid;gap:8px}.admin-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 14px;border:1px solid #ececef;border-radius:14px}.admin-row>div{display:flex;align-items:center;gap:8px}
