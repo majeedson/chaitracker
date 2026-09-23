@@ -257,6 +257,8 @@ async function renderDailySummary(view, supabase, profile) {
     outletId = outletId || outlets[0]?.id;
   }
 
+  const { data: vendors } = await supabase.from('vendors').select('id,name').order('name');
+
   const { data: existing } = await supabase
     .from('daily_summaries')
     .select('*')
@@ -297,7 +299,7 @@ async function renderDailySummary(view, supabase, profile) {
   const addRow=(container,type,data={})=>{
     const wrap=document.createElement('div'); wrap.className='entry-row';
     if(type==='expense') wrap.innerHTML=`<input class="e-cat" placeholder="Category" value="${escapeHtml(data.category||'')}"><input class="e-amt" type="number" step="0.01" placeholder="Amount" value="${data.amount||''}"><select class="e-mode"><option ${data.mode==='UPI'?'selected':''}>Cash</option><option ${data.mode==='UPI'?'selected':''}>UPI</option></select><button class="remove-row ghost">×</button>`;
-    if(type==='vendor') wrap.innerHTML=`<input class="v-name" placeholder="Vendor" value="${escapeHtml(data.vendor_name||'')}"><input class="v-amt" type="number" step="0.01" placeholder="Amount" value="${data.amount||''}"><select class="v-mode"><option ${data.mode==='UPI'?'selected':''}>Cash</option><option ${data.mode==='UPI'?'selected':''}>UPI</option></select><button class="remove-row ghost">×</button>`;
+    if(type==='vendor') wrap.innerHTML=`<select class="v-name"><option value="">Select vendor</option>${(vendors||[]).map(v=>`<option value="${escapeHtml(v.name)}" ${v.name===(data.vendor_name||'')?'selected':''}>${escapeHtml(v.name)}</option>`).join('')}</select><input class="v-amt" type="number" step="0.01" placeholder="Amount" value="${data.amount||''}"><select class="v-mode"><option ${data.mode==='UPI'?'selected':''}>Cash</option><option ${data.mode==='UPI'?'selected':''}>UPI</option></select><button class="remove-row ghost">×</button>`;
     if(type==='staff') wrap.innerHTML=`<input class="p-name" placeholder="Staff" value="${escapeHtml(data.staff_name||'')}"><input class="p-type" placeholder="Type" value="${escapeHtml(data.payout_type||'Salary')}"><input class="p-amt" type="number" step="0.01" placeholder="Amount" value="${data.amount||''}"><select class="p-mode"><option ${data.mode==='UPI'?'selected':''}>Cash</option><option ${data.mode==='UPI'?'selected':''}>UPI</option></select><button class="remove-row ghost">×</button>`;
     wrap.querySelector('.remove-row').onclick=()=>{wrap.remove();calc();}; container.appendChild(wrap);
     wrap.querySelectorAll('input,select').forEach(e=>e.addEventListener('input',calc));
