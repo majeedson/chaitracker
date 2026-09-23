@@ -1,4 +1,4 @@
-const APP_BUILD = 27;
+const APP_BUILD = 28;
 const modules = [
   ['home', 'My Day'],
   ['attendance', 'Attendance'],
@@ -161,7 +161,7 @@ async function renderLogin(root, supabase) {
     const draw=()=>{
       const progress=Math.round((step/(steps.length-1))*100);
       let body='';
-      if(step===0)body=`<div class="onboard-hero"><div class="feature-icon large">${icon('user',28)}</div><span class="eyebrow">Welcome to CafeTracker</span><h2>Hi, ${escapeHtml(selectedPerson.name)}</h2><p>Enter the temporary PIN sent by your employer. We’ll verify it before you fill the onboarding form.</p><label>Temporary login PIN<div class="input-with-icon">${icon('lock',19)}<input id="ob-setup" inputmode="numeric" maxlength="6" placeholder="6-digit temporary PIN" value="${escapeHtml(state.setup_code||'')}"></div></label></div>`;
+      if(step===0)body=`<div class="onboard-hero"><div class="feature-icon large">${icon('user',28)}</div><span class="eyebrow">Welcome to CafeTracker</span><h2>Hi, ${escapeHtml(selectedPerson.name)}</h2><p>Enter the temporary PIN sent by your employer. We’ll verify it before you fill the onboarding form.</p><label>Temporary login PIN<div class="input-with-icon">${icon('lock',19)}<input id="ob-setup" inputmode="numeric" maxlength="4" placeholder="4-digit temporary PIN" value="${escapeHtml(state.setup_code||'')}"></div></label></div>`;
       if(step===1)body=`<div class="onboard-title"><div class="feature-icon">${icon('user',22)}</div><div><span class="eyebrow">About you</span><h2>Personal details</h2></div></div><div class="form-stack"><label>Display name<input value="${escapeHtml(selectedPerson.name)}" disabled><small>Set by your employer</small></label><label>Full name as shown on your ID<input id="ob-full" value="${escapeHtml(state.full_legal_name||'')}" placeholder="Your full legal name"></label><div class="two-col"><label>Date of birth<input id="ob-dob" type="date" value="${escapeHtml(state.date_of_birth||'')}"></label><label>Nationality<input id="ob-nationality" value="${escapeHtml(state.nationality||'')}" placeholder="Nationality"></label></div><label>Father's name<input id="ob-father" value="${escapeHtml(state.father_name||'')}" placeholder="Father's full name"></label><label>Mobile number<input id="ob-mobile" inputmode="tel" value="${escapeHtml(state.mobile_phone||'')}" placeholder="Phone number"></label><label>Home address<textarea id="ob-address" rows="3" placeholder="Permanent/home address">${escapeHtml(state.home_address||'')}</textarea></label></div>`;
       if(step===2)body=`<div class="onboard-title"><div class="feature-icon">${icon('heart',22)}</div><div><span class="eyebrow">Emergency contact</span><h2>Who should we contact?</h2></div></div><div class="form-stack"><label>Contact name<input id="ob-ec-name" value="${escapeHtml(state.emergency_contact_name||'')}" placeholder="Full name"></label><label>Relationship<input id="ob-ec-rel" value="${escapeHtml(state.emergency_contact_relation||'')}" placeholder="e.g. Parent, spouse, sibling"></label><label>Phone number<input id="ob-ec-phone" inputmode="tel" value="${escapeHtml(state.emergency_contact_phone||'')}" placeholder="Emergency phone number"></label></div>`;
       if(step===3)body=`<div class="onboard-title"><div class="feature-icon">${icon('id',22)}</div><div><span class="eyebrow">Identity</span><h2>Verify your ID</h2></div></div><div class="form-stack"><label>Document type<select id="ob-id-type"><option value="">Choose document</option><option ${state.identity_type==='Aadhaar'?'selected':''}>Aadhaar</option><option ${state.identity_type==='Passport'?'selected':''}>Passport</option><option ${state.identity_type==='Other'?'selected':''}>Other</option></select></label><label>Document number<input id="ob-id-number" value="${escapeHtml(state.identity_number||'')}" placeholder="ID document number"></label><label class="upload-card">${icon('id',26)}<strong>Upload identity document</strong><span>JPG, PNG or PDF · max 6 MB</span><input id="ob-id-file" type="file" accept="image/jpeg,image/png,application/pdf"></label><div id="id-file-name" class="file-name">${state.identity_document?.name?escapeHtml(state.identity_document.name):''}</div></div>`;
@@ -184,7 +184,7 @@ async function renderLogin(root, supabase) {
     };
     const validateStep=()=>{
       const err=onboardingShell.querySelector('#ob-error');let msg='';
-      if(step===0&&!/^\\d{6}$/.test(onboardingShell.querySelector('#ob-setup').value))msg='Enter the 6-digit temporary PIN.';
+      if(step===0&&!/^\\d{4}$/.test(onboardingShell.querySelector('#ob-setup').value))msg='Enter the 4-digit temporary PIN.';
       if(step===1&&['#ob-full','#ob-dob','#ob-nationality','#ob-father','#ob-mobile','#ob-address'].some(id=>!onboardingShell.querySelector(id).value.trim()))msg='Please complete all personal details.';
       if(step===2&&['#ob-ec-name','#ob-ec-rel','#ob-ec-phone'].some(id=>!onboardingShell.querySelector(id).value.trim()))msg='Please complete the emergency contact details.';
       if(step===3&&(!onboardingShell.querySelector('#ob-id-type').value||!onboardingShell.querySelector('#ob-id-number').value.trim()||!state.identity_document))msg='Choose an ID type, enter its number and upload the document.';
@@ -550,7 +550,7 @@ function staffWelcomeMessage(name, setupCode) {
     '2. Upload the requested details',
     '3. Create your own private PIN',
     '',
-    'Your temporary PIN expires in *24 hours* and is only for first-time setup.',
+    'Your temporary PIN is *1234* and is only for first-time setup. You will create your private PIN during onboarding.',
     '',
     'Welcome to the team!'
   ].join('\n');
@@ -685,7 +685,7 @@ async function renderPeople(view, supabase, profile) {
       try{
         const {data,error}=await supabase.rpc('superuser_reset_staff_pin_setup',{p_staff_id:staffId});
         if(error)throw error;
-        msg.innerHTML='<div class="notice setup-share"><strong>New setup code:</strong> <strong class="setup-code">'+escapeHtml(data.setup_code)+'</strong><br><span class="hint">It expires in 24 hours. Their old PIN no longer works.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(s.name,data.setup_code))}</div><div class="share-actions"><button type="button" id="copyResetWelcome" class="secondary">Copy message</button><button type="button" id="shareResetWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>';
+        msg.innerHTML='<div class="notice setup-share"><strong>New setup code:</strong> <strong class="setup-code">'+escapeHtml(data.setup_code)+'</strong><br><span class="hint">Use 1234 for first-time setup. Their old PIN no longer works.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(s.name,data.setup_code))}</div><div class="share-actions"><button type="button" id="copyResetWelcome" class="secondary">Copy message</button><button type="button" id="shareResetWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>';
         view.querySelector('#copyResetWelcome').onclick=(e)=>copyStaffWelcomeMessage(s.name,data.setup_code,e.currentTarget);
         view.querySelector('#shareResetWhatsApp').onclick=()=>openStaffWelcomeWhatsApp(s.name,data.setup_code);
         ({outlets,staffRows}=await loadData());
@@ -706,7 +706,7 @@ async function renderPeople(view, supabase, profile) {
     try{
       const {data:created,error}=await supabase.rpc('owner_add_staff',{p_name:name,p_outlet_id:outletId,p_role:role,p_basic_salary:salary,p_joining_date:joining,p_permissions:permissions});
       if(error)throw error;
-      msg.innerHTML=`<div class="notice setup-share"><strong>Staff member added.</strong><br>Temporary login PIN: <strong class="setup-code">${escapeHtml(created?.setup_code||'')}</strong><br><span class="hint">It expires in 24 hours and is used only for first-time onboarding.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(name,created?.setup_code||''))}</div><div class="share-actions"><button type="button" id="copyNewWelcome" class="secondary">Copy message</button><button type="button" id="shareNewWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>`;
+      msg.innerHTML=`<div class="notice setup-share"><strong>Staff member added.</strong><br>Temporary login PIN: <strong class="setup-code">${escapeHtml(created?.setup_code||'')}</strong><br><span class="hint">Use 1234 for first-time onboarding. They will create their private PIN during setup.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(name,created?.setup_code||''))}</div><div class="share-actions"><button type="button" id="copyNewWelcome" class="secondary">Copy message</button><button type="button" id="shareNewWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>`;
       view.querySelector('#copyNewWelcome').onclick=(e)=>copyStaffWelcomeMessage(name,created?.setup_code||'',e.currentTarget);
       view.querySelector('#shareNewWhatsApp').onclick=()=>openStaffWelcomeWhatsApp(name,created?.setup_code||'');
       view.querySelector('#staffName').value='';view.querySelector('#staffSalary').value='';
