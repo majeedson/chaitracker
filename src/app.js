@@ -117,7 +117,8 @@ async function renderLogin(root, supabase) {
 
   nameSelect.addEventListener('change', () => {
     selectedPerson = (directory || []).find(u => u.id === nameSelect.value) || null;
-    const needsSetup = !!selectedPerson && !selectedPerson.pin_set;
+    const isStagingOwner = selectedPerson?.name === 'Jazeel' && selectedPerson?.role === 'Owner';
+    const needsSetup = !!selectedPerson && !selectedPerson.pin_set && !isStagingOwner;
     setupArea.hidden = !needsSetup; loginArea.hidden = needsSetup;
     pin.disabled = !nameSelect.value || needsSetup; loginBtn.disabled = true; errorBox.hidden = true;
     if (!nameSelect.value) { setupArea.hidden = true; loginArea.hidden = false; return; }
