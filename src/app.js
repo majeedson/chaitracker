@@ -191,7 +191,7 @@ async function renderLogin(root, supabase) {
         const response=await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chaitracker-onboarding`,{method:'POST',headers:{apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY},body:fd});
         const payload=await response.json();if(!response.ok||!payload.success)throw new Error(payload.error||'Onboarding failed.');
         if(payload.session){await supabase.auth.setSession({access_token:payload.session.access_token,refresh_token:payload.session.refresh_token});await renderApp(root,supabase);return;}
-        onboardingShell.innerHTML='<div class="onboard-success">'+icon('check',34)+'<h2>You're all set</h2><p>Your CafeTracker profile is ready. Sign in with your new PIN.</p><button id="return-login" class="primary full">Back to sign in</button></div>';
+        onboardingShell.innerHTML='<div class="onboard-success">'+icon('check',34)+'<h2>You’re all set</h2><p>Your CafeTracker profile is ready. Sign in with your new PIN.</p><button id="return-login" class="primary full">Back to sign in</button></div>';
         onboardingShell.querySelector('#return-login').onclick=()=>renderLogin(root,supabase);
       }catch(e){err.textContent=e.message||'Unable to complete onboarding.';err.hidden=false;btn.disabled=false;btn.innerHTML='Finish & create PIN <span>→</span>';}
     };
