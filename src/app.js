@@ -329,8 +329,10 @@ async function renderDailySummary(view, supabase, profile) {
 async function renderPurchases(view, supabase, profile) {
   const { data: categories } = await supabase.from('categories').select('id,name').order('name');
   const { data: items } = await supabase.from('items').select('id,name,category_id,unit,pack_size').eq('active', true).order('name');
+  const { data: outlets } = isOwner ? await supabase.from('outlets').select('id,name').order('id') : { data: [] };
+  let outletId = profile.outlet_id || outlets?.[0]?.id;
   const { data: bizDate, error: dateError } = await supabase.rpc('get_effective_business_day', {
-    p_outlet_id: profile.outlet_id,
+    p_outlet_id: outletId,
     p_timestamp: new Date().toISOString()
   });
   if (dateError) {
@@ -346,6 +348,7 @@ async function renderPurchases(view, supabase, profile) {
       <div><span class="eyebrow">Operations</span><h2>Purchases</h2></div>
       <span class="soft-badge">${escapeHtml(String(businessDate))}</span>
     </div>
+    ${isOwner ? `<div class="field-row"><label>Outlet<select id="purOutlet">${(outlets || []).map(o => `<option value="${o.id}" ${Number(o.id)===Number(outletId)?'selected':''}>${escapeHtml(o.name)}</option>`).join('')}</select></label></div>` : ''}
 
     <div class="purchase-tabs">
       <button class="purchase-tab active" data-purchase-mode="item">Item-wise</button>
@@ -459,7 +462,7 @@ async function renderPurchases(view, supabase, profile) {
     let query = supabase
       .from('purchases')
       .select('id,business_date,vendor_name,item_id,qty,unit,invoice_amount,entry_type');
-    if (!isOwner) query = query.eq('outlet_id', profile.outlet_id);
+    query = query.eq('outlet_id', outletId);
     query = query.eq('business_date', businessDate).order('created_at', { ascending: false }).limit(50);
     const { data: history, error } = await query;
     if (error) {
@@ -518,7 +521,7 @@ async function renderPurchases(view, supabase, profile) {
         const { error } = await supabase.from('purchases').insert({
           id: `PUR-${profile.outlet_id}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
           business_date: businessDate,
-          outlet_id: profile.outlet_id,
+          outlet_id: outletId,
           user_id: profile.id,
           vendor_id: null,
           vendor_name: vendorName || null,
@@ -544,6 +547,7 @@ async function renderPurchases(view, supabase, profile) {
   };
 
   await loadHistory();
+  if (isOwner) view.querySelector('#purOutlet').addEventListener('change', () => renderPurchases(view, supabase, {...profile, outlet_id:Number(view.querySelector('#purOutlet').value)}));
 }
 
 async function renderSalary(view, supabase, profile) {
