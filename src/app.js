@@ -327,6 +327,7 @@ async function renderDailySummary(view, supabase, profile) {
 
 
 async function renderPurchases(view, supabase, profile) {
+  const isOwner = profile.role === 'Owner';
   const { data: categories } = await supabase.from('categories').select('id,name').order('name');
   const { data: items } = await supabase.from('items').select('id,name,category_id,unit,pack_size').eq('active', true).order('name');
   const { data: outlets } = isOwner ? await supabase.from('outlets').select('id,name').order('id') : { data: [] };
@@ -341,8 +342,6 @@ async function renderPurchases(view, supabase, profile) {
   }
 
   const businessDate = bizDate;
-  const isOwner = profile.role === 'Owner';
-
   view.innerHTML = `
     <div class="section-heading">
       <div><span class="eyebrow">Operations</span><h2>Purchases</h2></div>
