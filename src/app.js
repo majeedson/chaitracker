@@ -59,10 +59,11 @@ async function renderLogin(root, supabase) {
         <p class="login-subtitle">Choose your café and name to continue.</p>
 
         <div class="login-step">
-          <label>Café</label>
-          <div class="choice-grid" id="outlet-choice">
-            ${(outlets || []).map(o => `<button class="choice" data-outlet="${o.id}">${escapeHtml(o.name)}</button>`).join('')}
-          </div>
+          <label for="outlet-select">Café</label>
+          <select id="outlet-select">
+            <option value="">Select your café</option>
+            ${(outlets || []).map(o => `<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}
+          </select>
         </div>
 
         <div class="login-step">
@@ -80,7 +81,7 @@ async function renderLogin(root, supabase) {
     </main>
   `;
 
-  const outletChoice = root.querySelector('#outlet-choice');
+  const outletSelect = root.querySelector('#outlet-select');
   const nameSelect = root.querySelector('#name-select');
   const pin = root.querySelector('#pin');
   const loginBtn = root.querySelector('#login-btn');
@@ -93,18 +94,25 @@ async function renderLogin(root, supabase) {
   let selectedOutlet = null;
   let selectedPerson = null;
 
-  outletChoice.addEventListener('click', e => {
-    const button = e.target.closest('[data-outlet]');
-    if (!button) return;
-    selectedOutlet = Number(button.dataset.outlet);
-    outletChoice.querySelectorAll('.choice').forEach(b => b.classList.toggle('selected', b === button));
+  outletSelect.addEventListener('change', () => {
+    selectedOutlet = Number(outletSelect.value) || null;
+    selectedPerson = null;
 
-    const people = (directory || []).filter(u => Number(u.outlet_id) === selectedOutlet);
-    nameSelect.disabled = false;
-    nameSelect.innerHTML = '<option value="">Select your name</option>' +
-      people.map(u => `<option value="${u.id}">${escapeHtml(u.name)} — ${escapeHtml(u.role)}</option>`).join('');
+    const people = selectedOutlet
+      ? (directory || []).filter(u => Number(u.outlet_id) === selectedOutlet)
+      : [];
+
+    nameSelect.disabled = !selectedOutlet;
+    nameSelect.innerHTML = selectedOutlet
+      ? '<option value="">Select your name</option>' +
+        people.map(u => `<option value="${u.id}">${escapeHtml(u.name)} — ${escapeHtml(u.role)}</option>`).join('')
+      : '<option value="">Select your café first</option>';
+
+    pin.value = '';
     pin.disabled = true;
     loginBtn.disabled = true;
+    setupArea.hidden = true;
+    loginArea.hidden = false;
   });
 
   nameSelect.addEventListener('change', () => {
