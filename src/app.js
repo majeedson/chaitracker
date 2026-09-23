@@ -122,9 +122,15 @@ async function renderLogin(root, supabase) {
     const isStagingOwner = selectedPerson?.name === 'Jazeel' && selectedPerson?.role === 'Owner';
     const needsSetup = !!selectedPerson && !selectedPerson.pin_set && !isStagingOwner;
     setupArea.hidden = !needsSetup; loginArea.hidden = needsSetup;
-    pin.disabled = !nameSelect.value || needsSetup; loginBtn.disabled = true; errorBox.hidden = true;
+    pin.disabled = !nameSelect.value || needsSetup;
+    loginBtn.disabled = !nameSelect.value || needsSetup;
+    errorBox.hidden = true;
     if (!nameSelect.value) { setupArea.hidden = true; loginArea.hidden = false; return; }
-    if (!needsSetup) pin.focus();
+    if (!needsSetup) {
+      errorBox.textContent = 'Enter your PIN and tap Sign in.';
+      errorBox.hidden = false;
+      pin.focus();
+    }
   });
 
   setupBtn.addEventListener('click', async () => {
@@ -143,12 +149,15 @@ async function renderLogin(root, supabase) {
 
   pin.addEventListener('input', () => {
     pin.value = pin.value.replace(/\D/g, '').slice(0, 8);
-    loginBtn.disabled = pin.value.length < 4;
-    errorBox.textContent = pin.value.length >= 4 ? 'Ready to sign in.' : '';
-    errorBox.hidden = pin.value.length < 4;
   });
 
   const submitLogin = async () => {
+    const enteredPin = pin.value.replace(/\D/g, '').slice(0, 8);
+    if (enteredPin.length < 4) {
+      errorBox.textContent = 'Enter at least 4 digits.';
+      errorBox.hidden = false;
+      return;
+    }
     errorBox.textContent = 'Contacting secure login…';
     errorBox.hidden = false;
     loginBtn.disabled = true;
@@ -161,7 +170,7 @@ async function renderLogin(root, supabase) {
           'Content-Type': 'application/json',
           apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
         },
-        body: JSON.stringify({ user_id: nameSelect.value, pin: pin.value })
+        body: JSON.stringify({ user_id: nameSelect.value, pin: enteredPin })
       });
 
       const payload = await response.json();
