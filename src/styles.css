@@ -113,3 +113,13 @@ input,select,textarea{font-weight:400;font-size:15px}
 .cash-position-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}.cash-position-grid>div{background:#f4f4f6;border-radius:18px;padding:16px}.cash-position-grid span{display:block;text-transform:uppercase;font-size:10px;letter-spacing:.05em;color:#74747b;font-weight:600}.cash-position-grid strong{display:block;font-size:22px;margin-top:8px}.cash-position-grid .negative strong{color:#d12635}.cash-position-grid .positive strong{color:#238a4b}
 .summary-actions{display:grid;gap:10px;padding:2px 0 8px}.summary-actions button{min-height:56px;font-size:15px}.close-day{border:1px solid color-mix(in srgb,var(--accent) 35%,white);background:var(--accent-soft);color:var(--accent);border-radius:16px;font:inherit;font-weight:600}
 @media(max-width:600px){.summary-page{margin:-2px}.summary-section{padding:18px 16px;border-radius:21px}.summary-title-row{padding:3px 2px}.summary-title-row h2{font-size:25px}.summary-state{display:none}.summary-two{gap:10px}.summary-label input,.summary-label select{min-height:54px}.entry-head{grid-template-columns:1.05fr .95fr .8fr 30px;gap:6px}.summary-entry-row{grid-template-columns:1.05fr .95fr .8fr 30px;gap:6px}.summary-entry-row input,.summary-entry-row select{padding:0 8px;font-size:14px}.remove-row{width:30px}.staff-payment-grid{grid-template-columns:1fr 1fr;gap:7px}.summary-entry-row.staff{align-items:stretch}.cash-counter label{grid-template-columns:48px 14px 1fr 72px}.cash-position-grid strong{font-size:20px}}
+
+/* Build 15 — uniform Daily Summary entry controls */
+.summary-entry-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 42px;gap:10px;align-items:center}
+.entry-head{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 42px;gap:10px}
+.summary-entry-row input,.summary-entry-row select{height:52px;min-height:52px;border-radius:15px;padding:0 12px}
+.remove-row{width:42px;height:52px;border-radius:15px}
+.summary-entry-row.staff{grid-template-columns:minmax(0,1fr) 42px;gap:10px}
+.staff-payment-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.staff-payment-grid input,.staff-payment-grid select{height:52px;min-height:52px}
+@media(max-width:560px){.summary-entry-row,.entry-head{grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr) minmax(0,.9fr) 42px;gap:8px}.summary-entry-row.staff{grid-template-columns:minmax(0,1fr) 42px}.staff-payment-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}
