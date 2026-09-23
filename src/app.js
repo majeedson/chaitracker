@@ -1,3 +1,4 @@
+const APP_BUILD = 14;
 const modules = [
   ['home', 'My Day'],
   ['attendance', 'Attendance'],
@@ -83,7 +84,7 @@ async function renderLogin(root, supabase) {
   root.innerHTML=`
     <main class="login-shell">
       <section class="login-card">
-        <div class="brand-lockup"><div class="brand-mark">${icon('home',22)}</div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day.</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark">${icon('home',22)}</div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
           <div class="login-step"><label>Your name</label><select id="name-select" disabled><option value="">Select your café first</option></select></div>
