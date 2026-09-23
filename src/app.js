@@ -1,4 +1,4 @@
-const APP_BUILD = 25;
+const APP_BUILD = 26;
 const modules = [
   ['home', 'My Day'],
   ['attendance', 'Attendance'],
@@ -107,7 +107,7 @@ async function renderLogin(root, supabase) {
   const renderLoginMode=()=>{
     resetLoginState();
     const isAdmin=loginMode==='admin';cafeStep.hidden=isAdmin;
-    if(isAdmin){outletSelect.value='';applyTheme(null);const admins=(directory||[]).filter(u=>u.access_class==='ADMIN'&&u.active);nameSelect.disabled=false;nameSelect.innerHTML='<option value="">Select your name</option>'+admins.map(u=>`<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');}
+    if(isAdmin){outletSelect.value='';applyTheme(null);const admins=(directory||[]).filter(u=>u.access_class==='ADMIN');nameSelect.disabled=false;nameSelect.innerHTML='<option value="">Select your name</option>'+admins.map(u=>`<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');}
     else{nameSelect.disabled=true;nameSelect.innerHTML='<option value="">Select your café first</option>';}
   };
   root.querySelectorAll('[data-login-mode]').forEach(btn=>btn.onclick=()=>{loginMode=btn.dataset.loginMode;root.querySelectorAll('[data-login-mode]').forEach(b=>b.classList.toggle('active',b===btn));renderLoginMode();});
