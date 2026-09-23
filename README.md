@@ -21,3 +21,5 @@ ChaiTracker is the operational web/PWA application for Teapot and ChaiCafe.
 2. Add the Supabase project URL and publishable/anon key.
 3. Install dependencies with `npm install`.
 4. Start with `npm run dev`.
+
+Staging deployment refresh: latest login flow.
