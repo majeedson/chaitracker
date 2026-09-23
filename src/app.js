@@ -73,7 +73,7 @@ async function renderLogin(root, supabase) {
           </select>
         </div>
 
-        <div id="pin-login-area"><div class="login-step"><label for="pin">PIN</label><input id="pin" inputmode="numeric" autocomplete="current-password" maxlength="8" type="password" placeholder="Enter PIN" disabled></div><button id="login-btn" class="primary full" disabled>Sign in</button></div>
+        <div id="pin-login-area"><div class="login-step"><label for="pin">PIN</label><input id="pin" inputmode="numeric" autocomplete="current-password" maxlength="8" type="password" placeholder="Enter PIN" disabled></div><button id="login-btn" type="button" class="primary full" disabled>Sign in</button></div>
         <div id="pin-setup-area" hidden><div class="notice">First login: enter the one-time setup code given by the owner, then choose your private PIN.</div><div class="login-step"><label for="setup-code">Setup code</label><input id="setup-code" inputmode="numeric" maxlength="6" placeholder="6-digit code"></div><div class="login-step"><label for="new-pin">Choose your PIN</label><input id="new-pin" inputmode="numeric" maxlength="8" type="password" placeholder="4–8 digits"></div><button id="setup-btn" class="primary full">Create my PIN</button></div>
 
         <p id="login-error" class="login-note" hidden></p>
@@ -143,10 +143,13 @@ async function renderLogin(root, supabase) {
   pin.addEventListener('input', () => {
     pin.value = pin.value.replace(/\D/g, '').slice(0, 8);
     loginBtn.disabled = pin.value.length < 4;
+    errorBox.textContent = pin.value.length >= 4 ? 'Ready to sign in.' : '';
+    errorBox.hidden = pin.value.length < 4;
   });
 
-  loginBtn.addEventListener('click', async () => {
-    errorBox.hidden = true;
+  const submitLogin = async () => {
+    errorBox.textContent = 'Contacting secure login…';
+    errorBox.hidden = false;
     loginBtn.disabled = true;
     loginBtn.textContent = 'Signing in…';
 
@@ -175,6 +178,14 @@ async function renderLogin(root, supabase) {
       errorBox.hidden = false;
       loginBtn.disabled = false;
       loginBtn.textContent = 'Sign in';
+    }
+  };
+
+  loginBtn.addEventListener('click', submitLogin);
+  pin.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && pin.value.length >= 4) {
+      event.preventDefault();
+      submitLogin();
     }
   });
 }
