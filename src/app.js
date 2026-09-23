@@ -7,7 +7,8 @@ const modules = [
   ['summary', 'Daily Summary'],
   ['delta', 'Delta'],
   ['salary', 'Salary'],
-  ['dashboard', 'Dashboard']
+  ['dashboard', 'Dashboard'],
+  ['people', 'People']
 ];
 
 function escapeHtml(value = '') {
@@ -205,6 +206,7 @@ async function loadModule(view, supabase, profile, module) {
   if (module === 'summary') { await renderDailySummary(view, supabase, profile); return; }
   if (module === 'salary') { await renderSalary(view, supabase, profile); return; }
   if (module === 'purchase') { await renderPurchases(view, supabase, profile); return; }
+  if (module === 'people') { await renderPeople(view, supabase, profile); return; }
 
   const labels = {
     home: ['My Day', profile.role === 'Owner' ? 'Owner command center foundation is ready.' : 'Your personal workspace is ready.'],
@@ -325,6 +327,101 @@ async function renderDailySummary(view, supabase, profile) {
   };
 }
 
+
+async function renderPeople(view, supabase, profile) {
+  if (profile.role !== 'Owner') {
+    view.innerHTML = '<span class="eyebrow">People</span><h2>Owner access required</h2>';
+    return;
+  }
+
+  const [{ data: outlets }, { data: staffRows }] = await Promise.all([
+    supabase.from('outlets').select('id,name').order('id'),
+    supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,users:users!staff_id(id,role,pin_set_at)').order('name')
+  ]);
+
+  view.innerHTML = `
+    <div class="section-heading">
+      <div><span class="eyebrow">People</span><h2>Staff & Users</h2></div>
+      <span class="soft-badge">${(staffRows || []).filter(s => s.active).length} active</span>
+    </div>
+
+    <div class="subsection">
+      <div class="section-heading"><h3>Add staff member</h3><span class="hint">PIN is set by the staff member later</span></div>
+      <div class="form-grid">
+        <label>Full name<input id="staffName" placeholder="Staff name"></label>
+        <label>Outlet<select id="staffOutlet">${(outlets || []).map(o => `<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></label>
+        <label>Role<select id="staffRole"><option>Staff</option><option>Manager</option><option>Ops Manager</option></select></label>
+        <label>Joining date<input id="staffJoining" type="date" value="${new Date().toISOString().slice(0,10)}"></label>
+        <label>Agreed basic salary<input id="staffSalary" type="number" min="0" step="0.01" placeholder="0.00"></label>
+      </div>
+      <div class="permissions-box">
+        <div class="card-label">Access permissions</div>
+        <div class="permission-grid">
+          <label><input type="checkbox" id="permAttendance" checked> Attendance</label>
+          <label><input type="checkbox" id="permPurchase" checked> Purchases</label>
+          <label><input type="checkbox" id="permSummary" checked> Daily Summary</label>
+          <label><input type="checkbox" id="permStock" checked> Stock</label>
+        </div>
+      </div>
+      <button id="addStaffBtn" class="primary">Add staff member</button>
+      <div id="staffFormMsg"></div>
+    </div>
+
+    <div class="subsection">
+      <div class="section-heading"><h3>Current staff</h3><span class="hint">Employment and login status</span></div>
+      <div id="staffList"></div>
+    </div>
+  `;
+
+  const renderList = () => {
+    const outletMap = new Map((outlets || []).map(o => [Number(o.id), o.name]));
+    const rows = staffRows || [];
+    view.querySelector('#staffList').innerHTML = rows.length ? `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Outlet</th><th>Role</th><th>Joining</th><th>Salary</th><th>PIN</th><th>Status</th></tr></thead>
+        <tbody>${rows.map(s => {
+          const u = Array.isArray(s.users) ? s.users[0] : s.users;
+          return `<tr>
+            <td><strong>${escapeHtml(s.name)}</strong></td>
+            <td>${escapeHtml(outletMap.get(Number(s.outlet_id)) || '—')}</td>
+            <td>${escapeHtml(u?.role || 'Staff')}</td>
+            <td>${escapeHtml(s.joining_date || '—')}</td>
+            <td>${Number(s.basic_salary || 0).toFixed(2)}</td>
+            <td>${u?.pin_set_at ? '<span class="status-ok">Set</span>' : '<span class="status-warn">Not set</span>'}</td>
+            <td>${s.active ? '<span class="status-ok">Active</span>' : '<span class="status-warn">Inactive</span>'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>` : '<div class="notice">No staff records yet.</div>';
+  };
+  renderList();
+
+  view.querySelector('#addStaffBtn').onclick = async () => {
+    const btn=view.querySelector('#addStaffBtn'), msg=view.querySelector('#staffFormMsg');
+    const name=view.querySelector('#staffName').value.trim();
+    const outletId=Number(view.querySelector('#staffOutlet').value);
+    const role=view.querySelector('#staffRole').value;
+    const joining=view.querySelector('#staffJoining').value;
+    const salary=Number(view.querySelector('#staffSalary').value || 0);
+    const permissions={
+      attendance:view.querySelector('#permAttendance').checked,
+      purchase:view.querySelector('#permPurchase').checked,
+      summary:view.querySelector('#permSummary').checked,
+      stock:view.querySelector('#permStock').checked,
+      salary:false
+    };
+    if(!name || !joining || salary<=0){msg.innerHTML='<p class="form-error">Name, joining date and agreed salary are required.</p>';return;}
+    btn.disabled=true;btn.textContent='Adding…';msg.innerHTML='';
+    try{
+      const {error}=await supabase.rpc('owner_add_staff',{p_name:name,p_outlet_id:outletId,p_role:role,p_basic_salary:salary,p_joining_date:joining,p_permissions:permissions});
+      if(error) throw error;
+      msg.innerHTML='<p class="status-ok">Staff member added. They can set their PIN through the first-time login flow.</p>';
+      view.querySelector('#staffName').value='';view.querySelector('#staffSalary').value='';
+      const {data}=await supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,users:users!staff_id(id,role,pin_set_at)').order('name');
+      staffRows.splice(0,staffRows.length,...(data||[])); renderList();
+    }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to add staff.')+'</p>';}
+    finally{btn.disabled=false;btn.textContent='Add staff member';}
+  };
+}
 
 async function renderPurchases(view, supabase, profile) {
   const isOwner = profile.role === 'Owner';
