@@ -393,9 +393,9 @@ async function renderPeople(view, supabase, profile) {
   view.innerHTML = `
     <div class="section-heading"><div><span class="eyebrow">People</span><h2>Staff & Users</h2></div><span class="soft-badge" id="staffCount"></span></div>
     <div class="subsection">
-      <div class="section-heading"><h3>Add staff member</h3><span class="hint">Employee creates their own private PIN</span></div>
+      <div class="section-heading"><h3>Add staff member</h3><span class="hint">Employee completes onboarding, then creates a private PIN</span></div>
       <div class="form-grid">
-        <label>Full name<input id="staffName" placeholder="Staff name"></label>
+        <label>Display name<input id="staffName" placeholder="Name used in CafeTracker"></label>
         <label>Outlet<select id="staffOutlet">${outlets.map(o => `<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></label>
         <label>Role<select id="staffRole"><option>Staff</option><option>Manager</option><option>Ops Manager</option></select></label>
         <label>Joining date<input id="staffJoining" type="date" value="${new Date().toISOString().slice(0,10)}"></label>
@@ -433,7 +433,7 @@ async function renderPeople(view, supabase, profile) {
       <div class="card staff-editor">
         <div class="section-heading"><div><span class="eyebrow">Staff profile</span><h3>${escapeHtml(s.name)}</h3></div><button id="cancelEdit" class="ghost">Cancel</button></div>
         <div class="form-grid">
-          <label>Full name<input id="editName" value="${escapeHtml(s.name)}"></label>
+          <label>Display name<input id="editName" value="${escapeHtml(s.name)}"></label>
           <label>Outlet<select id="editOutlet">${outlets.map(o=>`<option value="${o.id}" ${Number(o.id)===Number(s.outlet_id)?'selected':''}>${escapeHtml(o.name)}</option>`).join('')}</select></label>
           <label>Role<select id="editRole">${['Staff','Manager','Ops Manager'].map(r=>`<option ${r===(u?.role||'Staff')?'selected':''}>${r}</option>`).join('')}</select></label>
           <label>Joining date<input id="editJoining" type="date" value="${escapeHtml(s.joining_date||'')}"></label>
