@@ -373,7 +373,7 @@ async function renderDailySummary(view, supabase, profile) {
         <div class="summary-section-title"><span></span><h3>Cash counter</h3></div>
         <p class="section-help">Count the cash drawer by denomination. The total becomes Physical Cash in Hand.</p>
         <div class="cash-counter">
-          ${[500,200,100,50,20,10,5,2,1].map(d=>`<label><span>₹${d}</span><span class="cash-multiply">×</span><input class="denom-count" data-value="${d}" type="number" min="0" step="1" inputmode="numeric" placeholder="0"><strong class="denom-total">₹0</strong></label>`).join('')}
+          ${[500,200,100,50,20,10].map(d=>`<label><span>₹${d}</span><span class="cash-multiply">×</span><input class="denom-count" data-value="${d}" type="number" min="0" step="1" inputmode="numeric" placeholder="0"><strong class="denom-total">₹0</strong></label>`).join('')}
         </div>
         <div class="summary-total neutral"><span>Counted cash</span><strong id="countedCash">₹0</strong></div>
         <button id="useCountedCash" class="summary-add full" type="button">Use counted total as physical cash</button>
@@ -388,7 +388,7 @@ async function renderDailySummary(view, supabase, profile) {
 
       <div class="summary-actions">
         <button id="saveSummary" class="primary" type="button">Save Summary</button>
-        <button id="closeSummary" class="close-day" type="button">Close Day</button>
+        <button id="closeSummary" class="close-day" type="button">Close Day</button>\n        <button id="whatsappSummary" class="summary-add full" type="button">WhatsApp Summary</button>
       </div>
       <p id="summaryMessage" class="form-error" hidden></p>
       ${existing?.is_closed?'<div class="notice warning">This day is closed and cannot be edited.</div>':''}
@@ -468,6 +468,43 @@ async function renderDailySummary(view, supabase, profile) {
       await renderDailySummary(view,supabase,profile);return true;
     }catch(e){msg.textContent=e.message||'Could not save summary.';msg.hidden=false;return false;}finally{if(btn.isConnected){btn.disabled=false;btn.textContent='Save Summary';}}
   };
+  const whatsappSummary=()=>{
+    calc();
+    const {expenses,vendorPayouts,staffPayouts}=collect();
+    const fmt=v=>'₹'+Math.round(Number(v||0)).toLocaleString('en-IN');
+    const cashDiff=n('sPhysical')-Number(view.querySelector('#expectedCash').textContent.replace(/[^0-9.-]/g,'')||0);
+    const lines=[
+      '*Daily Summary — '+outlet.name+'*',
+      'Date: '+businessDate+'  |  Saved by: '+profile.name,
+      '',
+      '*Sales*',
+      'Cash: '+fmt(n('sCash')),
+      'UPI: '+fmt(n('sUpi')),
+      'Swiggy: '+fmt(n('sSwGross'))+' → Payout: '+fmt(n('sSwPay')),
+      'Zomato: '+fmt(n('sZoGross'))+' → Payout: '+fmt(n('sZoPay')),
+      'Own Digital: '+fmt(n('sOwn')),
+      'Discount: -'+fmt(n('sDisc')),
+      '*Net Sale: '+fmt(n('sCash')+n('sUpi')+n('sSwPay')+n('sZoPay')+n('sOwn')-n('sDisc'))+'*',
+      '',
+      '*Expenses*',
+      ...(expenses.length?expenses.map(x=>x.category+': '+fmt(x.amount)+' ('+x.mode+')'):['None']),
+      '',
+      '*Vendor Payments*',
+      ...(vendorPayouts.length?vendorPayouts.map(x=>x.vendor_name+': '+fmt(x.amount)+' ('+x.mode+')'):['None']),
+      ...(staffPayouts.length?['','*Staff Payments*',...staffPayouts.map(x=>x.staff_name+' — '+x.payout_type+': '+fmt(x.amount)+' ('+x.mode+')')]:[]),
+      '',
+      '*Cash Position*',
+      'Opening (Yesterday): '+fmt(systemOpening),
+      'Physical Cash (Today): '+fmt(n('sPhysical')),
+      'Expected Cash: '+view.querySelector('#expectedCash').textContent,
+      'Status: '+(cashDiff<0?'⬇️ Short '+fmt(Math.abs(cashDiff)):cashDiff>0?'⬆️ Excess '+fmt(cashDiff):'✅ Matched'),
+      '',
+      '_CafeTracker · '+businessDate+'_'
+    ];
+    const text=lines.join('\\n');
+    window.open('https://wa.me/?text='+encodeURIComponent(text),'_blank','noopener,noreferrer');
+  };
+  view.querySelector('#whatsappSummary').onclick=whatsappSummary;
   view.querySelector('#saveSummary').onclick=save;
   view.querySelector('#closeSummary').onclick=async()=>{if(!existing){const ok=await save();if(!ok)return;await renderDailySummary(view,supabase,profile);return;}const {error}=await supabase.rpc('close_daily_summary',{p_summary_id:existing.id,p_user_id:profile.id});if(error){const msg=view.querySelector('#summaryMessage');msg.textContent=error.message;msg.hidden=false;return;}await renderDailySummary(view,supabase,profile);};
 }
