@@ -1,4 +1,4 @@
-const APP_BUILD = 16;
+const APP_BUILD = 17;
 const modules = [
   ['home', 'My Day'],
   ['attendance', 'Attendance'],
@@ -474,36 +474,25 @@ async function renderDailySummary(view, supabase, profile) {
     calc();
     const {expenses,vendorPayouts,staffPayouts}=collect();
     const fmt=v=>'₹'+Math.round(Number(v||0)).toLocaleString('en-IN');
-    const cashDiff=n('sPhysical')-Number(view.querySelector('#expectedCash').textContent.replace(/[^0-9.-]/g,'')||0);
-    const lines=[
-      '*Daily Summary — '+outlet.name+'*',
-      'Date: '+businessDate+'  |  Saved by: '+profile.name,
-      '',
-      '*Sales*',
-      'Cash: '+fmt(n('sCash')),
-      'UPI: '+fmt(n('sUpi')),
-      'Swiggy: '+fmt(n('sSwGross'))+' → Payout: '+fmt(n('sSwPay')),
-      'Zomato: '+fmt(n('sZoGross'))+' → Payout: '+fmt(n('sZoPay')),
-      'Own Digital: '+fmt(n('sOwn')),
-      'Discount: -'+fmt(n('sDisc')),
-      '*Net Sale: '+fmt(n('sCash')+n('sUpi')+n('sSwPay')+n('sZoPay')+n('sOwn')-n('sDisc'))+'*',
-      '',
-      '*Expenses*',
-      ...(expenses.length?expenses.map(x=>x.category+': '+fmt(x.amount)+' ('+x.mode+')'):['None']),
-      '',
-      '*Vendor Payments*',
-      ...(vendorPayouts.length?vendorPayouts.map(x=>x.vendor_name+': '+fmt(x.amount)+' ('+x.mode+')'):['None']),
-      ...(staffPayouts.length?['','*Staff Payments*',...staffPayouts.map(x=>x.staff_name+' — '+x.payout_type+': '+fmt(x.amount)+' ('+x.mode+')')]:[]),
-      '',
-      '*Cash Position*',
-      'Opening (Yesterday): '+fmt(systemOpening),
-      'Physical Cash (Today): '+fmt(n('sPhysical')),
-      'Expected Cash: '+view.querySelector('#expectedCash').textContent,
-      'Status: '+(cashDiff<0?'⬇️ Short '+fmt(Math.abs(cashDiff)):cashDiff>0?'⬆️ Excess '+fmt(cashDiff):'✅ Matched'),
-      '',
-      '_CafeTracker · '+businessDate+'_'
-    ];
-    const text=lines.join('\\n');
+    const displayDate=new Date(businessDate+'T12:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+    const expected=Number(view.querySelector('#expectedCash').textContent.replace(/[^0-9.-]/g,'')||0);
+    const physical=n('sPhysical'),cashDiff=physical-expected;
+    const expenseTotal=expenses.reduce((a,x)=>a+Number(x.amount||0),0);
+    const vendorTotal=vendorPayouts.reduce((a,x)=>a+Number(x.amount||0),0);
+    const staffTotal=staffPayouts.reduce((a,x)=>a+Number(x.amount||0),0);
+    const cashOut=[...expenses,...vendorPayouts,...staffPayouts].filter(x=>x.mode==='Cash').reduce((a,x)=>a+Number(x.amount||0),0);
+    const lines=['*DAILY SUMMARY — '+outlet.name.toUpperCase()+'*',displayDate,'Saved by '+profile.name,'','*SALES*','Cash — '+fmt(n('sCash')),'UPI — '+fmt(n('sUpi'))];
+    if(n('sSwGross')||n('sSwPay'))lines.push('Swiggy — '+fmt(n('sSwGross'))+' · Payout '+fmt(n('sSwPay')));
+    if(n('sZoGross')||n('sZoPay'))lines.push('Zomato — '+fmt(n('sZoGross'))+' · Payout '+fmt(n('sZoPay')));
+    if(n('sOwn'))lines.push('Own Digital — '+fmt(n('sOwn')));
+    if(n('sDisc'))lines.push('Discount — '+fmt(n('sDisc')));
+    lines.push('','*NET SALE — '+fmt(n('sCash')+n('sUpi')+n('sSwPay')+n('sZoPay')+n('sOwn')-n('sDisc'))+'*','','*EXPENSES*');
+    if(expenses.length){lines.push(...expenses.map(x=>x.category+' — '+fmt(x.amount)+' · '+x.mode),'*Total Expenses — '+fmt(expenseTotal)+'*');}else lines.push('None');
+    lines.push('','*VENDOR PAYMENTS*');
+    if(vendorPayouts.length){lines.push(...vendorPayouts.map(x=>x.vendor_name+' — '+fmt(x.amount)+' · '+x.mode),'*Total Vendor Payments — '+fmt(vendorTotal)+'*');}else lines.push('None');
+    if(staffPayouts.length)lines.push('','*STAFF PAYMENTS*',...staffPayouts.map(x=>x.staff_name+' — '+x.payout_type+' · '+fmt(x.amount)+' · '+x.mode),'*Total Staff Payments — '+fmt(staffTotal)+'*');
+    lines.push('','*CASH POSITION*','Opening Cash — '+fmt(systemOpening),'Cash Sales — '+fmt(n('sCash')),'Cash Out — '+fmt(cashOut),'Expected Cash — '+fmt(expected),'Physical Cash — '+fmt(physical),'',cashDiff<0?'🔴 *SHORT — '+fmt(Math.abs(cashDiff))+'*':cashDiff>0?'🟠 *EXCESS — '+fmt(cashDiff)+'*':'🟢 *MATCHED*','','_CafeTracker · '+displayDate+'_');
+    const text=lines.join('\n');
     const preview=view.querySelector('#whatsappPreview'),box=view.querySelector('#whatsappText');
     box.value=text;preview.hidden=false;box.style.height='auto';box.style.height=Math.min(box.scrollHeight,520)+'px';
     preview.scrollIntoView({behavior:'smooth',block:'center'});
