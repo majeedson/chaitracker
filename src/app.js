@@ -1,4 +1,4 @@
-const APP_BUILD = 24;
+const APP_BUILD = 25;
 const modules = [
   ['home', 'My Day'],
   ['attendance', 'Attendance'],
@@ -77,7 +77,7 @@ export async function renderApp(root, supabase) {
 async function renderLogin(root, supabase) {
   const [{ data: outlets }, { data: directory, error }] = await Promise.all([
     supabase.from('outlets').select('id,name,theme_key,theme_color').order('id'),
-    supabase.from('login_directory').select('id,name,role,outlet_id,outlet_name,can_switch_outlet,auth_enrolled,pin_set,theme_key,theme_color,onboarding_status').order('name')
+    supabase.from('login_directory').select('id,name,role,outlet_id,outlet_name,can_switch_outlet,auth_enrolled,pin_set,theme_key,theme_color,onboarding_status,access_class,is_super_user').order('name')
   ]);
   if (error) { root.innerHTML='<main class="login-shell"><section class="login-card"><h1>CafeTracker</h1><p>Login setup unavailable.</p></section></main>'; return; }
 
@@ -86,7 +86,8 @@ async function renderLogin(root, supabase) {
       <section class="login-card">
         <div class="brand-lockup"><div class="brand-mark">${icon('home',22)}</div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
-          <div class="login-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
+          <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
+          <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
           <div class="login-step"><label>Your name</label><select id="name-select" disabled><option value="">Select your café first</option></select></div>
           <div id="pin-login-area"><div class="login-step"><label>PIN</label><div class="input-with-icon">${icon('lock',19)}<input id="pin" inputmode="numeric" autocomplete="current-password" maxlength="8" type="password" placeholder="Enter PIN" disabled></div></div><button id="login-btn" type="button" class="primary full" disabled>Sign in <span>→</span></button></div>
           <div id="onboarding-start" hidden>
@@ -100,22 +101,30 @@ async function renderLogin(root, supabase) {
     </main>`;
 
   const outletSelect=root.querySelector('#outlet-select'),nameSelect=root.querySelector('#name-select'),pin=root.querySelector('#pin'),loginBtn=root.querySelector('#login-btn');
-  const loginArea=root.querySelector('#pin-login-area'),onboardingStart=root.querySelector('#onboarding-start'),picker=root.querySelector('#login-picker'),onboardingShell=root.querySelector('#onboarding-shell'),errorBox=root.querySelector('#login-error');
-  let selectedPerson=null;
+  const loginArea=root.querySelector('#pin-login-area'),onboardingStart=root.querySelector('#onboarding-start'),picker=root.querySelector('#login-picker'),onboardingShell=root.querySelector('#onboarding-shell'),errorBox=root.querySelector('#login-error'),cafeStep=root.querySelector('#login-cafe-step');
+  let selectedPerson=null,loginMode='staff';
+  const resetLoginState=()=>{selectedPerson=null;pin.value='';pin.disabled=true;loginBtn.disabled=true;loginArea.hidden=false;onboardingStart.hidden=true;errorBox.hidden=true;};
+  const renderLoginMode=()=>{
+    resetLoginState();
+    const isAdmin=loginMode==='admin';cafeStep.hidden=isAdmin;
+    if(isAdmin){outletSelect.value='';applyTheme(null);const admins=(directory||[]).filter(u=>u.access_class==='ADMIN'&&u.active);nameSelect.disabled=false;nameSelect.innerHTML='<option value="">Select your name</option>'+admins.map(u=>`<option value="${u.id}">${escapeHtml(u.name)}</option>`).join('');}
+    else{nameSelect.disabled=true;nameSelect.innerHTML='<option value="">Select your café first</option>';}
+  };
+  root.querySelectorAll('[data-login-mode]').forEach(btn=>btn.onclick=()=>{loginMode=btn.dataset.loginMode;root.querySelectorAll('[data-login-mode]').forEach(b=>b.classList.toggle('active',b===btn));renderLoginMode();});
 
   outletSelect.onchange=()=>{
     const outlet=(outlets||[]).find(o=>Number(o.id)===Number(outletSelect.value)); applyTheme(outlet);
-    selectedPerson=null; const people=(directory||[]).filter(u=>Number(u.outlet_id)===Number(outletSelect.value));
+    selectedPerson=null; const people=(directory||[]).filter(u=>u.access_class!=='ADMIN'&&Number(u.outlet_id)===Number(outletSelect.value));
     nameSelect.disabled=!outletSelect.value;
-    nameSelect.innerHTML=outletSelect.value?'<option value="">Select your name</option>'+people.map(u=>`<option value="${u.id}">${escapeHtml(u.name)} — ${escapeHtml(u.role)}</option>`).join(''):'<option value="">Select your café first</option>';
+    nameSelect.innerHTML=outletSelect.value?'<option value="">Select your name</option>'+people.map(u=>`<option value="${u.id}">${escapeHtml(u.name)}</option>`).join(''):'<option value="">Select your café first</option>';
     pin.value='';pin.disabled=true;loginBtn.disabled=true;loginArea.hidden=false;onboardingStart.hidden=true;errorBox.hidden=true;
   };
 
   nameSelect.onchange=()=>{
     selectedPerson=(directory||[]).find(u=>u.id===nameSelect.value)||null;
     if(selectedPerson)applyTheme(selectedPerson);
-    const isFrozenOwner=selectedPerson?.name==='Jazeel'&&selectedPerson?.role==='Owner';
-    const needsOnboarding=!!selectedPerson&&!selectedPerson.pin_set&&!isFrozenOwner;
+    const isAdminAccount=selectedPerson?.access_class==='ADMIN';
+    const needsOnboarding=!!selectedPerson&&!selectedPerson.pin_set&&!isAdminAccount;
     loginArea.hidden=needsOnboarding; onboardingStart.hidden=!needsOnboarding;
     pin.disabled=!selectedPerson||needsOnboarding; loginBtn.disabled=!selectedPerson||needsOnboarding; errorBox.hidden=true;
     if(selectedPerson&&!needsOnboarding)pin.focus();
@@ -573,7 +582,7 @@ async function renderPeople(view, supabase, profile) {
 
   view.innerHTML = `
     <div class="section-heading"><div><span class="eyebrow">People</span><h2>Staff & Users</h2></div><span class="soft-badge" id="staffCount"></span></div>
-    <div class="people-tabs"><button type="button" class="active" data-people-tab="staff">Staff</button><button type="button" data-people-tab="add">Add staff</button></div>
+    <div class="people-tabs three"><button type="button" class="active" data-people-tab="staff">Staff</button><button type="button" data-people-tab="admins">Admins</button><button type="button" data-people-tab="add">Add staff</button></div>
     <div id="peopleAdd" class="subsection" hidden>
       <div class="section-heading"><h3>Add staff member</h3><span class="hint">Employee completes onboarding, then creates a private PIN</span></div>
       <div class="form-grid">
@@ -591,6 +600,7 @@ async function renderPeople(view, supabase, profile) {
       </div></div>
       <button id="addStaffBtn" class="primary">Add staff member</button><div id="staffFormMsg"></div>
     </div>
+    <div id="peopleAdmins" class="subsection" hidden><div class="section-heading"><h3>Administrators</h3><span class="hint">Super User controls PIN hard resets</span></div><div class="admin-list">${adminRows.map(a=>`<div class="admin-row"><div><strong>${escapeHtml(a.name)}</strong>${a.is_super_user?'<span class="soft-badge">Super User</span>':''}</div><span class="${a.active?'status-ok':'status-warn'}">${a.active?'Active':'Inactive'}</span></div>`).join('')}</div></div>
     <div id="peopleStaff" class="subsection"><div class="section-heading"><h3>Current staff</h3><span class="hint">Select a person to manage their employment and access</span></div><div id="staffList"></div></div>
   `;
 
@@ -623,7 +633,7 @@ async function renderPeople(view, supabase, profile) {
       const btn=view.querySelector('#saveStaffStatus'),msg=view.querySelector('#staffStatusMsg');btn.disabled=true;btn.textContent='Saving…';
       const {error}=await supabase.rpc('owner_set_staff_status',{p_staff_id:staffId,p_status:view.querySelector('#staffEmploymentStatus').value,p_effective_from:view.querySelector('#staffStatusDate').value,p_note:view.querySelector('#staffStatusNote').value.trim()||null});
       if(error){msg.innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';btn.disabled=false;btn.textContent='Save status';return;}
-      ({outlets,staffRows}=await loadData());renderList();
+      ({outlets,staffRows,adminRows}=await loadData());renderList();
     };
   };
 
@@ -671,7 +681,7 @@ async function renderPeople(view, supabase, profile) {
       const msg=view.querySelector('#editMsg'),btn=view.querySelector('#resetPin');
       btn.disabled=true;btn.textContent='Resetting…';
       try{
-        const {data,error}=await supabase.rpc('owner_reset_staff_pin_setup',{p_staff_id:staffId});
+        const {data,error}=await supabase.rpc('superuser_reset_staff_pin_setup',{p_staff_id:staffId});
         if(error)throw error;
         msg.innerHTML='<div class="notice setup-share"><strong>New setup code:</strong> <strong class="setup-code">'+escapeHtml(data.setup_code)+'</strong><br><span class="hint">It expires in 24 hours. Their old PIN no longer works.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(s.name,data.setup_code))}</div><div class="share-actions"><button type="button" id="copyResetWelcome" class="secondary">Copy message</button><button type="button" id="shareResetWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>';
         view.querySelector('#copyResetWelcome').onclick=(e)=>copyStaffWelcomeMessage(s.name,data.setup_code,e.currentTarget);
@@ -683,7 +693,7 @@ async function renderPeople(view, supabase, profile) {
   };
 
   renderList();
-  view.querySelectorAll('[data-people-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.peopleTab;view.querySelectorAll('[data-people-tab]').forEach(b=>b.classList.toggle('active',b===btn));view.querySelector('#peopleStaff').hidden=tab!=='staff';view.querySelector('#peopleAdd').hidden=tab!=='add';if(tab==='staff')renderList();});
+  view.querySelectorAll('[data-people-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.peopleTab;view.querySelectorAll('[data-people-tab]').forEach(b=>b.classList.toggle('active',b===btn));view.querySelector('#peopleStaff').hidden=tab!=='staff';view.querySelector('#peopleAdmins').hidden=tab!=='admins';view.querySelector('#peopleAdd').hidden=tab!=='add';if(tab==='staff')renderList();});
 
   view.querySelector('#addStaffBtn').onclick=async()=>{
     const btn=view.querySelector('#addStaffBtn'),msg=view.querySelector('#staffFormMsg');
@@ -694,7 +704,7 @@ async function renderPeople(view, supabase, profile) {
     try{
       const {data:created,error}=await supabase.rpc('owner_add_staff',{p_name:name,p_outlet_id:outletId,p_role:role,p_basic_salary:salary,p_joining_date:joining,p_permissions:permissions});
       if(error)throw error;
-      msg.innerHTML='<div class="notice setup-share"><strong>Staff member added.</strong><br>Temporary login PIN: <strong class="setup-code">'+escapeHtml(created?.setup_code||'')+'</strong><br><span class="hint">It expires in 24 hours and is used only for first-time onboarding.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(name,created?.setup_code||''))}</div><div class="share-actions"><button type="button" id="copyNewWelcome" class="secondary">Copy message</button><button type="button" id="shareNewWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>';
+      msg.innerHTML=`<div class="notice setup-share"><strong>Staff member added.</strong><br>Temporary login PIN: <strong class="setup-code">${escapeHtml(created?.setup_code||'')}</strong><br><span class="hint">It expires in 24 hours and is used only for first-time onboarding.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(name,created?.setup_code||''))}</div><div class="share-actions"><button type="button" id="copyNewWelcome" class="secondary">Copy message</button><button type="button" id="shareNewWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>`;
       view.querySelector('#copyNewWelcome').onclick=(e)=>copyStaffWelcomeMessage(name,created?.setup_code||'',e.currentTarget);
       view.querySelector('#shareNewWhatsApp').onclick=()=>openStaffWelcomeWhatsApp(name,created?.setup_code||'');
       view.querySelector('#staffName').value='';view.querySelector('#staffSalary').value='';
