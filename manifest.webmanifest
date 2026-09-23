@@ -1,0 +1,9 @@
+{
+  "name": "ChaiTracker",
+  "short_name": "ChaiTracker",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#CB202D",
+  "icons": []
+}
