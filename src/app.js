@@ -1,4 +1,4 @@
-const APP_BUILD = 23;
+const APP_BUILD = 24;
 const modules = [
   ['home', 'My Day'],
   ['attendance', 'Attendance'],
@@ -526,19 +526,33 @@ async function renderDailySummary(view, supabase, profile) {
   view.querySelector('#closeSummary').onclick=async()=>{if(!existing){const ok=await save();if(!ok)return;await renderDailySummary(view,supabase,profile);return;}const {error}=await supabase.rpc('close_daily_summary',{p_summary_id:existing.id,p_user_id:profile.id});if(error){const msg=view.querySelector('#summaryMessage');msg.textContent=error.message;msg.hidden=false;return;}await renderDailySummary(view,supabase,profile);};
 }
 
-function openStaffWelcomeWhatsApp(name, setupCode) {
-  const message = [
-    'Welcome '+name+' on board! 👋',
+function staffWelcomeMessage(name, setupCode) {
+  return [
+    '*Welcome to CafeTracker*',
     '',
-    'Your temporary CafeTracker login PIN is: *'+setupCode+'*',
+    'Hi '+name+', welcome on board! 👋',
     '',
-    'Please open CafeTracker, select your café and your name, then use this temporary PIN to complete the onboarding form. After submitting your details, you will be asked to create your own private PIN for future logins.',
+    '*Temporary login PIN:* '+setupCode,
     '',
-    'This temporary PIN expires in 24 hours and should only be used for your first-time setup.',
+    'Please open CafeTracker, select your café and your name, and enter this temporary PIN.',
+    '',
+    'Then:',
+    '1. Complete your onboarding form',
+    '2. Upload the requested details',
+    '3. Create your own private PIN',
+    '',
+    'Your temporary PIN expires in *24 hours* and is only for first-time setup.',
     '',
     'Welcome to the team!'
   ].join('\n');
-  window.open('https://wa.me/?text='+encodeURIComponent(message),'_blank','noopener,noreferrer');
+}
+async function copyStaffWelcomeMessage(name, setupCode, button) {
+  const message=staffWelcomeMessage(name,setupCode);
+  try{await navigator.clipboard.writeText(message);const old=button.textContent;button.textContent='Copied ✓';setTimeout(()=>button.textContent=old,1600);}
+  catch{window.prompt('Copy this message:',message);}
+}
+function openStaffWelcomeWhatsApp(name, setupCode) {
+  window.open('https://wa.me/?text='+encodeURIComponent(staffWelcomeMessage(name,setupCode)),'_blank','noopener,noreferrer');
 }
 
 async function renderPeople(view, supabase, profile) {
@@ -659,7 +673,8 @@ async function renderPeople(view, supabase, profile) {
       try{
         const {data,error}=await supabase.rpc('owner_reset_staff_pin_setup',{p_staff_id:staffId});
         if(error)throw error;
-        msg.innerHTML='<div class="notice setup-share"><strong>New setup code:</strong> <strong class="setup-code">'+escapeHtml(data.setup_code)+'</strong><br><span class="hint">It expires in 24 hours. Their old PIN no longer works.</span><button type="button" id="shareResetWhatsApp" class="whatsapp-action">Send welcome on WhatsApp</button></div>';
+        msg.innerHTML='<div class="notice setup-share"><strong>New setup code:</strong> <strong class="setup-code">'+escapeHtml(data.setup_code)+'</strong><br><span class="hint">It expires in 24 hours. Their old PIN no longer works.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(s.name,data.setup_code))}</div><div class="share-actions"><button type="button" id="copyResetWelcome" class="secondary">Copy message</button><button type="button" id="shareResetWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>';
+        view.querySelector('#copyResetWelcome').onclick=(e)=>copyStaffWelcomeMessage(s.name,data.setup_code,e.currentTarget);
         view.querySelector('#shareResetWhatsApp').onclick=()=>openStaffWelcomeWhatsApp(s.name,data.setup_code);
         ({outlets,staffRows}=await loadData());
       }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to reset PIN.')+'</p>';}
@@ -679,7 +694,8 @@ async function renderPeople(view, supabase, profile) {
     try{
       const {data:created,error}=await supabase.rpc('owner_add_staff',{p_name:name,p_outlet_id:outletId,p_role:role,p_basic_salary:salary,p_joining_date:joining,p_permissions:permissions});
       if(error)throw error;
-      msg.innerHTML='<div class="notice setup-share"><strong>Staff member added.</strong><br>Temporary login PIN: <strong class="setup-code">'+escapeHtml(created?.setup_code||'')+'</strong><br><span class="hint">It expires in 24 hours and is used only for first-time onboarding.</span><button type="button" id="shareNewWhatsApp" class="whatsapp-action">Send welcome on WhatsApp</button></div>';
+      msg.innerHTML='<div class="notice setup-share"><strong>Staff member added.</strong><br>Temporary login PIN: <strong class="setup-code">'+escapeHtml(created?.setup_code||'')+'</strong><br><span class="hint">It expires in 24 hours and is used only for first-time onboarding.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(name,created?.setup_code||''))}</div><div class="share-actions"><button type="button" id="copyNewWelcome" class="secondary">Copy message</button><button type="button" id="shareNewWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>';
+      view.querySelector('#copyNewWelcome').onclick=(e)=>copyStaffWelcomeMessage(name,created?.setup_code||'',e.currentTarget);
       view.querySelector('#shareNewWhatsApp').onclick=()=>openStaffWelcomeWhatsApp(name,created?.setup_code||'');
       view.querySelector('#staffName').value='';view.querySelector('#staffSalary').value='';
       ({outlets,staffRows}=await loadData());renderList();
