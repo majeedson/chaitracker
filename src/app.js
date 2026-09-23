@@ -1,4 +1,4 @@
-const APP_BUILD = 21;
+const APP_BUILD = 22;
 const modules = [
   ['home', 'My Day'],
   ['attendance', 'Attendance'],
@@ -550,7 +550,7 @@ async function renderPeople(view, supabase, profile) {
   const loadData = async () => {
     const [{ data: outlets }, { data: staffRows }] = await Promise.all([
       supabase.from('outlets').select('id,name').order('id'),
-      supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,notes,users:users!staff_id(id,role,pin_set_at,permissions)').order('name')
+      supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status,status_effective_from,status_note,notes,users:users!staff_id(id,role,pin_set_at,permissions)').order('name')
     ]);
     return { outlets: outlets || [], staffRows: staffRows || [] };
   };
@@ -559,7 +559,8 @@ async function renderPeople(view, supabase, profile) {
 
   view.innerHTML = `
     <div class="section-heading"><div><span class="eyebrow">People</span><h2>Staff & Users</h2></div><span class="soft-badge" id="staffCount"></span></div>
-    <div class="subsection">
+    <div class="people-tabs"><button type="button" class="active" data-people-tab="staff">Staff</button><button type="button" data-people-tab="add">Add staff</button></div>
+    <div id="peopleAdd" class="subsection" hidden>
       <div class="section-heading"><h3>Add staff member</h3><span class="hint">Employee completes onboarding, then creates a private PIN</span></div>
       <div class="form-grid">
         <label>Display name<input id="staffName" placeholder="Name used in CafeTracker"></label>
@@ -576,7 +577,7 @@ async function renderPeople(view, supabase, profile) {
       </div></div>
       <button id="addStaffBtn" class="primary">Add staff member</button><div id="staffFormMsg"></div>
     </div>
-    <div class="subsection"><div class="section-heading"><h3>Current staff</h3><span class="hint">Select a person to manage their employment and access</span></div><div id="staffList"></div></div>
+    <div id="peopleStaff" class="subsection"><div class="section-heading"><h3>Current staff</h3><span class="hint">Select a person to manage their employment and access</span></div><div id="staffList"></div></div>
   `;
 
   const renderList = () => {
@@ -585,11 +586,31 @@ async function renderPeople(view, supabase, profile) {
     view.querySelector('#staffList').innerHTML = staffRows.length ? `
       <div class="table-wrap"><table><thead><tr><th>Name</th><th>Outlet</th><th>Role</th><th>Joining</th><th>Salary</th><th>PIN</th><th>Status</th><th></th></tr></thead>
       <tbody>${staffRows.map(s => {
-        const u=Array.isArray(s.users)?s.users[0]:s.users;
-        return `<tr><td><strong>${escapeHtml(s.name)}</strong></td><td>${escapeHtml(outletMap.get(Number(s.outlet_id))||'—')}</td><td>${escapeHtml(u?.role||'Staff')}</td><td>${escapeHtml(s.joining_date||'—')}</td><td>${Number(s.basic_salary||0).toFixed(2)}</td><td>${u?.pin_set_at?'<span class="status-ok">Set</span>':'<span class="status-warn">Not set</span>'}</td><td>${s.active?'<span class="status-ok">Active</span>':'<span class="status-warn">Inactive</span>'}</td><td><button class="secondary manage-staff" data-id="${s.id}">Manage</button></td></tr>`;
+        const u=Array.isArray(s.users)?s.users[0]:s.users,status=s.employment_status||(s.active?'ACTIVE':'INACTIVE');
+        const statusLabel={ACTIVE:'Active',VACATION:'Vacation',LEAVE:'On leave',INACTIVE:'Inactive',LEFT:'Left'}[status]||status;
+        return `<tr><td><strong>${escapeHtml(s.name)}</strong></td><td>${escapeHtml(outletMap.get(Number(s.outlet_id))||'—')}</td><td>${escapeHtml(u?.role||'Staff')}</td><td>${escapeHtml(s.joining_date||'—')}</td><td>${Number(s.basic_salary||0).toFixed(2)}</td><td>${u?.pin_set_at?'<span class="status-ok">Set</span>':'<span class="status-warn">Not set</span>'}</td><td><button class="staff-status-btn status-${status.toLowerCase()}" data-status-id="${s.id}">${escapeHtml(statusLabel)}</button></td><td><button class="secondary manage-staff" data-id="${s.id}">Manage</button></td></tr>`;
       }).join('')}</tbody></table></div>` : '<div class="notice">No staff records yet.</div>';
 
     view.querySelectorAll('.manage-staff').forEach(btn => btn.onclick = () => openEditor(Number(btn.dataset.id)));
+    view.querySelectorAll('.staff-status-btn').forEach(btn=>btn.onclick=()=>openStatusEditor(Number(btn.dataset.statusId)));
+  };
+
+  const openStatusEditor=(staffId)=>{
+    const s=staffRows.find(x=>Number(x.id)===staffId);if(!s)return;
+    const current=s.employment_status||(s.active?'ACTIVE':'INACTIVE');
+    view.querySelector('#staffList').innerHTML=`
+      <div class="card staff-editor"><div class="section-heading"><div><span class="eyebrow">Employment status</span><h3>${escapeHtml(s.name)}</h3></div><button id="cancelStatus" class="ghost">Cancel</button></div>
+      <div class="form-grid"><label>Status<select id="staffEmploymentStatus">${[['ACTIVE','Active'],['VACATION','Vacation'],['LEAVE','On leave'],['INACTIVE','Inactive'],['LEFT','Left employment']].map(([v,l])=>`<option value="${v}" ${v===current?'selected':''}>${l}</option>`).join('')}</select></label><label>Effective from<input id="staffStatusDate" type="date" value="${escapeHtml(s.status_effective_from||new Date().toISOString().slice(0,10))}"></label></div>
+      <label>Note<textarea id="staffStatusNote" rows="3" placeholder="Optional note — e.g. annual vacation">${escapeHtml(s.status_note||'')}</textarea></label>
+      <div class="notice subtle">Vacation and leave keep the employee account active. Inactive and Left disable login. Left also records the employment end date.</div>
+      <div id="staffStatusMsg"></div><div class="action-row"><button id="saveStaffStatus" class="primary">Save status</button></div></div>`;
+    view.querySelector('#cancelStatus').onclick=renderList;
+    view.querySelector('#saveStaffStatus').onclick=async()=>{
+      const btn=view.querySelector('#saveStaffStatus'),msg=view.querySelector('#staffStatusMsg');btn.disabled=true;btn.textContent='Saving…';
+      const {error}=await supabase.rpc('owner_set_staff_status',{p_staff_id:staffId,p_status:view.querySelector('#staffEmploymentStatus').value,p_effective_from:view.querySelector('#staffStatusDate').value,p_note:view.querySelector('#staffStatusNote').value.trim()||null});
+      if(error){msg.innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';btn.disabled=false;btn.textContent='Save status';return;}
+      ({outlets,staffRows}=await loadData());renderList();
+    };
   };
 
   const openEditor = (staffId) => {
@@ -644,6 +665,7 @@ async function renderPeople(view, supabase, profile) {
   };
 
   renderList();
+  view.querySelectorAll('[data-people-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.peopleTab;view.querySelectorAll('[data-people-tab]').forEach(b=>b.classList.toggle('active',b===btn));view.querySelector('#peopleStaff').hidden=tab!=='staff';view.querySelector('#peopleAdd').hidden=tab!=='add';if(tab==='staff')renderList();});
 
   view.querySelector('#addStaffBtn').onclick=async()=>{
     const btn=view.querySelector('#addStaffBtn'),msg=view.querySelector('#staffFormMsg');
