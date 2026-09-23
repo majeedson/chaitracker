@@ -131,3 +131,6 @@ input,select,textarea{font-weight:400;font-size:15px}
 .whatsapp-preview-head .summary-add{margin:0;min-height:40px;padding:0 18px}
 #whatsappText{width:100%;box-sizing:border-box;min-height:280px;resize:vertical;border:1px solid #e1e1e6;background:#f7f7f9;border-radius:14px;padding:14px;font:inherit;font-size:13px;line-height:1.55;color:#242428;outline:none;white-space:pre-wrap}
 #whatsappText:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+
+/* Build 19 — visually separate repeated staff payments */
+#staffRows .summary-entry-row.staff + .summary-entry-row.staff{border-top:1px solid #e1e1e6;padding-top:18px;margin-top:18px}
