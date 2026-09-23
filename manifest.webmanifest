@@ -1,6 +1,6 @@
 {
-  "name": "ChaiTracker",
-  "short_name": "ChaiTracker",
+  "name": "CafeTracker",
+  "short_name": "CafeTracker",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
