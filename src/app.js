@@ -32,6 +32,9 @@ function icon(name, size=20) {
     id:'<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8" cy="11" r="2"/><path d="M5.5 16c.7-2 4.3-2 5 0M13 10h5M13 14h5"/>',
     camera:'<path d="M4 8h4l2-3h4l2 3h4v11H4z"/><circle cx="12" cy="13" r="3"/>',
     check:'<circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/>',
+    menu:'<path d="M4 7h16M4 12h16M4 17h16"/>',
+    close:'<path d="m6 6 12 12M18 6 6 18"/>',
+    logout:'<path d="M10 5H5v14h5M14 8l4 4-4 4M18 12H9"/>',
     lock:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>'
   };
   return `<svg class="ui-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]||paths.home}</svg>`;
@@ -197,52 +200,74 @@ async function renderLogin(root, supabase) {
 }
 function renderWorkspace(root, supabase, profile) {
   const isOwner = profile.role === 'Owner';
+  const visibleModules = modules.filter(([id]) => isOwner || !['salary','dashboard','delta'].includes(id));
 
   root.innerHTML = `
     <div class="app-shell">
-      <header class="topbar">
-        <div>
-          <div class="brand">CafeTracker</div>
-          <div class="subtitle">${escapeHtml(profile.name)} · ${escapeHtml(profile.role)}</div>
+      <header class="topbar app-topbar">
+        <div class="topbar-leading">
+          <button id="drawer-open" class="nav-icon-button" aria-label="Open app menu">${icon('menu',22)}</button>
+          <button id="brand-home" class="brand-button" aria-label="Go to My Day">
+            <span class="brand">CafeTracker</span>
+            <span class="subtitle">${escapeHtml(profile.name)} · ${escapeHtml(profile.role)}</span>
+          </button>
         </div>
         <div class="topbar-actions">
           <span class="outlet-badge">${isOwner ? 'All outlets' : 'Assigned outlet'}</span>
-          <button id="logout" class="ghost">Logout</button>
+          <button id="logout" class="nav-icon-button" aria-label="Logout">${icon('logout',20)}</button>
         </div>
       </header>
 
-      <main class="content">
-        <section class="hero card">
-          <div>
-            <span class="eyebrow">${isOwner ? 'Operations Center' : 'My Day'}</span>
-            <h1>${isOwner ? 'Good to see you.' : 'Your CafeTracker day.'}</h1>
-            <p>${isOwner ? 'One place for people, attendance and café operations.' : 'Attendance, leave and your daily tasks in one place.'}</p>
-          </div>
-        </section>
-
-        <nav class="module-grid">
-          ${modules.filter(([id]) => isOwner || !['salary','dashboard','delta'].includes(id)).map(([id,label]) =>
-            `<button class="module-card" data-module="${id}"><span class="module-icon">${icon(id,22)}</span><span class="module-name">${label}</span><span class="module-state">Open →</span></button>`
-          ).join('')}
+      <div id="drawer-scrim" class="drawer-scrim" hidden></div>
+      <aside id="app-drawer" class="app-drawer" aria-hidden="true">
+        <div class="drawer-head">
+          <div><div class="drawer-brand">CafeTracker</div><div class="drawer-caption">Navigate</div></div>
+          <button id="drawer-close" class="nav-icon-button" aria-label="Close menu">${icon('close',22)}</button>
+        </div>
+        <nav class="drawer-nav">
+          ${visibleModules.map(([id,label]) => `
+            <button class="drawer-item" data-module="${id}">
+              <span class="drawer-item-icon">${icon(id,21)}</span>
+              <span>${label}</span>
+              <span class="drawer-chevron">›</span>
+            </button>`).join('')}
         </nav>
+        <div class="drawer-footer">
+          <span class="outlet-dot"></span>
+          <div><strong>${escapeHtml(profile.outlets?.name || (isOwner ? 'All outlets' : 'CafeTracker'))}</strong><small>${escapeHtml(profile.name)}</small></div>
+        </div>
+      </aside>
 
+      <main class="content app-content">
         <section id="module-view" class="card module-view"></section>
       </main>
     </div>
   `;
 
+  const drawer=root.querySelector('#app-drawer'),scrim=root.querySelector('#drawer-scrim'),view=root.querySelector('#module-view');
+  const openDrawer=()=>{drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');scrim.hidden=false;requestAnimationFrame(()=>scrim.classList.add('show'));};
+  const closeDrawer=()=>{drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');scrim.classList.remove('show');setTimeout(()=>{scrim.hidden=true;},180);};
+  const openModule=async(module,button=null)=>{
+    root.querySelectorAll('.drawer-item').forEach(b=>b.classList.toggle('active',b.dataset.module===module));
+    closeDrawer();
+    window.scrollTo({top:0,behavior:'instant'});
+    await loadModule(view,supabase,profile,module);
+    view.scrollIntoView({block:'start',behavior:'instant'});
+  };
+
+  root.querySelector('#drawer-open').onclick=openDrawer;
+  root.querySelector('#drawer-close').onclick=closeDrawer;
+  scrim.onclick=closeDrawer;
+  root.querySelector('#brand-home').onclick=()=>openModule(isOwner?'home':'attendance');
   root.querySelector('#logout').addEventListener('click', async () => {
     await supabase.auth.signOut();
     await renderApp(root, supabase);
   });
+  root.querySelectorAll('.drawer-item').forEach(button=>button.addEventListener('click',()=>openModule(button.dataset.module,button)));
+  document.onkeydown=e=>{if(e.key==='Escape')closeDrawer();};
 
-  root.querySelectorAll('[data-module]').forEach(button => {
-    button.addEventListener('click', () => loadModule(root.querySelector('#module-view'), supabase, profile, button.dataset.module));
-  });
-
-  loadModule(root.querySelector('#module-view'), supabase, profile, isOwner ? 'home' : 'attendance');
+  openModule(isOwner ? 'home' : 'attendance');
 }
-
 async function loadModule(view, supabase, profile, module) {
   view.innerHTML = '<div class="loading">Loading…</div>';
 
