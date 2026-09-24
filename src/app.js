@@ -1,4 +1,4 @@
-const APP_BUILD = 60;
+const APP_BUILD = 61;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -184,13 +184,13 @@ async function renderLogin(root, supabase) {
     };
     const validateStep=()=>{
       const err=onboardingShell.querySelector('#ob-error');let msg='';
-      if(step===0&&!/^\\d{4}$/.test(onboardingShell.querySelector('#ob-setup').value))msg='Enter the 4-digit first-time PIN.';
+      if(step===0&&!/^\d{4}$/.test(onboardingShell.querySelector('#ob-setup').value))msg='Enter the 4-digit first-time PIN.';
       if(step===1&&['#ob-full','#ob-dob','#ob-nationality','#ob-father','#ob-mobile','#ob-address'].some(id=>!onboardingShell.querySelector(id).value.trim()))msg='Please complete all personal details.';
       if(step===2&&['#ob-ec-name','#ob-ec-rel','#ob-ec-phone'].some(id=>!onboardingShell.querySelector(id).value.trim()))msg='Please complete the emergency contact details.';
       if(step===3&&(!onboardingShell.querySelector('#ob-id-type').value||!onboardingShell.querySelector('#ob-id-number').value.trim()||!state.identity_document))msg='Choose an ID type, enter its number and upload the document.';
       if(step===4&&!state.profile_photo)msg='Please add a profile photo.';
       if(step===5&&!onboardingShell.querySelector('#ob-confirm').checked)msg='Please confirm that your details are correct.';
-      if(step===6){const a=onboardingShell.querySelector('#ob-pin').value,b=onboardingShell.querySelector('#ob-pin2').value;if(!/^\\d{4,8}$/.test(a))msg='Choose a 4–8 digit PIN.';else if(a!==b)msg='The PINs do not match.';}
+      if(step===6){const a=onboardingShell.querySelector('#ob-pin').value,b=onboardingShell.querySelector('#ob-pin2').value;if(!/^\d{4,8}$/.test(a))msg='Choose a 4–8 digit PIN.';else if(a!==b)msg='The PINs do not match.';}
       if(msg){err.textContent=msg;err.hidden=false;return false;}return true;
     };
     const submitOnboarding=async()=>{
@@ -654,7 +654,7 @@ async function renderPeople(view, supabase, profile) {
   const renderAdmins=()=>{
     const list=view.querySelector('#adminList');if(!list)return;const message=view.querySelector('#adminMessage');const showAdminMessage=(text,type='error')=>{message.textContent=text;message.className='purchase-message '+(type==='success'?'success':'error');message.hidden=false;if(type==='success')setTimeout(()=>{if(message.isConnected)message.hidden=true;},2200);};
     list.innerHTML=adminRows.map(a=>`<div class="admin-row admin-manage-row"><div class="admin-identity"><strong>${escapeHtml(a.name)}</strong>${a.is_super_user?'<span class="soft-badge">Super User</span>':''}<span class="${a.active?'status-ok':'status-warn'}">${a.active?'Active':'Inactive'}</span></div>${profile.is_super_user&&!a.is_super_user?`<div class="admin-controls"><label>New PIN<input type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" class="admin-new-pin" data-id="${a.id}" placeholder="4–8 digits"></label><button type="button" class="secondary admin-pin-update" data-id="${a.id}">Update PIN</button><button type="button" class="ghost admin-active-toggle" data-id="${a.id}" data-active="${a.active}">${a.active?'Deactivate':'Reactivate'}</button></div>`:''}</div>`).join('');
-    list.querySelectorAll('.admin-pin-update').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,input=list.querySelector('.admin-new-pin[data-id="'+id+'"]'),pin=input?.value||'';if(!/^\\d{4,8}$/.test(pin))return showAdminMessage('Enter a 4–8 digit numeric PIN.');btn.disabled=true;btn.textContent='Updating…';const {data,error}=await supabase.functions.invoke('chaitracker-admin-pin',{body:{target_user_id:id,new_pin:pin}});if(error||!data?.ok){showAdminMessage(data?.error||error?.message||'Unable to update PIN.');btn.disabled=false;btn.textContent='Update PIN';return;}input.value='';btn.disabled=false;btn.textContent='Updated';showAdminMessage('Admin PIN updated.','success');setTimeout(()=>btn.textContent='Update PIN',1200);});
+    list.querySelectorAll('.admin-pin-update').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,input=list.querySelector('.admin-new-pin[data-id="'+id+'"]'),pin=input?.value||'';if(!/^\d{4,8}$/.test(pin))return showAdminMessage('Enter a 4–8 digit numeric PIN.');btn.disabled=true;btn.textContent='Updating…';const {data,error}=await supabase.functions.invoke('chaitracker-admin-pin',{body:{target_user_id:id,new_pin:pin}});if(error||!data?.ok){showAdminMessage(data?.error||error?.message||'Unable to update PIN.');btn.disabled=false;btn.textContent='Update PIN';return;}input.value='';btn.disabled=false;btn.textContent='Updated';showAdminMessage('Admin PIN updated.','success');setTimeout(()=>btn.textContent='Update PIN',1200);});
     list.querySelectorAll('.admin-active-toggle').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,next=btn.dataset.active!=='true';if(!confirm((next?'Reactivate':'Deactivate')+' this Admin account?'))return;btn.disabled=true;const {error}=await supabase.rpc('superuser_set_admin_active',{p_user_id:id,p_active:next});if(error){showAdminMessage(error.message);btn.disabled=false;return;}({outlets,staffRows,adminRows}=await loadData());renderAdmins();});
   };
   renderAdmins();
