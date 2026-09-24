@@ -178,3 +178,9 @@ input,select,textarea{font-weight:400;font-size:15px}
 .person-status{font-size:12px;font-weight:650;white-space:nowrap}
 .person-chevron{font-size:23px;opacity:.35}
 @media(max-width:640px){.people-tools{grid-template-columns:1fr}.people-outlet-label{order:0}.people-search{order:1}.person-row{grid-template-columns:36px minmax(0,1fr) auto 12px;padding:10px}.person-status{font-size:11px}}
+
+/* Build 31 — Attendance as contextual home */
+.attendance-home-context{margin:0 0 16px;padding:14px 16px;border:1px solid var(--line,#ececec);border-radius:16px;background:linear-gradient(135deg,var(--accent-soft,#fff5f5),#fff)}
+.attendance-home-context>div{display:flex;flex-direction:column;gap:4px}
+.attendance-home-context strong{font-size:17px;letter-spacing:-.01em}
+.attendance-home-context small{color:var(--muted,#707070);font-size:13px}
