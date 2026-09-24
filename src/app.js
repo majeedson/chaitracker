@@ -1,4 +1,4 @@
-const APP_BUILD = 57;
+const APP_BUILD = 58;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -713,6 +713,7 @@ async function renderPeople(view, supabase, profile) {
     const perms=u?.permissions||{};
     const outletName=outlets.find(o=>Number(o.id)===Number(s.outlet_id))?.name||'—', currentStatus=s.employment_status||(s.active?'ACTIVE':'INACTIVE');
     const {data:statusHistory}=await supabase.rpc('get_staff_status_history',{p_staff_id:staffId});
+    const {data:documentMeta}=await supabase.rpc('get_employee_document_metadata',{p_staff_id:staffId});
     view.querySelector('#staffList').innerHTML=`
       <div class="staff-profile-shell">
         <div class="staff-profile-head"><button id="cancelEdit" class="profile-back" type="button">‹</button><span class="person-avatar large">${escapeHtml((s.name||'?').trim().charAt(0).toUpperCase())}</span><div class="staff-profile-identity"><span class="eyebrow">Employee profile</span><h3>${escapeHtml(s.name)}</h3><p>${escapeHtml(u?.role||'Staff')} · ${escapeHtml(outletName)}</p></div><span class="person-status status-${currentStatus.toLowerCase()}">${escapeHtml(statusText(currentStatus))}</span></div>
@@ -738,7 +739,7 @@ async function renderPeople(view, supabase, profile) {
         <div class="employment-history"><h4>Status history</h4>${(Array.isArray(statusHistory)?statusHistory:[]).map(h=>`<div><strong>${escapeHtml(statusText(h.status))}</strong><span>${escapeHtml(h.effective_from||'')}${h.note?' · '+escapeHtml(h.note):''}</span></div>`).join('')||'<p class="section-help">No status history recorded.</p>'}</div></div>
         <div class="card profile-panel" data-profile-panel="attendance" hidden><span class="eyebrow">Attendance</span><h3>Attendance history</h3><p class="section-help">Use the Attendance workspace for the full calendar, corrections and daily status.</p><button type="button" class="secondary profile-open-module" data-module="attendance">Open Attendance</button></div>
         <div class="card profile-panel" data-profile-panel="salary" hidden><span class="eyebrow">Salary</span><h3>Payroll</h3><p class="section-help">Salary is calculated from recorded attendance, paid off-days and staff payments.</p><button type="button" class="secondary profile-open-module" data-module="salary">Open Salary</button></div>
-        <div class="card profile-panel" data-profile-panel="documents" hidden><span class="eyebrow">Documents</span><h3>Employee documents</h3><p class="section-help">Identity and onboarding documents are kept in the private employee document storage.</p></div>
+        <div class="card profile-panel" data-profile-panel="documents" hidden><span class="eyebrow">Documents</span><h3>Employee documents</h3><div class="document-meta"><div><span>Onboarding</span><strong>${escapeHtml(documentMeta?.onboarding_status||'invited')}</strong></div><div><span>Identity type</span><strong>${escapeHtml(documentMeta?.identity_type||'—')}</strong></div><div><span>Identity document</span><strong>${documentMeta?.identity_document_on_file?'On file':'Not uploaded'}</strong></div><div><span>Profile photo</span><strong>${documentMeta?.profile_photo_on_file?'On file':'Not uploaded'}</strong></div></div><p class="section-help">Files remain private. This profile shows document status without exposing identity numbers.</p></div>
         <div id="editMsg"></div><div class="profile-actions"><button id="saveStaff" class="primary">Save changes</button>${profile.is_super_user?'<button id="resetPin" class="secondary">Reset login</button>':''}</div>
       </div>`;
     view.querySelector('#cancelEdit').onclick=renderList;
@@ -1125,8 +1126,8 @@ async function renderAttendance(view, supabase, profile) {
     supabase.from('users').select('staff_id,outlet_id').eq('id',profile.id).maybeSingle()
   ]);
   let outletId=Number((profile.access_class==='ADMIN'&&profile.context_outlet_id)||profile.outlet_id||outlets?.[0]?.id||1),staffId=!isAdmin?Number(userRow?.staff_id||0):null;
-  const effectiveDate=async id=>{const {data,error}=await supabase.rpc('get_effective_business_day',{p_outlet_id:id,p_timestamp:new Date().toISOString()});return error?new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()):String(data);};
-  let todayIST=await effectiveDate(outletId);
+  const effectiveDate=async id=>{const {data,error}=await supabase.rpc('get_effective_business_day',{p_outlet_id:id,p_timestamp:new Date().toISOString()});if(error||!data)throw new Error(error?.message||'Could not determine the café business day.');return String(data);};
+  let todayIST;try{todayIST=await effectiveDate(outletId);}catch(e){view.innerHTML='<span class="eyebrow">Attendance</span><h2>Business day unavailable</h2><p class="form-error">'+escapeHtml(e.message)+'</p>';return;}
   let yesterday=(()=>{const d=new Date(todayIST+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10);})();
   let monthKey=todayIST.slice(0,7);
   if(!isAdmin&&!staffId){view.innerHTML='<span class="eyebrow">Attendance</span><h2>Staff profile not linked</h2><p class="section-help">Ask an owner to link your CafeTracker user to your staff profile.</p>';return;}
