@@ -1,4 +1,4 @@
-const APP_BUILD = 63;
+const APP_BUILD = 64;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -173,7 +173,8 @@ async function renderLogin(root, supabase) {
       if(step>0)onboardingShell.querySelector('#ob-back').onclick=()=>{saveStep();step--;draw();};
       const idf=onboardingShell.querySelector('#ob-id-file');if(idf)idf.onchange=()=>{state.identity_document=idf.files[0];onboardingShell.querySelector('#id-file-name').textContent=state.identity_document?.name||'';};
       const pf=onboardingShell.querySelector('#ob-photo');if(pf)pf.onchange=()=>{state.profile_photo=pf.files[0];onboardingShell.querySelector('#photo-file-name').textContent=state.profile_photo?.name||'';};
-      onboardingShell.querySelector('#ob-next').onclick=async()=>{if(!validateStep())return;saveStep();if(step===0){const err=onboardingShell.querySelector('#ob-error');if(state.setup_code!=='1234'){err.textContent='Incorrect first-time PIN.';err.hidden=false;return;}step++;draw();return;}if(step<steps.length-1){step++;draw();}else await submitOnboarding();};    const saveStep=()=>{
+      onboardingShell.querySelector('#ob-next').onclick=async()=>{if(!validateStep())return;saveStep();if(step===0){const btn=onboardingShell.querySelector('#ob-next'),err=onboardingShell.querySelector('#ob-error');btn.disabled=true;btn.textContent='Verifying…';try{const response=await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chaitracker-onboarding`,{method:'POST',headers:{apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,'Content-Type':'application/json'},body:JSON.stringify({action:'validate_setup',user_id:selectedPerson.id,setup_code:state.setup_code})});const payload=await response.json();if(!response.ok||!payload.success)throw new Error(payload.error||'First-time PIN could not be verified.');step++;draw();return;}catch(e){err.textContent=e.message||'First-time PIN could not be verified.';err.hidden=false;btn.disabled=false;btn.innerHTML='Verify & continue <span>→</span>';return;}}if(step<steps.length-1){step++;draw();}else await submitOnboarding();};
+    const saveStep=()=>{
       const get=id=>onboardingShell.querySelector(id)?.value?.trim();
       if(step===0)state.setup_code=get('#ob-setup')||state.setup_code;
       if(step===1)Object.assign(state,{full_legal_name:get('#ob-full'),date_of_birth:get('#ob-dob'),nationality:get('#ob-nationality'),father_name:get('#ob-father'),mobile_phone:get('#ob-mobile'),home_address:get('#ob-address')});
