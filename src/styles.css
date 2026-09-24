@@ -242,3 +242,10 @@ input,select,textarea{font-weight:400;font-size:15px}
 .attendance-correction-card label{display:grid;gap:6px;margin-top:12px;font-size:12px;font-weight:700}
 .attendance-correction-card textarea{resize:vertical;min-height:76px}
 .attendance-correction-card .primary{margin-top:14px;width:100%}
+
+/* Build 51 — stock */
+.stock-count-list{display:grid;gap:8px;margin-top:12px}
+.stock-count-row{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line,#eee)}
+.stock-count-row span{display:grid;gap:3px}.stock-count-row small{font-size:11px;color:var(--muted,#777)}
+.stock-count-row input{text-align:right}
+@media(max-width:520px){.stock-count-row{grid-template-columns:minmax(0,1fr) 92px}}
