@@ -1,4 +1,4 @@
-const APP_BUILD = 53;
+const APP_BUILD = 54;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -1110,7 +1110,8 @@ async function renderSalary(view, supabase, profile) {
       </div>
       <div class="salary-meta"><span>Daily rate <strong>${money(est.daily_rate)}</strong></span><span>Hourly rate <strong>${money(est.hourly_rate)}</strong></span><span>Paid off entitlement <strong>3 days/month</strong></span></div>
       ${final?`<div class="salary-final"><div><strong>Saved payroll record</strong><span>${escapeHtml(final.period_start)} – ${escapeHtml(final.period_end)}</span></div><strong>${money(final.net_salary)}</strong></div>`:''}
-      ${isAdmin?'<p class="section-help">Payroll remains an estimate until an Admin finalizes the salary record. Incomplete attendance must be reconciled first.</p>':''}`;
+      ${isAdmin?`<div id="salaryFinalizeMessage" class="purchase-message" hidden></div><button id="finalizeSalary" class="primary" type="button" ${incomplete?'disabled':''}>${final?'Re-finalize payroll':'Finalize payroll'}</button><p class="section-help">Finalization uses the recorded attendance and payment data shown above. Incomplete attendance must be reconciled first.</p>`:''}`;
+    const finalize=view.querySelector('#finalizeSalary');if(finalize)finalize.onclick=async()=>{if(!confirm('Finalize this payroll period from the recorded data shown above?'))return;finalize.disabled=true;finalize.textContent='Finalizing…';const{error}=await supabase.rpc('finalize_salary_record',{p_staff_id:sid,p_period_start:start,p_period_end:end,p_pay_date:end,p_user_id:profile.id});if(error){const b=view.querySelector('#salaryFinalizeMessage');b.textContent=error.message;b.className='purchase-message error';b.hidden=false;finalize.disabled=false;finalize.textContent=final?'Re-finalize payroll':'Finalize payroll';return;}await render();};
   };
   view.querySelector('#salaryStaff')?.addEventListener('change',render);await render();
 }
