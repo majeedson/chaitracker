@@ -1,4 +1,4 @@
-const APP_BUILD = 38;
+const APP_BUILD = 39;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -209,6 +209,8 @@ async function renderLogin(root, supabase) {
   }
 }
 function renderWorkspace(root, supabase, profile) {
+  const outletContextKey='cafetracker.adminOutlet';
+  if(profile.access_class==='ADMIN'){const saved=localStorage.getItem(outletContextKey);profile.context_outlet_id=saved&&saved!=='all'?Number(saved):null;}
   const isAdmin = profile.access_class === 'ADMIN';
   const isManager = ['Manager','Ops Manager'].includes(profile.role);
   const allowedIds = isAdmin
@@ -230,7 +232,7 @@ function renderWorkspace(root, supabase, profile) {
           </button>
         </div>
         <div class="topbar-actions">
-          <span class="outlet-badge">${isAdmin ? 'All cafés' : escapeHtml(profile.outlets?.name||'Assigned outlet')}</span>
+          ${isAdmin?'<select id="global-outlet" class="outlet-badge global-outlet"><option value="all">All cafés</option></select>':`<span class="outlet-badge">${escapeHtml(profile.outlets?.name||'Assigned outlet')}</span>`}
           <button id="logout" class="nav-icon-button" aria-label="Logout">${icon('logout',20)}</button>
         </div>
       </header>
@@ -244,9 +246,12 @@ function renderWorkspace(root, supabase, profile) {
     </div>`;
 
   const drawer=root.querySelector('#app-drawer'),scrim=root.querySelector('#drawer-scrim'),view=root.querySelector('#module-view');
+  let currentModule=landing;
+  if(isAdmin){const sel=root.querySelector('#global-outlet');supabase.from('outlets').select('id,name,theme_key,theme_color').order('id').then(({data})=>{(data||[]).forEach(o=>sel.insertAdjacentHTML('beforeend',`<option value="${o.id}">${escapeHtml(o.name)}</option>`));sel.value=profile.context_outlet_id?String(profile.context_outlet_id):'all';if(profile.context_outlet_id){const o=(data||[]).find(x=>Number(x.id)===profile.context_outlet_id);if(o)applyTheme(o);}sel.onchange=()=>{localStorage.setItem(outletContextKey,sel.value);profile.context_outlet_id=sel.value==='all'?null:Number(sel.value);const o=(data||[]).find(x=>Number(x.id)===profile.context_outlet_id);applyTheme(o||null);openModule(currentModule);};});}
   const openDrawer=()=>{drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');scrim.hidden=false;requestAnimationFrame(()=>scrim.classList.add('show'));};
   const closeDrawer=()=>{drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');scrim.classList.remove('show');setTimeout(()=>{scrim.hidden=true;},180);};
   const openModule=async module=>{
+    currentModule=module;
     root.querySelectorAll('.drawer-item').forEach(b=>b.classList.toggle('active',b.dataset.module===module));
     closeDrawer();window.scrollTo({top:0,behavior:'instant'});await loadModule(view,supabase,profile,module);view.scrollIntoView({block:'start',behavior:'instant'});
   };
@@ -336,13 +341,13 @@ async function renderDashboard(view, supabase, profile) {
 }
 
 async function renderDailySummary(view, supabase, profile) {
-  const isOwner=profile.role==='Owner';
+  const isOwner=profile.access_class==='ADMIN';
   const canManageSummary=['Owner','Manager','Ops Manager'].includes(profile.role);
   if(!canManageSummary){view.innerHTML='<span class="eyebrow">Daily Summary</span><h2>Manager access required</h2><p class="section-help">Daily Summary is available to managers and owners only.</p>';return;}
   const businessDate=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   let outletId=Number(profile.outlet_id||1);
   let outlets=[];
-  if(isOwner){const {data}=await supabase.from('outlets').select('id,name,theme_key,theme_color').order('id');outlets=data||[];outletId=Number(profile.outlet_id||outlets[0]?.id||1);}
+  if(isOwner){const {data}=await supabase.from('outlets').select('id,name,theme_key,theme_color').order('id');outlets=data||[];outletId=Number(profile.context_outlet_id||profile.outlet_id||outlets[0]?.id||1);}
   const [{data:vendors},{data:staff},{data:existing},{data:previous},{data:outlet}]=await Promise.all([
     supabase.from('vendors').select('id,name').order('name'),
     supabase.from('staff').select('id,name,outlet_id').eq('active',true).eq('outlet_id',outletId).order('name'),
@@ -646,7 +651,7 @@ async function renderPeople(view, supabase, profile) {
   };
   renderAdmins();
 
-  let peopleOutlet = profile.outlet_id ? String(profile.outlet_id) : 'all';
+  let peopleOutlet = profile.access_class==='ADMIN' ? (profile.context_outlet_id?String(profile.context_outlet_id):'all') : (profile.outlet_id ? String(profile.outlet_id) : 'all');
   let peopleStatus = 'ALL';
   let peopleSearch = '';
 
@@ -801,11 +806,11 @@ async function renderPeople(view, supabase, profile) {
 }
 
 async function renderPurchases(view, supabase, profile) {
-  const isOwner = profile.role === 'Owner';
+  const isOwner = profile.access_class === 'ADMIN';
   const { data: categories } = await supabase.from('categories').select('id,name').order('name');
   const { data: items } = await supabase.from('items').select('id,name,category_id,unit,pack_size').eq('active', true).order('name');
   const { data: outlets } = isOwner ? await supabase.from('outlets').select('id,name').order('id') : { data: [] };
-  let outletId = profile.outlet_id || outlets?.[0]?.id;
+  let outletId = (isOwner&&profile.context_outlet_id) || profile.outlet_id || outlets?.[0]?.id;
   const { data: bizDate, error: dateError } = await supabase.rpc('get_effective_business_day', {
     p_outlet_id: outletId,
     p_timestamp: new Date().toISOString()
@@ -1027,7 +1032,7 @@ async function renderSalary(view, supabase, profile) {
   const isAdmin=profile.access_class==='ADMIN', isManager=['Manager','Ops Manager'].includes(profile.role);
   const {data:userRow}=await supabase.from('users').select('staff_id,outlet_id').eq('id',profile.id).maybeSingle();
   let staff=[];
-  if(isAdmin){const{data}=await supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status').eq('active',true).order('name');staff=data||[];}
+  if(isAdmin){let q=supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status').eq('active',true);if(profile.context_outlet_id)q=q.eq('outlet_id',profile.context_outlet_id);const{data}=await q.order('name');staff=data||[];}
   else if(isManager){const{data}=await supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status').eq('active',true).eq('outlet_id',profile.outlet_id).order('name');staff=data||[];}
   else {const{data}=await supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status').eq('id',userRow?.staff_id||0);staff=data||[];}
   if(!staff.length){view.innerHTML='<span class="eyebrow">Salary</span><h2>Salary</h2><p class="section-help">No linked active staff record is available.</p>';return;}
@@ -1074,7 +1079,7 @@ async function renderAttendance(view, supabase, profile) {
     isOwner?supabase.from('outlets').select('id,name,theme_key,theme_color').order('id'):Promise.resolve({data:[]}),
     supabase.from('users').select('staff_id,outlet_id').eq('id',profile.id).maybeSingle()
   ]);
-  let outletId=Number(profile.outlet_id||outlets?.[0]?.id||1),staffId=!isAdmin?Number(userRow?.staff_id||0):null;
+  let outletId=Number((profile.access_class==='ADMIN'&&profile.context_outlet_id)||profile.outlet_id||outlets?.[0]?.id||1),staffId=!isAdmin?Number(userRow?.staff_id||0):null;
   const effectiveDate=async id=>{const {data,error}=await supabase.rpc('get_effective_business_day',{p_outlet_id:id,p_timestamp:new Date().toISOString()});return error?new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()):String(data);};
   let todayIST=await effectiveDate(outletId);
   let yesterday=(()=>{const d=new Date(todayIST+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10);})();
