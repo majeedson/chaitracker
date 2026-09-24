@@ -1,4 +1,4 @@
-const APP_BUILD = 37;
+const APP_BUILD = 38;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -76,7 +76,7 @@ export async function renderApp(root, supabase) {
 async function renderLogin(root, supabase) {
   const [{ data: outlets }, { data: directory, error }] = await Promise.all([
     supabase.from('outlets').select('id,name,theme_key,theme_color').order('id'),
-    supabase.from('login_directory').select('id,name,role,outlet_id,outlet_name,can_switch_outlet,auth_enrolled,pin_set,theme_key,theme_color,onboarding_status,access_class,is_super_user').order('name')
+    supabase.from('login_directory').select('id,name,role,outlet_id,outlet_name,can_switch_outlet,auth_enrolled,pin_set,theme_key,theme_color,onboarding_status,access_class,is_super_user,staff_id').order('name')
   ]);
   if (error) { root.innerHTML='<main class="login-shell"><section class="login-card"><h1>CafeTracker</h1><p>Login setup unavailable.</p></section></main>'; return; }
 
@@ -115,7 +115,8 @@ async function renderLogin(root, supabase) {
     const outlet=(outlets||[]).find(o=>Number(o.id)===Number(outletSelect.value)); applyTheme(outlet);
     selectedPerson=null; const people=(directory||[]).filter(u=>u.access_class!=='ADMIN'&&Number(u.outlet_id)===Number(outletSelect.value));
     nameSelect.disabled=!outletSelect.value;
-    nameSelect.innerHTML=outletSelect.value?'<option value="">Select your name</option>'+people.map(u=>`<option value="${u.id}">${escapeHtml(u.name)}</option>`).join(''):'<option value="">Select your café first</option>';
+    const duplicateNames=new Map();people.forEach(u=>{const k=(u.name||'').trim().toLowerCase();duplicateNames.set(k,(duplicateNames.get(k)||0)+1);});
+    nameSelect.innerHTML=outletSelect.value?'<option value="">Select your name</option>'+people.map(u=>{const duplicate=(duplicateNames.get((u.name||'').trim().toLowerCase())||0)>1;const label=duplicate&&u.staff_id?`${u.name} · Staff ID ${u.staff_id}`:u.name;return `<option value="${u.id}">${escapeHtml(label)}</option>`;}).join(''):'<option value="">Select your café first</option>';
     pin.value='';pin.disabled=true;loginBtn.disabled=true;loginArea.hidden=false;onboardingStart.hidden=true;errorBox.hidden=true;
   };
 
@@ -454,7 +455,7 @@ async function renderDailySummary(view, supabase, profile) {
     const mode=v=>`<select class="row-mode"><option value="Cash" ${v!=='UPI'?'selected':''}>Cash</option><option value="UPI" ${v==='UPI'?'selected':''}>UPI</option></select>`;
     if(type==='expense')row.innerHTML=`<input class="row-name e-cat" placeholder="Category" value="${escapeHtml(data.category||'')}" ${data.fixed?'readonly':''}><input class="row-amount e-amt" type="number" inputmode="decimal" placeholder="₹0" value="${data.amount||''}">${mode(data.mode)}<button class="remove-row" type="button" aria-label="Remove">×</button>`;
     if(type==='vendor')row.innerHTML=`<select class="row-name v-name"><option value="">Select vendor</option>${(vendors||[]).map(v=>`<option value="${escapeHtml(v.name)}" ${v.name===(data.vendor_name||'')?'selected':''}>${escapeHtml(v.name)}</option>`).join('')}</select><input class="row-amount v-amt" type="number" inputmode="decimal" placeholder="₹0" value="${data.amount||''}">${mode(data.mode)}<button class="remove-row" type="button" aria-label="Remove">×</button>`;
-    if(type==='staff')row.innerHTML=`<div class="staff-payment-grid"><select class="p-name"><option value="">Select staff</option>${(staff||[]).map(p=>`<option value="${escapeHtml(p.name)}" ${p.name===(data.staff_name||'')?'selected':''}>${escapeHtml(p.name)}</option>`).join('')}</select><select class="p-type"><option ${data.payout_type==='Salary'?'selected':''}>Salary</option><option ${data.payout_type==='Advance'?'selected':''}>Advance</option><option ${data.payout_type==='Reimbursement'?'selected':''}>Reimbursement</option><option ${data.payout_type==='Other'?'selected':''}>Other</option></select><input class="p-amt" type="number" inputmode="decimal" placeholder="₹ Amount" value="${data.amount||''}">${mode(data.mode)}</div><button class="remove-row" type="button" aria-label="Remove">×</button>`;
+    if(type==='staff')row.innerHTML=`<div class="staff-payment-grid"><select class="p-name"><option value="">Select staff</option>${(staff||[]).map(p=>`<option value="${p.id}" ${Number(p.id)===Number(data.staff_id)?'selected':''}>${escapeHtml(p.name)}${staff.filter(x=>x.name.trim().toLowerCase()===p.name.trim().toLowerCase()).length>1?' · Staff ID '+p.id:''}</option>`).join('')}</select><select class="p-type"><option ${data.payout_type==='Salary'?'selected':''}>Salary</option><option ${data.payout_type==='Advance'?'selected':''}>Advance</option><option ${data.payout_type==='Reimbursement'?'selected':''}>Reimbursement</option><option ${data.payout_type==='Other'?'selected':''}>Other</option></select><input class="p-amt" type="number" inputmode="decimal" placeholder="₹ Amount" value="${data.amount||''}">${mode(data.mode)}</div><button class="remove-row" type="button" aria-label="Remove">×</button>`;
     row.querySelector('.remove-row').onclick=()=>{row.remove();calc();};
     row.querySelectorAll('input,select').forEach(el=>el.addEventListener('input',calc));
     container.appendChild(row);
@@ -508,7 +509,7 @@ async function renderDailySummary(view, supabase, profile) {
   const collect=()=>{
     const expenses=[...view.querySelectorAll('#expenseRows .summary-entry-row')].map(r=>({category:r.querySelector('.e-cat').value.trim(),amount:Number(r.querySelector('.e-amt').value||0),mode:r.querySelector('.row-mode').value})).filter(x=>x.category&&x.amount>0);
     const vendorPayouts=[...view.querySelectorAll('#vendorRows .summary-entry-row')].map(r=>({vendor_name:r.querySelector('.v-name').value,amount:Number(r.querySelector('.v-amt').value||0),mode:r.querySelector('.row-mode').value})).filter(x=>x.vendor_name&&x.amount>0);
-    const staffPayouts=[...view.querySelectorAll('#staffRows .summary-entry-row')].map(r=>({staff_name:r.querySelector('.p-name').value,payout_type:r.querySelector('.p-type').value,amount:Number(r.querySelector('.p-amt').value||0),mode:r.querySelector('.row-mode').value})).filter(x=>x.staff_name&&x.amount>0);
+    const staffPayouts=[...view.querySelectorAll('#staffRows .summary-entry-row')].map(r=>(()=>{const sel=r.querySelector('.p-name'),staffId=Number(sel.value),person=staff.find(x=>Number(x.id)===staffId);return {staff_id:staffId||null,staff_name:person?.name||'',payout_type:r.querySelector('.p-type').value,amount:Number(r.querySelector('.p-amt').value||0),mode:r.querySelector('.row-mode').value};})()).filter(x=>x.staff_id&&x.staff_name&&x.amount>0);
     return {expenses,vendorPayouts,staffPayouts};
   };
   const save=async()=>{
@@ -592,7 +593,7 @@ function openStaffWelcomeWhatsApp(name, setupCode) {
 }
 
 async function renderPeople(view, supabase, profile) {
-  if (profile.role !== 'Owner') {
+  if (profile.access_class !== 'ADMIN') {
     view.innerHTML = '<span class="eyebrow">People</span><h2>Owner access required</h2>';
     return;
   }
