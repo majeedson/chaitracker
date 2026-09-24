@@ -235,3 +235,10 @@ input,select,textarea{font-weight:400;font-size:15px}
 .purchase-message{margin-top:10px;padding:11px 13px;border-radius:12px;font-size:13px;line-height:1.4}
 .purchase-message.error{background:#fff4f4;border:1px solid #f2caca;color:#9f2424}
 .purchase-message.success{background:#f3faf5;border:1px solid #c9e6d1;color:#28713b}
+
+/* Build 48 — attendance correction */
+.attendance-correction{margin:12px 0}
+.attendance-correction-card{border:1px solid var(--line,#e8e8e8);border-radius:16px;padding:16px;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.05)}
+.attendance-correction-card label{display:grid;gap:6px;margin-top:12px;font-size:12px;font-weight:700}
+.attendance-correction-card textarea{resize:vertical;min-height:76px}
+.attendance-correction-card .primary{margin-top:14px;width:100%}
