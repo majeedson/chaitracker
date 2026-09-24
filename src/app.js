@@ -1,4 +1,4 @@
-const APP_BUILD = 48;
+const APP_BUILD = 49;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -1039,7 +1039,6 @@ async function renderSalary(view, supabase, profile) {
   const {data:userRow}=await supabase.from('users').select('staff_id,outlet_id').eq('id',profile.id).maybeSingle();
   let staff=[];
   if(isAdmin){let q=supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status').eq('active',true);if(profile.context_outlet_id)q=q.eq('outlet_id',profile.context_outlet_id);const{data}=await q.order('name');staff=data||[];}
-  else if(isManager){const{data}=await supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status').eq('active',true).eq('outlet_id',profile.outlet_id).order('name');staff=data||[];}
   else {const{data}=await supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status').eq('id',userRow?.staff_id||0);staff=data||[];}
   if(!staff.length){view.innerHTML='<span class="eyebrow">Salary</span><h2>Salary</h2><p class="section-help">No linked active staff record is available.</p>';return;}
   const nowIST=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
@@ -1054,7 +1053,7 @@ async function renderSalary(view, supabase, profile) {
     const sid=Number(view.querySelector('#salaryStaff')?.value||staff[0].id), person=staff.find(x=>Number(x.id)===sid);
     const [{data:est,error},{data:final}]=await Promise.all([
       supabase.rpc('get_salary_estimate',{p_staff_id:sid,p_start:start,p_end:end}),
-      supabase.from('salary_records').select('net_salary,pay_date,period_start,period_end,created_at').eq('staff_id',sid).eq('period_start',start).order('created_at',{ascending:false}).limit(1).maybeSingle()
+      supabase.rpc('get_salary_record',{p_staff_id:sid,p_period_start:start})
     ]);
     if(error){view.querySelector('#salaryEstimate').innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';return;}
     const hasOperationalData=Number(est.present_equivalent_days||0)>0||Number(est.late_mins||0)>0||Number(est.advance_deduction||0)>0||Number(est.loan_deduction||0)>0;
