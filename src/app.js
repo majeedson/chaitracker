@@ -1,4 +1,4 @@
-const APP_BUILD = 47;
+const APP_BUILD = 48;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -1102,6 +1102,13 @@ async function renderAttendance(view, supabase, profile) {
       <section class="summary-section compact"><div class="summary-section-title"><span></span><h3>Filter</h3></div><div class="attendance-tabs"><button data-range="today" class="active">Today</button><button data-range="yesterday">Yesterday</button><button data-range="month">Month</button></div><label id="monthPickerWrap" class="summary-label attendance-month" hidden>Month<input id="attMonth" type="month" value="${selectedMonth}"></label></section>
       ${isAdmin?`<section class="summary-section compact"><div class="summary-section-title"><span></span><h3>Filter by staff</h3></div><label class="summary-label">Staff<select id="attStaff"><option value="">All staff</option></select></label></section>`:''}
       ${!isAdmin?`<section class="attendance-checkin"><div><strong>Mark today’s attendance</strong><span>Take a photo to check in.</span></div><input id="attendancePhoto" type="file" accept="image/jpeg,image/png,image/webp" capture="user" hidden><button id="checkinBtn" class="primary" type="button">Take photo & check in</button><p id="checkinMsg" class="summary-inline-status" hidden></p></section>`:''}
+      <div id="attendanceMessage" class="purchase-message" hidden></div>
+      <div id="attendanceCorrection" class="attendance-correction" hidden>
+        <div class="attendance-correction-card"><div class="section-heading"><div><span class="eyebrow">Correction</span><h3>Correct check-in</h3></div><button id="cancelCorrection" class="ghost" type="button">Cancel</button></div>
+        <label>Check-in time<input id="correctionTime" type="time"></label>
+        <label>Reason<textarea id="correctionReason" rows="3" placeholder="Why is this correction needed?"></textarea></label>
+        <button id="saveCorrection" class="primary" type="button">Save correction</button></div>
+      </div>
       <div id="attendanceStats"></div>
       <section class="summary-section"><div class="summary-section-title"><span></span><h3 id="attendanceListTitle">Attendance</h3></div><div id="attendanceList"><p class="section-help">Loading attendance…</p></div></section>
     </div>`;
@@ -1112,8 +1119,13 @@ async function renderAttendance(view, supabase, profile) {
   const statusLabel=r=>r.status==='LATE'?('Late · '+r.late_mins+' min'):r.status==='HALF_DAY'?('Half-day · '+r.late_mins+' min late'):({PRESENT:'On time',LEAVE:'Leave',ABSENT:'Absent',WEEKLY_OFF:'Weekly off',UPCOMING:'Upcoming',NOT_CHECKED_IN:'Not checked in',NEEDS_REVIEW:'Needs review'})[r.status]||r.status;
   const statusClass=x=>({PRESENT:'ok',LATE:'warn',HALF_DAY:'warn',LEAVE:'info',ABSENT:'bad',WEEKLY_OFF:'neutral',UPCOMING:'neutral',NOT_CHECKED_IN:'neutral',NEEDS_REVIEW:'bad'})[x]||'neutral';
   const loadStaff=async()=>{if(!isAdmin)return;const{data}=await supabase.from('staff').select('id,name').eq('outlet_id',outletId).eq('active',true).order('name');staffRows=data||[];staffSelect.innerHTML='<option value="">All staff</option>'+staffRows.map(x=>`<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('');if(staffId)staffSelect.value=String(staffId);};
-  const openPhoto=async path=>{if(!path)return;if(/^https?:/i.test(path)){window.open(path,'_blank','noopener,noreferrer');return;}const{data,error}=await supabase.storage.from('attendance-photos').createSignedUrl(path,60);if(error)return alert(error.message);window.open(data.signedUrl,'_blank','noopener,noreferrer');};
-  const correctRow=async r=>{const newTime=prompt('Correct check-in time (HH:MM)',prettyTime(r.punch_time));if(!newTime)return;if(!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(newTime))return alert('Enter time as HH:MM');const reason=prompt('Reason for correction');if(!reason?.trim())return;const{error}=await supabase.rpc('correct_attendance',{p_attendance_id:r.attendance_id,p_punch_time:newTime+':00',p_reason:reason.trim()});if(error)return alert(error.message);await refresh();};
+  const showAttendanceMessage=(message,type='error')=>{const box=view.querySelector('#attendanceMessage');box.textContent=message;box.className='purchase-message '+(type==='success'?'success':'error');box.hidden=false;if(type==='success')setTimeout(()=>{if(box.isConnected)box.hidden=true;},2200);};
+  const openPhoto=async path=>{if(!path)return;if(/^https?:/i.test(path)){window.open(path,'_blank','noopener,noreferrer');return;}const{data,error}=await supabase.storage.from('attendance-photos').createSignedUrl(path,60);if(error)return showAttendanceMessage(error.message);window.open(data.signedUrl,'_blank','noopener,noreferrer');};
+  let correctionRow=null;
+  const closeCorrection=()=>{correctionRow=null;view.querySelector('#attendanceCorrection').hidden=true;view.querySelector('#correctionReason').value='';};
+  view.querySelector('#cancelCorrection').onclick=closeCorrection;
+  const correctRow=async r=>{correctionRow=r;view.querySelector('#correctionTime').value=prettyTime(r.punch_time)==='—'?'':prettyTime(r.punch_time);view.querySelector('#correctionReason').value='';view.querySelector('#attendanceCorrection').hidden=false;view.querySelector('#attendanceCorrection').scrollIntoView({behavior:'smooth',block:'center'});};
+  view.querySelector('#saveCorrection').onclick=async()=>{if(!correctionRow)return;const newTime=view.querySelector('#correctionTime').value,reason=view.querySelector('#correctionReason').value.trim(),btn=view.querySelector('#saveCorrection');if(!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(newTime))return showAttendanceMessage('Enter a valid check-in time.');if(reason.length<3)return showAttendanceMessage('Enter a reason for the correction.');btn.disabled=true;btn.textContent='Saving…';const{error}=await supabase.rpc('correct_attendance',{p_attendance_id:correctionRow.attendance_id,p_punch_time:newTime+':00',p_reason:reason});btn.disabled=false;btn.textContent='Save correction';if(error)return showAttendanceMessage(error.message);closeCorrection();showAttendanceMessage('Attendance corrected.','success');await refresh();};
   const refresh=async()=>{
     const[startDate,endDate]=dateRange();view.querySelector('#attendanceState').textContent='Loading…';
     const{data,error}=await supabase.rpc('get_attendance_calendar',{p_outlet_id:outletId,p_staff_id:staffId||null,p_start_date:startDate,p_end_date:endDate});
