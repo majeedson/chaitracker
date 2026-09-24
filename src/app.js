@@ -1,4 +1,4 @@
-const APP_BUILD = 65;
+const APP_BUILD = 66;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -184,13 +184,13 @@ async function renderLogin(root, supabase) {
     };
     const validateStep=()=>{
       const err=onboardingShell.querySelector('#ob-error');let msg='';
-      if(step===0&&!/^\d{4}$/.test(onboardingShell.querySelector('#ob-setup').value))msg='Enter the 4-digit first-time PIN.';
+      if(step===0&&!/^[0-9]{4}$/.test(onboardingShell.querySelector('#ob-setup').value.trim()))msg='Enter the 4-digit first-time PIN.';
       if(step===1&&['#ob-full','#ob-dob','#ob-nationality','#ob-father','#ob-mobile','#ob-address'].some(id=>!onboardingShell.querySelector(id).value.trim()))msg='Please complete all personal details.';
       if(step===2&&['#ob-ec-name','#ob-ec-rel','#ob-ec-phone'].some(id=>!onboardingShell.querySelector(id).value.trim()))msg='Please complete the emergency contact details.';
       if(step===3&&(!onboardingShell.querySelector('#ob-id-type').value||!onboardingShell.querySelector('#ob-id-number').value.trim()||!state.identity_document))msg='Choose an ID type, enter its number and upload the document.';
       if(step===4&&!state.profile_photo)msg='Please add a profile photo.';
       if(step===5&&!onboardingShell.querySelector('#ob-confirm').checked)msg='Please confirm that your details are correct.';
-      if(step===6){const a=onboardingShell.querySelector('#ob-pin').value,b=onboardingShell.querySelector('#ob-pin2').value;if(!/^\d{4,8}$/.test(a))msg='Choose a 4–8 digit PIN.';else if(a!==b)msg='The PINs do not match.';}
+      if(step===6){const a=onboardingShell.querySelector('#ob-pin').value.trim(),b=onboardingShell.querySelector('#ob-pin2').value.trim();if(!/^[0-9]{4,8}$/.test(a))msg='Choose a 4–8 digit PIN.';else if(a!==b)msg='The PINs do not match.';}
       if(msg){err.textContent=msg;err.hidden=false;return false;}return true;
     };
     const submitOnboarding=async()=>{
