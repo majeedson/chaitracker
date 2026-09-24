@@ -184,3 +184,8 @@ input,select,textarea{font-weight:400;font-size:15px}
 .attendance-home-context>div{display:flex;flex-direction:column;gap:4px}
 .attendance-home-context strong{font-size:17px;letter-spacing:-.01em}
 .attendance-home-context small{color:var(--muted,#707070);font-size:13px}
+
+/* Build 32 — Super User Admin creation */
+.admin-add-panel{margin:12px 0 16px;padding:16px;border:1px solid var(--line,#ececec);border-radius:16px;background:#fff}
+.admin-add-panel .section-heading{margin-bottom:12px}
+#peopleAdmins>.section-heading{align-items:center}
