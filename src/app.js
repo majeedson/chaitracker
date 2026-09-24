@@ -1,4 +1,4 @@
-const APP_BUILD = 32;
+const APP_BUILD = 33;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -582,10 +582,18 @@ async function renderPeople(view, supabase, profile) {
     <div id="peopleAdmins" class="subsection" hidden>
       <div class="section-heading"><div><h3>Administrators</h3><span class="hint">Admin accounts are separate from employee records</span></div>${profile.is_super_user?'<button type="button" id="showAddAdmin" class="primary">Add Admin</button>':''}</div>
       ${profile.is_super_user?`<div id="addAdminPanel" class="card admin-add-panel" hidden><div class="section-heading"><h3>Add administrator</h3><button type="button" id="cancelAddAdmin" class="ghost">Cancel</button></div><div class="form-grid"><label>Name<input id="adminName" placeholder="Administrator name"></label><label>Home café<select id="adminOutlet">${outlets.map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></label></div><p class="hint">Initial Admin PIN: 123456. The Admin can use it for first sign-in; later PIN changes do not restore this default.</p><div id="adminFormMsg"></div><button type="button" id="addAdminBtn" class="primary">Create Admin</button></div>`:''}
-      <div class="admin-list" id="adminList">${adminRows.map(a=>`<div class="admin-row"><div><strong>${escapeHtml(a.name)}</strong>${a.is_super_user?'<span class="soft-badge">Super User</span>':''}</div><span class="${a.active?'status-ok':'status-warn'}">${a.active?'Active':'Inactive'}</span></div>`).join('')}</div>
+      <div class="admin-list" id="adminList"></div>
     </div>
     <div id="peopleStaff" class="subsection"><div class="section-heading"><h3>Current staff</h3><span class="hint">Select a person to manage their employment and access</span></div><div id="staffList"></div></div>
   `;
+
+  const renderAdmins=()=>{
+    const list=view.querySelector('#adminList');if(!list)return;
+    list.innerHTML=adminRows.map(a=>`<div class="admin-row admin-manage-row"><div class="admin-identity"><strong>${escapeHtml(a.name)}</strong>${a.is_super_user?'<span class="soft-badge">Super User</span>':''}<span class="${a.active?'status-ok':'status-warn'}">${a.active?'Active':'Inactive'}</span></div>${profile.is_super_user&&!a.is_super_user?`<div class="admin-controls"><label>New PIN<input type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" class="admin-new-pin" data-id="${a.id}" placeholder="4–8 digits"></label><button type="button" class="secondary admin-pin-update" data-id="${a.id}">Update PIN</button><button type="button" class="ghost admin-active-toggle" data-id="${a.id}" data-active="${a.active}">${a.active?'Deactivate':'Reactivate'}</button></div>`:''}</div>`).join('');
+    list.querySelectorAll('.admin-pin-update').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,input=list.querySelector('.admin-new-pin[data-id="'+id+'"]'),pin=input?.value||'';if(!/^\\d{4,8}$/.test(pin))return alert('Enter a 4–8 digit numeric PIN.');btn.disabled=true;btn.textContent='Updating…';const {data,error}=await supabase.functions.invoke('chaitracker-admin-pin',{body:{target_user_id:id,new_pin:pin}});if(error||!data?.ok){alert(data?.error||error?.message||'Unable to update PIN.');btn.disabled=false;btn.textContent='Update PIN';return;}input.value='';btn.disabled=false;btn.textContent='Updated';setTimeout(()=>btn.textContent='Update PIN',1200);});
+    list.querySelectorAll('.admin-active-toggle').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,next=btn.dataset.active!=='true';if(!confirm((next?'Reactivate':'Deactivate')+' this Admin account?'))return;btn.disabled=true;const {error}=await supabase.rpc('superuser_set_admin_active',{p_user_id:id,p_active:next});if(error){alert(error.message);btn.disabled=false;return;}({outlets,staffRows,adminRows}=await loadData());renderAdmins();});
+  };
+  renderAdmins();
 
   let peopleOutlet = profile.outlet_id ? String(profile.outlet_id) : 'all';
   let peopleStatus = 'ALL';
@@ -703,7 +711,7 @@ async function renderPeople(view, supabase, profile) {
       try{
         const {error}=await supabase.rpc('superuser_create_admin',{p_name:name,p_outlet_id:outletId});if(error)throw error;
         ({outlets,staffRows,adminRows}=await loadData());
-        view.querySelector('#adminList').innerHTML=adminRows.map(a=>`<div class="admin-row"><div><strong>${escapeHtml(a.name)}</strong>${a.is_super_user?'<span class="soft-badge">Super User</span>':''}</div><span class="${a.active?'status-ok':'status-warn'}">${a.active?'Active':'Inactive'}</span></div>`).join('');
+        renderAdmins();
         view.querySelector('#adminName').value='';panel.hidden=true;show.hidden=false;
         msg.innerHTML='';
       }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to create Admin.')+'</p>';}
