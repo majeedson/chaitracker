@@ -1,4 +1,4 @@
-const APP_BUILD = 59;
+const APP_BUILD = 60;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -236,6 +236,7 @@ function renderWorkspace(root, supabase, profile) {
           <button id="logout" class="nav-icon-button" aria-label="Logout">${icon('logout',20)}</button>
         </div>
       </header>
+      ${isAdmin?'<div class="mobile-outlet-context"><span>Café</span><select id="mobile-global-outlet" aria-label="Select café"><option value="all">All cafés</option></select></div>':''}
       <div id="drawer-scrim" class="drawer-scrim" hidden></div>
       <aside id="app-drawer" class="app-drawer" aria-hidden="true">
         <div class="drawer-head"><div><div class="drawer-brand">CafeTracker</div><div class="drawer-caption">${isAdmin?'Administration':'Your workspace'}</div></div><button id="drawer-close" class="nav-icon-button" aria-label="Close menu">${icon('close',22)}</button></div>
@@ -247,7 +248,7 @@ function renderWorkspace(root, supabase, profile) {
 
   const drawer=root.querySelector('#app-drawer'),scrim=root.querySelector('#drawer-scrim'),view=root.querySelector('#module-view');
   let currentModule=landing;
-  if(isAdmin){const sel=root.querySelector('#global-outlet');supabase.from('outlets').select('id,name,theme_key,theme_color').order('id').then(({data})=>{(data||[]).forEach(o=>sel.insertAdjacentHTML('beforeend',`<option value="${o.id}">${escapeHtml(o.name)}</option>`));sel.value=profile.context_outlet_id?String(profile.context_outlet_id):'all';if(profile.context_outlet_id){const o=(data||[]).find(x=>Number(x.id)===profile.context_outlet_id);if(o)applyTheme(o);}sel.onchange=()=>{localStorage.setItem(outletContextKey,sel.value);profile.context_outlet_id=sel.value==='all'?null:Number(sel.value);const o=(data||[]).find(x=>Number(x.id)===profile.context_outlet_id);applyTheme(o||null);openModule(currentModule);};});}
+  if(isAdmin){const desktopSel=root.querySelector('#global-outlet'),mobileSel=root.querySelector('#mobile-global-outlet');supabase.from('outlets').select('id,name,theme_key,theme_color').order('id').then(({data})=>{for(const sel of [desktopSel,mobileSel]){(data||[]).forEach(o=>sel.insertAdjacentHTML('beforeend',`<option value="${o.id}">${escapeHtml(o.name)}</option>`));sel.value=profile.context_outlet_id?String(profile.context_outlet_id):'all';}if(profile.context_outlet_id){const o=(data||[]).find(x=>Number(x.id)===profile.context_outlet_id);if(o)applyTheme(o);}const change=sel=>{localStorage.setItem(outletContextKey,sel.value);profile.context_outlet_id=sel.value==='all'?null:Number(sel.value);desktopSel.value=sel.value;mobileSel.value=sel.value;const o=(data||[]).find(x=>Number(x.id)===profile.context_outlet_id);applyTheme(o||null);openModule(currentModule);};desktopSel.onchange=()=>change(desktopSel);mobileSel.onchange=()=>change(mobileSel);});}
   const openDrawer=()=>{drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');scrim.hidden=false;requestAnimationFrame(()=>scrim.classList.add('show'));};
   const closeDrawer=()=>{drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');scrim.classList.remove('show');setTimeout(()=>{scrim.hidden=true;},180);};
   const openModule=async module=>{
