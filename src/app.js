@@ -1,4 +1,4 @@
-const APP_BUILD = 41;
+const APP_BUILD = 42;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -299,10 +299,11 @@ async function renderDashboard(view, supabase, profile) {
     supabase.from('staff').select('id,outlet_id,employment_status,active')
   ]);
   if(outletError||stockError||staffError){view.innerHTML='<span class="eyebrow">Dashboard</span><h2>Dashboard unavailable</h2><p class="form-error">'+escapeHtml((outletError||stockError||staffError)?.message||'Unable to load dashboard.')+'</p>';return;}
-  const outletMap=new Map((outlets||[]).map(o=>[Number(o.id),o]));
+  const scopedOutlets=profile.context_outlet_id?(outlets||[]).filter(o=>Number(o.id)===Number(profile.context_outlet_id)):(outlets||[]);
+  const outletMap=new Map(scopedOutlets.map(o=>[Number(o.id),o]));
   const todayByOutlet=new Map();
-  await Promise.all((outlets||[]).map(async o=>{const {data}=await supabase.rpc('get_effective_business_day',{p_outlet_id:o.id,p_timestamp:new Date().toISOString()});if(data)todayByOutlet.set(Number(o.id),String(data));}));
-  const attendanceSets=await Promise.all((outlets||[]).map(async o=>{const date=todayByOutlet.get(Number(o.id));if(!date)return {outlet:o,rows:[]};const {data,error}=await supabase.rpc('get_attendance_calendar',{p_outlet_id:o.id,p_start_date:date,p_end_date:date,p_staff_id:null});return {outlet:o,rows:error?[]:(data||[])};}));
+  await Promise.all(scopedOutlets.map(async o=>{const {data}=await supabase.rpc('get_effective_business_day',{p_outlet_id:o.id,p_timestamp:new Date().toISOString()});if(data)todayByOutlet.set(Number(o.id),String(data));}));
+  const attendanceSets=await Promise.all(scopedOutlets.map(async o=>{const date=todayByOutlet.get(Number(o.id));if(!date)return {outlet:o,rows:[]};const {data,error}=await supabase.rpc('get_attendance_calendar',{p_outlet_id:o.id,p_start_date:date,p_end_date:date,p_staff_id:null});return {outlet:o,rows:error?[]:(data||[])};}));
   const dateValues=[...todayByOutlet.values()];
   let summaries=[];
   if(dateValues.length){const min=dateValues.slice().sort()[0],max=dateValues.slice().sort().at(-1);const {data}=await supabase.from('daily_summaries').select('outlet_id,business_date,summary_status,short_excess').gte('business_date',min).lte('business_date',max);summaries=data||[];}
@@ -313,25 +314,25 @@ async function renderDashboard(view, supabase, profile) {
     if(review)alerts.push({kind:'attendance',outlet:outlet.name,text:`${review} attendance record${review===1?'':'s'} need review`,module:'attendance'});
     if(notIn)alerts.push({kind:'attendance',outlet:outlet.name,text:`${notIn} ${notIn===1?'person has':'people have'} not checked in`,module:'attendance'});
   });
-  (outlets||[]).forEach(o=>{const date=todayByOutlet.get(Number(o.id));const row=summaries.find(x=>Number(x.outlet_id)===Number(o.id)&&String(x.business_date)===date);if(row&&row.summary_status!=='CLOSED')alerts.push({kind:'summary',outlet:o.name,text:'Daily Summary is open',module:'summary'});});
+  scopedOutlets.forEach(o=>{const date=todayByOutlet.get(Number(o.id));const row=summaries.find(x=>Number(x.outlet_id)===Number(o.id)&&String(x.business_date)===date);if(row&&row.summary_status!=='CLOSED')alerts.push({kind:'summary',outlet:o.name,text:'Daily Summary is open',module:'summary'});});
   const latestStock=new Map();
   (stockRows||[]).forEach(r=>{const key=Number(r.outlet_id)+'|'+r.item_id,old=latestStock.get(key);if(!old||String(r.business_date)>String(old.business_date))latestStock.set(key,r);});
   const lowByOutlet=new Map();
   [...latestStock.values()].forEach(r=>{const min=Number(r.minimum_stock||0),count=Number(r.count_now||0);if(min>0&&count<min)lowByOutlet.set(Number(r.outlet_id),(lowByOutlet.get(Number(r.outlet_id))||0)+1);});
   lowByOutlet.forEach((count,id)=>alerts.push({kind:'stock',outlet:outletMap.get(id)?.name||'Café',text:`${count} stock item${count===1?' is':'s are'} below minimum`,module:'stock'}));
-  const activeStaff=(staffRows||[]).filter(s=>s.active&&s.employment_status==='ACTIVE').length;
-  const awayStaff=(staffRows||[]).filter(s=>['VACATION','LEAVE'].includes(s.employment_status)).length;
-  const closedSummaries=(outlets||[]).filter(o=>{const d=todayByOutlet.get(Number(o.id));return summaries.some(x=>Number(x.outlet_id)===Number(o.id)&&String(x.business_date)===d&&x.summary_status==='CLOSED');}).length;
+  const scopedStaff=profile.context_outlet_id?(staffRows||[]).filter(s=>Number(s.outlet_id)===Number(profile.context_outlet_id)):(staffRows||[]);const activeStaff=scopedStaff.filter(s=>s.active&&s.employment_status==='ACTIVE').length;
+  const awayStaff=scopedStaff.filter(s=>['VACATION','LEAVE'].includes(s.employment_status)).length;
+  const closedSummaries=scopedOutlets.filter(o=>{const d=todayByOutlet.get(Number(o.id));return summaries.some(x=>Number(x.outlet_id)===Number(o.id)&&String(x.business_date)===d&&x.summary_status==='CLOSED');}).length;
   const hour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',hour12:false}).format(new Date()));
   const greeting=hour<12?'Good morning':hour<17?'Good afternoon':'Good evening';
   view.innerHTML=`
-    <div class="dashboard-head"><div><span class="eyebrow">All cafés</span><h2>${greeting}, ${escapeHtml(profile.name)}</h2><p class="muted">Here’s what needs attention across CafeTracker.</p></div><span class="soft-badge">${alerts.length} needing attention</span></div>
+    <div class="dashboard-head"><div><span class="eyebrow">${profile.context_outlet_id?escapeHtml(outletMap.get(Number(profile.context_outlet_id))?.name||'Selected café'):'All cafés'}</span><h2>${greeting}, ${escapeHtml(profile.name)}</h2><p class="muted">Here’s what needs attention across CafeTracker.</p></div><span class="soft-badge">${alerts.length} needing attention</span></div>
     <section class="dashboard-attention"><div class="section-heading"><div><h3>Needs Attention</h3><span class="hint">Live from current CafeTracker records</span></div></div>
       <div class="attention-list">${alerts.length?alerts.map(a=>`<button type="button" class="attention-row" data-open-module="${a.module}"><span class="attention-icon">${icon(a.kind==='summary'?'summary':a.kind==='stock'?'stock':'attendance',20)}</span><span class="attention-copy"><strong>${escapeHtml(a.outlet)}</strong><small>${escapeHtml(a.text)}</small></span><span class="person-chevron">›</span></button>`).join(''):`<div class="all-caught-up">${icon('check',24)}<div><strong>All caught up</strong><span>No current records need Admin attention.</span></div></div>`}</div>
     </section>
     <section class="dashboard-today"><div class="section-heading"><div><h3>Today across cafés</h3><span class="hint">Database records only</span></div></div>
       <div class="today-grid">
-        <div class="today-stat"><strong>${(outlets||[]).length}</strong><span>Cafés</span></div>
+        <div class="today-stat"><strong>${scopedOutlets.length}</strong><span>Cafés</span></div>
         <div class="today-stat"><strong>${activeStaff}</strong><span>Active staff</span></div>
         <div class="today-stat"><strong>${awayStaff}</strong><span>On leave / vacation</span></div>
         <div class="today-stat"><strong>${closedSummaries}</strong><span>Summaries closed</span></div>
@@ -370,7 +371,7 @@ async function renderDailySummary(view, supabase, profile) {
         <div><span class="eyebrow">Daily closing</span><h2>Daily Summary</h2><p>${escapeHtml(outlet?.name||'')} · ${businessDate}</p></div>
         <span class="summary-state">${escapeHtml(statusText)}</span>
       </div>
-      ${isOwner?`<section class="summary-section compact"><label class="summary-label">Café<select id="sumOutlet">${outlets.map(o=>`<option value="${o.id}" ${Number(o.id)===outletId?'selected':''}>${escapeHtml(o.name)}</option>`).join('')}</select></label></section>`:''}
+
 
       <section class="summary-section">
         <div class="summary-section-title"><span></span><h3>Opening cash</h3></div>
@@ -441,7 +442,7 @@ async function renderDailySummary(view, supabase, profile) {
       ${existing?.is_closed?'<div class="notice warning">This day is closed and cannot be edited.</div>':''}
     </div>`;
 
-  if(isOwner)view.querySelector('#sumOutlet').onchange=async e=>{profile.outlet_id=Number(e.target.value);await renderDailySummary(view,supabase,profile);};
+
 
   function n(id){return Number(view.querySelector('#'+id)?.value||0);}
   function calc(){
@@ -828,7 +829,7 @@ async function renderPurchases(view, supabase, profile) {
       <div><span class="eyebrow">Operations</span><h2>Purchases</h2></div>
       <span class="soft-badge">${escapeHtml(String(businessDate))}</span>
     </div>
-    ${isOwner ? `<div class="field-row"><label>Outlet<select id="purOutlet">${(outlets || []).map(o => `<option value="${o.id}" ${Number(o.id)===Number(outletId)?'selected':''}>${escapeHtml(o.name)}</option>`).join('')}</select></label></div>` : ''}
+
 
     <div class="purchase-tabs">
       <button class="purchase-tab active" data-purchase-mode="item">Item-wise</button>
@@ -1027,7 +1028,7 @@ async function renderPurchases(view, supabase, profile) {
   };
 
   await loadHistory();
-  if (isOwner) view.querySelector('#purOutlet').addEventListener('change', () => renderPurchases(view, supabase, {...profile, outlet_id:Number(view.querySelector('#purOutlet').value)}));
+
 }
 
 async function renderSalary(view, supabase, profile) {
@@ -1094,7 +1095,7 @@ async function renderAttendance(view, supabase, profile) {
     <div class="attendance-page">
       <div class="attendance-home-context"><div><span class="eyebrow">Today</span><strong id="attendanceTodayContext">Loading café day…</strong><small id="attendanceActionContext">Checking attendance status…</small></div></div>
       <div class="summary-title-row"><div><span class="eyebrow">Workforce</span><h2>Attendance</h2><p id="attendanceContext">Today’s attendance</p></div><span class="summary-state" id="attendanceState">Loading…</span></div>
-      ${isOwner?`<section class="summary-section compact"><label class="summary-label">Café<select id="attOutlet">${(outlets||[]).map(o=>`<option value="${o.id}" ${Number(o.id)===outletId?'selected':''}>${escapeHtml(o.name)}</option>`).join('')}</select></label></section>`:''}
+
       <section class="summary-section compact"><div class="summary-section-title"><span></span><h3>Filter</h3></div><div class="attendance-tabs"><button data-range="today" class="active">Today</button><button data-range="yesterday">Yesterday</button><button data-range="month">Month</button></div><label id="monthPickerWrap" class="summary-label attendance-month" hidden>Month<input id="attMonth" type="month" value="${selectedMonth}"></label></section>
       ${isAdmin?`<section class="summary-section compact"><div class="summary-section-title"><span></span><h3>Filter by staff</h3></div><label class="summary-label">Staff<select id="attStaff"><option value="">All staff</option></select></label></section>`:''}
       ${!isAdmin?`<section class="attendance-checkin"><div><strong>Mark today’s attendance</strong><span>Take a photo to check in.</span></div><input id="attendancePhoto" type="file" accept="image/jpeg,image/png,image/webp" capture="user" hidden><button id="checkinBtn" class="primary" type="button">Take photo & check in</button><p id="checkinMsg" class="summary-inline-status" hidden></p></section>`:''}
@@ -1130,7 +1131,7 @@ async function renderAttendance(view, supabase, profile) {
     [...view.querySelectorAll('.attendance-row')].forEach((el,i)=>{const r=ordered[i];el.querySelector('.photo-btn')?.addEventListener('click',()=>openPhoto(r.photo_url));el.querySelector('.correct-btn')?.addEventListener('click',()=>correctRow(r));});
     if(!isAdmin){const row=rows.find(r=>r.attendance_date===todayIST&&Number(r.staff_id)===Number(staffId)),btn=view.querySelector('#checkinBtn');if(btn){btn.disabled=!!row?.punch_time;btn.textContent=row?.punch_time?'Checked in · '+prettyTime(row.punch_time):'Take photo & check in';}}
   };
-  if(isOwner)outletSelect.onchange=async()=>{outletId=Number(outletSelect.value);staffId=null;applyTheme((outlets||[]).find(x=>Number(x.id)===outletId));todayIST=await effectiveDate(outletId);yesterday=(()=>{const d=new Date(todayIST+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10);})();monthKey=todayIST.slice(0,7);await loadStaff();await refresh();};
+
   if(isAdmin){await loadStaff();staffSelect.onchange=()=>{staffId=staffSelect.value?Number(staffSelect.value):null;refresh();};}
   view.querySelectorAll('.attendance-tabs button').forEach(btn=>btn.onclick=()=>{filter=btn.dataset.range;view.querySelectorAll('.attendance-tabs button').forEach(b=>b.classList.toggle('active',b===btn));view.querySelector('#monthPickerWrap').hidden=filter!=='month';refresh();});
   if(monthInput)monthInput.onchange=()=>{selectedMonth=monthInput.value||monthKey;refresh();};
