@@ -1,4 +1,4 @@
-const APP_BUILD = 67;
+const APP_BUILD = 68;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -572,33 +572,26 @@ async function renderDailySummary(view, supabase, profile) {
   view.querySelector('#closeSummary').onclick=async()=>{if(!confirm('Close this business day? Once closed, editing stops until the day is reopened.'))return;if(!existing){const ok=await save();if(!ok)return;await renderDailySummary(view,supabase,profile);return;}const {error}=await supabase.rpc('close_daily_summary',{p_summary_id:existing.id,p_user_id:profile.id});if(error){const msg=view.querySelector('#summaryMessage');msg.textContent=error.message;msg.hidden=false;return;}await renderDailySummary(view,supabase,profile);};
 }
 
-function staffWelcomeMessage(name, setupCode) {
+function staffWelcomeMessage(name) {
   return [
     '*Welcome to CafeTracker*',
     '',
     'Hi '+name+', welcome on board! 👋',
     '',
-    '*First-time PIN:* '+setupCode,
+    'Open CafeTracker, select your café and your name, then tap Complete setup.',
     '',
-    'Open CafeTracker, select your café and your name, then choose Set up my account and enter 1234.',
-    '',
-    'Then:',
-    '1. Complete your onboarding form',
-    '2. Upload the requested details',
-    '3. Create your own private PIN',
-    '',
-    '1234 is only for first-time setup or after an Admin resets your login. You will create your own private PIN during setup.',
+    'Complete your onboarding details, upload the requested documents, and create your own private PIN.',
     '',
     'Welcome to the team!'
   ].join('\n');
 }
-async function copyStaffWelcomeMessage(name, setupCode, button) {
-  const message=staffWelcomeMessage(name,setupCode);
+async function copyStaffWelcomeMessage(name, button) {
+  const message=staffWelcomeMessage(name);
   try{await navigator.clipboard.writeText(message);const old=button.textContent;button.textContent='Copied ✓';setTimeout(()=>button.textContent=old,1600);}
   catch{window.prompt('Copy this message:',message);}
 }
-function openStaffWelcomeWhatsApp(name, setupCode) {
-  window.open('https://wa.me/?text='+encodeURIComponent(staffWelcomeMessage(name,setupCode)),'_blank','noopener,noreferrer');
+function openStaffWelcomeWhatsApp(name) {
+  window.open('https://wa.me/?text='+encodeURIComponent(staffWelcomeMessage(name)),'_blank','noopener,noreferrer');
 }
 
 async function renderPeople(view, supabase, profile) {
@@ -762,9 +755,9 @@ async function renderPeople(view, supabase, profile) {
       try{
         const {data,error}=await supabase.rpc('superuser_reset_staff_pin_setup',{p_staff_id:staffId});
         if(error)throw error;
-        msg.innerHTML='<div class="notice setup-share"><strong>First-time PIN:</strong> <strong class="setup-code">'+escapeHtml(data.setup_code)+'</strong><br><span class="hint">Use 1234 for first-time setup. Their old PIN no longer works.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(s.name,data.setup_code))}</div><div class="share-actions"><button type="button" id="copyResetWelcome" class="secondary">Copy message</button><button type="button" id="shareResetWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>';
-        view.querySelector('#copyResetWelcome').onclick=(e)=>copyStaffWelcomeMessage(s.name,data.setup_code,e.currentTarget);
-        view.querySelector('#shareResetWhatsApp').onclick=()=>openStaffWelcomeWhatsApp(s.name,data.setup_code);
+        msg.innerHTML='<div class="notice setup-share"><strong>Login reset.</strong><br><span class="hint">The staff member can select their name and complete setup again.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(s.name))}</div><div class="share-actions"><button type="button" id="copyResetWelcome" class="secondary">Copy message</button><button type="button" id="shareResetWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>';
+        view.querySelector('#copyResetWelcome').onclick=(e)=>copyStaffWelcomeMessage(s.name,e.currentTarget);
+        view.querySelector('#shareResetWhatsApp').onclick=()=>openStaffWelcomeWhatsApp(s.name);
         ({outlets,staffRows}=await loadData());
       }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to reset PIN.')+'</p>';}
       finally{btn.disabled=false;btn.textContent='Reset login';}
@@ -801,9 +794,9 @@ async function renderPeople(view, supabase, profile) {
     try{
       const {data:created,error}=await supabase.rpc('owner_add_staff',{p_name:name,p_outlet_id:outletId,p_role:role,p_basic_salary:salary,p_joining_date:joining,p_permissions:permissions});
       if(error)throw error;
-      msg.innerHTML=`<div class="notice setup-share"><strong>Staff member added.</strong><br>First-time PIN: <strong class="setup-code">${escapeHtml(created?.setup_code||'')}</strong><br><span class="hint">Use 1234 for first-time onboarding. They will create their private PIN during setup.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(name,created?.setup_code||''))}</div><div class="share-actions"><button type="button" id="copyNewWelcome" class="secondary">Copy message</button><button type="button" id="shareNewWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>`;
-      view.querySelector('#copyNewWelcome').onclick=(e)=>copyStaffWelcomeMessage(name,created?.setup_code||'',e.currentTarget);
-      view.querySelector('#shareNewWhatsApp').onclick=()=>openStaffWelcomeWhatsApp(name,created?.setup_code||'');
+      msg.innerHTML=`<div class="notice setup-share"><strong>Staff member added.</strong><br><span class="hint">They can now select their name, complete onboarding and create their own private PIN.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(name))}</div><div class="share-actions"><button type="button" id="copyNewWelcome" class="secondary">Copy message</button><button type="button" id="shareNewWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>`;
+      view.querySelector('#copyNewWelcome').onclick=(e)=>copyStaffWelcomeMessage(name,e.currentTarget);
+      view.querySelector('#shareNewWhatsApp').onclick=()=>openStaffWelcomeWhatsApp(name);
       view.querySelector('#staffName').value='';view.querySelector('#staffSalary').value='';
       ({outlets,staffRows}=await loadData());renderList();
     }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to add staff.')+'</p>';}
