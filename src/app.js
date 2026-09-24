@@ -1,4 +1,4 @@
-const APP_BUILD = 52;
+const APP_BUILD = 53;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -1050,23 +1050,9 @@ async function renderPurchases(view, supabase, profile) {
     saveBtn.textContent = 'Saving…';
 
     try {
-      for (const row of payloads) {
-        const { error } = await supabase.from('purchases').insert({
-          id: `PUR-${outletId}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
-          business_date: businessDate,
-          outlet_id: outletId,
-          user_id: profile.id,
-          vendor_id: null,
-          vendor_name: vendorName || null,
-          item_id: row.item_id,
-          qty: row.qty,
-          unit: row.unit,
-          invoice_amount: row.invoice_amount,
-          entry_type: row.entry_type
-        });
-        if (error) throw error;
-      }
-      showMessage('Purchase saved.','success');
+      const {data:savedCount,error}=await supabase.rpc('save_purchase_entries',{p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_vendor_name:vendorName||'',p_entries:payloads});
+      if(error)throw error;
+      showMessage((savedCount||payloads.length)+' purchase entr'+((savedCount||payloads.length)===1?'y':'ies')+' saved.','success');
       await loadHistory();
       view.querySelector('#purRows').innerHTML = '';
       if (mode === 'item') addRow(); else view.querySelector('#purInvoice').value = '';
