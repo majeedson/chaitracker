@@ -265,3 +265,6 @@ input,select,textarea{font-weight:400;font-size:15px}
 .employment-history{margin-top:18px;padding-top:14px;border-top:1px solid var(--line,#eee)}
 .employment-history h4{margin:0 0 8px}.employment-history>div{display:flex;justify-content:space-between;gap:12px;padding:8px 0;font-size:12px;border-bottom:1px solid var(--line,#f1f1f1)}
 .employment-history span{color:var(--muted,#777);text-align:right}
+
+/* Build 58 — document metadata */
+.document-meta{display:grid;gap:0;margin-top:10px}.document-meta>div{display:flex;justify-content:space-between;gap:14px;padding:10px 0;border-bottom:1px solid var(--line,#eee);font-size:12px}.document-meta span{color:var(--muted,#777)}
