@@ -1,4 +1,4 @@
-const APP_BUILD = 39;
+const APP_BUILD = 40;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -344,10 +344,12 @@ async function renderDailySummary(view, supabase, profile) {
   const isOwner=profile.access_class==='ADMIN';
   const canManageSummary=['Owner','Manager','Ops Manager'].includes(profile.role);
   if(!canManageSummary){view.innerHTML='<span class="eyebrow">Daily Summary</span><h2>Manager access required</h2><p class="section-help">Daily Summary is available to managers and owners only.</p>';return;}
-  const businessDate=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   let outletId=Number(profile.outlet_id||1);
   let outlets=[];
   if(isOwner){const {data}=await supabase.from('outlets').select('id,name,theme_key,theme_color').order('id');outlets=data||[];outletId=Number(profile.context_outlet_id||profile.outlet_id||outlets[0]?.id||1);}
+  const {data:businessDay,error:businessDayError}=await supabase.rpc('get_effective_business_day',{p_outlet_id:outletId,p_timestamp:new Date().toISOString()});
+  if(businessDayError||!businessDay){view.innerHTML='<span class="eyebrow">Daily Summary</span><h2>Business day unavailable</h2><p class="form-error">'+escapeHtml(businessDayError?.message||'Could not determine the café business day.')+'</p>';return;}
+  const businessDate=String(businessDay);
   const [{data:vendors},{data:staff},{data:existing},{data:previous},{data:outlet}]=await Promise.all([
     supabase.from('vendors').select('id,name').order('name'),
     supabase.from('staff').select('id,name,outlet_id').eq('active',true).eq('outlet_id',outletId).order('name'),
@@ -1074,7 +1076,7 @@ async function renderSalary(view, supabase, profile) {
 }
 
 async function renderAttendance(view, supabase, profile) {
-  const isOwner=profile.role==='Owner',isManager=['Manager','Ops Manager'].includes(profile.role),isAdmin=isOwner||isManager;
+  const isOwner=profile.access_class==='ADMIN',isManager=['Manager','Ops Manager'].includes(profile.role),isAdmin=isOwner||isManager;
   const [{data:outlets},{data:userRow}]=await Promise.all([
     isOwner?supabase.from('outlets').select('id,name,theme_key,theme_color').order('id'):Promise.resolve({data:[]}),
     supabase.from('users').select('staff_id,outlet_id').eq('id',profile.id).maybeSingle()
