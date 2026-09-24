@@ -249,3 +249,8 @@ input,select,textarea{font-weight:400;font-size:15px}
 .stock-count-row span{display:grid;gap:3px}.stock-count-row small{font-size:11px;color:var(--muted,#777)}
 .stock-count-row input{text-align:right}
 @media(max-width:520px){.stock-count-row{grid-template-columns:minmax(0,1fr) 92px}}
+
+/* Build 52 — purchase order */
+.po-vendor{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line,#eee)}
+.po-vendor>div{display:grid;gap:3px}.po-vendor small{font-size:11px;color:var(--muted,#777)}
+@media(max-width:520px){.po-vendor{align-items:flex-start}.po-vendor .secondary{white-space:nowrap}}
