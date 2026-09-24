@@ -1036,8 +1036,10 @@ async function renderSalary(view, supabase, profile) {
     ]);
     if(error){view.querySelector('#salaryEstimate').innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';return;}
     const hasOperationalData=Number(est.present_equivalent_days||0)>0||Number(est.late_mins||0)>0||Number(est.advance_deduction||0)>0||Number(est.loan_deduction||0)>0;
+    if(!hasOperationalData&&!final){
+      view.querySelector('#salaryEstimate').innerHTML=`<div class="salary-empty-note">${icon('attendance',21)}<div><strong>Not enough records to estimate salary yet</strong><span>No attendance or staff-payment activity is recorded for this period. CafeTracker will not treat missing records as absences.</span></div></div><section class="salary-hero"><span>${escapeHtml(person?.name||'Salary')}</span><strong>${money(est.basic_salary)}</strong><small>Basic salary · estimate pending attendance data</small></section><div class="salary-meta"><span>Daily rate <strong>${money(est.daily_rate)}</strong></span><span>Hourly rate <strong>${money(est.hourly_rate)}</strong></span><span>Paid off entitlement <strong>3 days/month</strong></span></div>`;return;
+    }
     view.querySelector('#salaryEstimate').innerHTML=`
-      ${!hasOperationalData?`<div class="salary-empty-note">${icon('attendance',21)}<div><strong>No operational records yet this month</strong><span>The estimate below uses the staff basic salary and will update automatically when attendance, off-days, advances and loans are recorded.</span></div></div>`:''}
       <section class="salary-hero"><span>${escapeHtml(person?.name||'Salary')}</span><strong>${money(est.estimated_net)}</strong><small>Estimated current-month payable</small></section>
       <div class="salary-breakdown">
         <div class="salary-line"><span>Basic salary</span><strong>${money(est.basic_salary)}</strong></div>
