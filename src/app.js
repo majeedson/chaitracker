@@ -1,4 +1,4 @@
-const APP_BUILD = 42;
+const APP_BUILD = 43;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -343,7 +343,7 @@ async function renderDashboard(view, supabase, profile) {
 
 async function renderDailySummary(view, supabase, profile) {
   const isOwner=profile.access_class==='ADMIN';
-  const canManageSummary=['Owner','Manager','Ops Manager'].includes(profile.role);
+  const canManageSummary=isOwner||['Manager','Ops Manager'].includes(profile.role);
   if(!canManageSummary){view.innerHTML='<span class="eyebrow">Daily Summary</span><h2>Manager access required</h2><p class="section-help">Daily Summary is available to managers and owners only.</p>';return;}
   let outletId=Number(profile.outlet_id||1);
   let outlets=[];
@@ -602,7 +602,7 @@ function openStaffWelcomeWhatsApp(name, setupCode) {
 
 async function renderPeople(view, supabase, profile) {
   if (profile.access_class !== 'ADMIN') {
-    view.innerHTML = '<span class="eyebrow">People</span><h2>Owner access required</h2>';
+    view.innerHTML = '<span class="eyebrow">People</span><h2>Admin access required</h2>';
     return;
   }
 
@@ -734,7 +734,7 @@ async function renderPeople(view, supabase, profile) {
         <div class="card profile-panel" data-profile-panel="attendance" hidden><span class="eyebrow">Attendance</span><h3>Attendance history</h3><p class="section-help">Use the Attendance workspace for the full calendar, corrections and daily status.</p><button type="button" class="secondary profile-open-module" data-module="attendance">Open Attendance</button></div>
         <div class="card profile-panel" data-profile-panel="salary" hidden><span class="eyebrow">Salary</span><h3>Payroll</h3><p class="section-help">Salary is calculated from recorded attendance, paid off-days and staff payments.</p><button type="button" class="secondary profile-open-module" data-module="salary">Open Salary</button></div>
         <div class="card profile-panel" data-profile-panel="documents" hidden><span class="eyebrow">Documents</span><h3>Employee documents</h3><p class="section-help">Identity and onboarding documents are kept in the private employee document storage.</p></div>
-        <div id="editMsg"></div><div class="profile-actions"><button id="saveStaff" class="primary">Save changes</button><button id="resetPin" class="secondary">Reset login</button></div>
+        <div id="editMsg"></div><div class="profile-actions"><button id="saveStaff" class="primary">Save changes</button>${profile.is_super_user?'<button id="resetPin" class="secondary">Reset login</button>':''}</div>
       </div>`;
     view.querySelector('#cancelEdit').onclick=renderList;
     view.querySelectorAll('[data-profile-tab]').forEach(tab=>tab.onclick=()=>{view.querySelectorAll('[data-profile-tab]').forEach(x=>x.classList.toggle('active',x===tab));view.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==tab.dataset.profileTab);});
@@ -753,7 +753,7 @@ async function renderPeople(view, supabase, profile) {
       }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to save changes.')+'</p>';}
       finally{btn.disabled=false;btn.textContent='Save changes';}
     };
-    view.querySelector('#resetPin').onclick=async()=>{
+    const resetPinBtn=view.querySelector('#resetPin');if(resetPinBtn)resetPinBtn.onclick=async()=>{
       const msg=view.querySelector('#editMsg'),btn=view.querySelector('#resetPin');
       btn.disabled=true;btn.textContent='Resetting…';
       try{
