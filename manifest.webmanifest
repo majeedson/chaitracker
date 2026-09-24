@@ -1,9 +1,10 @@
 {
   "name": "CafeTracker",
   "short_name": "CafeTracker",
-  "start_url": "/",
+  "start_url": "/chaitracker/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#CB202D",
-  "icons": []
+  "icons": [],
+  "scope": "/chaitracker/"
 }
