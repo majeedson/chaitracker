@@ -1,4 +1,4 @@
-const APP_BUILD = 30;
+const APP_BUILD = 31;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -995,18 +995,20 @@ async function renderSalary(view, supabase, profile) {
 
 async function renderAttendance(view, supabase, profile) {
   const isOwner=profile.role==='Owner',isManager=['Manager','Ops Manager'].includes(profile.role),isAdmin=isOwner||isManager;
-  const todayIST=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-  const yesterday=(()=>{const d=new Date(todayIST+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10);})();
-  const monthKey=todayIST.slice(0,7);
   const [{data:outlets},{data:userRow}]=await Promise.all([
     isOwner?supabase.from('outlets').select('id,name,theme_key,theme_color').order('id'):Promise.resolve({data:[]}),
     supabase.from('users').select('staff_id,outlet_id').eq('id',profile.id).maybeSingle()
   ]);
   let outletId=Number(profile.outlet_id||outlets?.[0]?.id||1),staffId=!isAdmin?Number(userRow?.staff_id||0):null;
+  const effectiveDate=async id=>{const {data,error}=await supabase.rpc('get_effective_business_day',{p_outlet_id:id,p_timestamp:new Date().toISOString()});return error?new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date()):String(data);};
+  let todayIST=await effectiveDate(outletId);
+  let yesterday=(()=>{const d=new Date(todayIST+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10);})();
+  let monthKey=todayIST.slice(0,7);
   if(!isAdmin&&!staffId){view.innerHTML='<span class="eyebrow">Attendance</span><h2>Staff profile not linked</h2><p class="section-help">Ask an owner to link your CafeTracker user to your staff profile.</p>';return;}
   let filter='today',selectedMonth=monthKey,staffRows=[];
   view.innerHTML=`
     <div class="attendance-page">
+      <div class="attendance-home-context"><div><span class="eyebrow">Today</span><strong id="attendanceTodayContext">Loading café day…</strong><small id="attendanceActionContext">Checking attendance status…</small></div></div>
       <div class="summary-title-row"><div><span class="eyebrow">Workforce</span><h2>Attendance</h2><p id="attendanceContext">Today’s attendance</p></div><span class="summary-state" id="attendanceState">Loading…</span></div>
       ${isOwner?`<section class="summary-section compact"><label class="summary-label">Café<select id="attOutlet">${(outlets||[]).map(o=>`<option value="${o.id}" ${Number(o.id)===outletId?'selected':''}>${escapeHtml(o.name)}</option>`).join('')}</select></label></section>`:''}
       <section class="summary-section compact"><div class="summary-section-title"><span></span><h3>Filter</h3></div><div class="attendance-tabs"><button data-range="today" class="active">Today</button><button data-range="yesterday">Yesterday</button><button data-range="month">Month</button></div><label id="monthPickerWrap" class="summary-label attendance-month" hidden>Month<input id="attMonth" type="month" value="${selectedMonth}"></label></section>
@@ -1030,6 +1032,12 @@ async function renderAttendance(view, supabase, profile) {
     if(error){view.querySelector('#attendanceList').innerHTML=`<p class="form-error">${escapeHtml(error.message)}</p>`;view.querySelector('#attendanceState').textContent='Error';return;}
     const rows=data||[],counts={present:rows.filter(r=>['PRESENT','LATE','HALF_DAY','NEEDS_REVIEW'].includes(r.status)).length,late:rows.filter(r=>['LATE','HALF_DAY'].includes(r.status)&&Number(r.late_mins)>0).length,lateMins:rows.reduce((a,r)=>a+Number(r.late_mins||0),0),absent:rows.filter(r=>r.status==='ABSENT').length,leave:rows.filter(r=>r.status==='LEAVE').length,missing:rows.filter(r=>r.status==='NOT_CHECKED_IN').length,half:rows.filter(r=>r.status==='HALF_DAY').length};
     view.querySelector('#attendanceStats').innerHTML=`<div class="attendance-stats"><div><strong>${counts.present}</strong><span>Present</span></div><div><strong>${counts.late}</strong><span>Late</span></div>${filter==='month'?`<div><strong>${counts.lateMins}</strong><span>Late min</span></div><div><strong>${counts.absent}</strong><span>Absent</span></div><div><strong>${counts.leave}</strong><span>Leave</span></div><div><strong>${counts.half}</strong><span>Half-day</span></div>`:`<div><strong>${counts.missing}</strong><span>Not in</span></div><div><strong>${counts.absent}</strong><span>Absent</span></div>`}</div>`;
+    const outletName=isOwner?((outlets||[]).find(x=>Number(x.id)===Number(outletId))?.name||'Café'):(profile.outlets?.name||'Café');
+    const dayLabel=new Date(todayIST+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'});
+    view.querySelector('#attendanceTodayContext').textContent=outletName+' · '+dayLabel;
+    const reviewCount=rows.filter(r=>r.status==='NEEDS_REVIEW').length;
+    const notInCount=rows.filter(r=>r.status==='NOT_CHECKED_IN').length;
+    view.querySelector('#attendanceActionContext').textContent=filter!=='today'?'Viewing attendance history':reviewCount?reviewCount+' attendance '+(reviewCount===1?'record needs':'records need')+' review':notInCount?notInCount+' '+(notInCount===1?'person has':'people have')+' not checked in':'No attendance action pending';
     view.querySelector('#attendanceContext').textContent=filter==='today'?'Today’s attendance':filter==='yesterday'?'Yesterday’s attendance':new Date(selectedMonth+'-01T12:00:00').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
     view.querySelector('#attendanceState').textContent=rows.length+(filter==='month'?' calendar rows':' staff');view.querySelector('#attendanceListTitle').textContent=filter==='month'?'Calendar':'Attendance';
     const priority={NEEDS_REVIEW:0,ABSENT:1,NOT_CHECKED_IN:2,LATE:3,HALF_DAY:4,LEAVE:5,PRESENT:6,WEEKLY_OFF:7,UPCOMING:8};
@@ -1038,7 +1046,7 @@ async function renderAttendance(view, supabase, profile) {
     [...view.querySelectorAll('.attendance-row')].forEach((el,i)=>{const r=ordered[i];el.querySelector('.photo-btn')?.addEventListener('click',()=>openPhoto(r.photo_url));el.querySelector('.correct-btn')?.addEventListener('click',()=>correctRow(r));});
     if(!isAdmin){const row=rows.find(r=>r.attendance_date===todayIST&&Number(r.staff_id)===Number(staffId)),btn=view.querySelector('#checkinBtn');if(btn){btn.disabled=!!row?.punch_time;btn.textContent=row?.punch_time?'Checked in · '+prettyTime(row.punch_time):'Take photo & check in';}}
   };
-  if(isOwner)outletSelect.onchange=async()=>{outletId=Number(outletSelect.value);staffId=null;applyTheme((outlets||[]).find(x=>Number(x.id)===outletId));await loadStaff();await refresh();};
+  if(isOwner)outletSelect.onchange=async()=>{outletId=Number(outletSelect.value);staffId=null;applyTheme((outlets||[]).find(x=>Number(x.id)===outletId));todayIST=await effectiveDate(outletId);yesterday=(()=>{const d=new Date(todayIST+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10);})();monthKey=todayIST.slice(0,7);await loadStaff();await refresh();};
   if(isAdmin){await loadStaff();staffSelect.onchange=()=>{staffId=staffSelect.value?Number(staffSelect.value):null;refresh();};}
   view.querySelectorAll('.attendance-tabs button').forEach(btn=>btn.onclick=()=>{filter=btn.dataset.range;view.querySelectorAll('.attendance-tabs button').forEach(b=>b.classList.toggle('active',b===btn));view.querySelector('#monthPickerWrap').hidden=filter!=='month';refresh();});
   if(monthInput)monthInput.onchange=()=>{selectedMonth=monthInput.value||monthKey;refresh();};
