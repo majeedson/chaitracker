@@ -1,4 +1,4 @@
-const APP_BUILD = 54;
+const APP_BUILD = 55;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -818,7 +818,7 @@ async function renderPurchaseOrders(view,supabase,profile){
   const outletId=Number(profile.context_outlet_id);
   const [{data:stock,error},{data:items},{data:vendors},{data:orders}]=await Promise.all([supabase.from('current_stock').select('item_id,item_name,count_now,minimum_stock,reorder_qty').eq('outlet_id',outletId),supabase.from('items').select('id,vendor_id').eq('active',true),supabase.from('vendors').select('id,name').order('name'),supabase.from('purchase_orders').select('id,business_date,vendor_id,status,created_at').eq('outlet_id',outletId).order('created_at',{ascending:false}).limit(20)]);
   if(error){view.innerHTML='<span class="eyebrow">Purchase Order</span><h2>Unavailable</h2><p class="form-error">'+escapeHtml(error.message)+'</p>';return;}
-  const itemMap=new Map((items||[]).map(x=>[x.id,x])),vendorMap=new Map((vendors||[]).map(x=>[Number(x.id),x.name]),groups=new Map();
+  const itemMap=new Map((items||[]).map(x=>[x.id,x])),vendorMap=new Map((vendors||[]).map(x=>[Number(x.id),x.name])),groups=new Map();
   (stock||[]).filter(x=>Number(x.minimum_stock||0)>0&&Number(x.count_now||0)<Number(x.minimum_stock)).forEach(x=>{const vid=Number(itemMap.get(x.item_id)?.vendor_id||0);if(!vid)return;if(!groups.has(vid))groups.set(vid,[]);groups.get(vid).push(x);});
   view.innerHTML=`<div class="section-heading"><div><span class="eyebrow">Inventory</span><h2>Purchase Orders</h2><p>Suggested from recorded stock below minimum</p></div><span class="soft-badge">${groups.size} vendor${groups.size===1?'':'s'}</span></div><div id="poMessage" class="purchase-message" hidden></div>
   <section class="summary-section"><div class="summary-section-title"><span></span><h3>Needs ordering</h3></div>${groups.size?[...groups].map(([vid,rows])=>`<div class="po-vendor"><div><strong>${escapeHtml(vendorMap.get(vid)||'Vendor')}</strong><small>${rows.length} item${rows.length===1?'':'s'} below minimum</small></div><button class="secondary create-po" data-vendor="${vid}">Create draft</button></div>`).join(''):'<div class="notice">No vendor-linked items are currently below minimum stock.</div>'}</section>
