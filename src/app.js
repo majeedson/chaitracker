@@ -1,4 +1,4 @@
-const APP_BUILD = 44;
+const APP_BUILD = 45;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -525,7 +525,7 @@ async function renderDailySummary(view, supabase, profile) {
     try{
       const {expenses,vendorPayouts,staffPayouts}=collect();
       const id=existing?.id||`SUM-${outletId}-${businessDate}`;
-      const args={p_summary_id:id,p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_user_name:profile.name,p_role:profile.role,p_cash_sale:n('sCash'),p_upi_sale:n('sUpi'),p_swiggy_gross:n('sSwGross'),p_swiggy_payout:n('sSwPay'),p_zomato_gross:n('sZoGross'),p_zomato_payout:n('sZoPay'),p_own_digital:n('sOwn'),p_discount:n('sDisc'),p_opening_cash_system:systemOpening,p_opening_cash_actual:n('sOpen'),p_physical_cash:n('sPhysical'),p_expenses:expenses,p_vendor_payouts:vendorPayouts,p_staff_payouts:staffPayouts};
+      const args={p_summary_id:id,p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_user_name:profile.name,p_role:profile.access_class==='ADMIN'?'Admin':profile.role,p_cash_sale:n('sCash'),p_upi_sale:n('sUpi'),p_swiggy_gross:n('sSwGross'),p_swiggy_payout:n('sSwPay'),p_zomato_gross:n('sZoGross'),p_zomato_payout:n('sZoPay'),p_own_digital:n('sOwn'),p_discount:n('sDisc'),p_opening_cash_system:systemOpening,p_opening_cash_actual:n('sOpen'),p_physical_cash:n('sPhysical'),p_expenses:expenses,p_vendor_payouts:vendorPayouts,p_staff_payouts:staffPayouts};
       const {error}=await supabase.rpc('save_daily_summary',args);if(error)throw error;
       await renderDailySummary(view,supabase,profile);return true;
     }catch(e){msg.textContent=e.message||'Could not save summary.';msg.hidden=false;return false;}finally{if(btn.isConnected){btn.disabled=false;btn.textContent='Save Summary';}}
