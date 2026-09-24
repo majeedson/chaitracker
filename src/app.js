@@ -1,4 +1,4 @@
-const APP_BUILD = 35;
+const APP_BUILD = 36;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -698,9 +698,13 @@ async function renderPeople(view, supabase, profile) {
     const s=staffRows.find(x=>Number(x.id)===staffId); if(!s)return;
     const u=Array.isArray(s.users)?s.users[0]:s.users;
     const perms=u?.permissions||{};
+    const outletName=outlets.find(o=>Number(o.id)===Number(s.outlet_id))?.name||'—', currentStatus=s.employment_status||(s.active?'ACTIVE':'INACTIVE');
     view.querySelector('#staffList').innerHTML=`
-      <div class="card staff-editor">
-        <div class="section-heading"><div><span class="eyebrow">Staff profile</span><h3>${escapeHtml(s.name)}</h3></div><button id="cancelEdit" class="ghost">Cancel</button></div>
+      <div class="staff-profile-shell">
+        <div class="staff-profile-head"><button id="cancelEdit" class="profile-back" type="button">‹</button><span class="person-avatar large">${escapeHtml((s.name||'?').trim().charAt(0).toUpperCase())}</span><div class="staff-profile-identity"><span class="eyebrow">Employee profile</span><h3>${escapeHtml(s.name)}</h3><p>${escapeHtml(u?.role||'Staff')} · ${escapeHtml(outletName)}</p></div><span class="person-status status-${currentStatus.toLowerCase()}">${escapeHtml(statusText(currentStatus))}</span></div>
+        <div class="profile-tabs"><button class="active" data-profile-tab="profile">Profile</button><button data-profile-tab="attendance">Attendance</button><button data-profile-tab="salary">Salary</button><button data-profile-tab="employment">Employment</button><button data-profile-tab="access">Access</button><button data-profile-tab="documents">Documents</button></div>
+        <div class="card staff-editor profile-panel" data-profile-panel="profile">
+        <div class="section-heading"><div><span class="eyebrow">Profile</span><h3>Employee details</h3></div></div>
         <div class="form-grid">
           <label>Display name<input id="editName" value="${escapeHtml(s.name)}"></label>
           <label>Outlet<select id="editOutlet">${outlets.map(o=>`<option value="${o.id}" ${Number(o.id)===Number(s.outlet_id)?'selected':''}>${escapeHtml(o.name)}</option>`).join('')}</select></label>
@@ -708,18 +712,24 @@ async function renderPeople(view, supabase, profile) {
           <label>Joining date<input id="editJoining" type="date" value="${escapeHtml(s.joining_date||'')}"></label>
           <label>Basic salary<input id="editSalary" type="number" min="0" step="0.01" value="${Number(s.basic_salary||0)}"></label>
         </div>
-        <label>Notes<textarea id="editNotes" rows="3" placeholder="Optional employment notes">${escapeHtml(s.notes||'')}</textarea>
+        <label>Notes<textarea id="editNotes" rows="3" placeholder="Optional employment notes">${escapeHtml(s.notes||'')}</textarea></div>
+        <div class="card staff-editor profile-panel" data-profile-panel="access" hidden><div class="section-heading"><div><span class="eyebrow">Access</span><h3>Role & permissions</h3></div></div>
         <div class="permissions-box"><div class="card-label">Access permissions</div><div class="permission-grid">
           <label><input type="checkbox" id="editAttendance" ${perms.attendance!==false?'checked':''}> Attendance</label>
           <label><input type="checkbox" id="editPurchase" ${perms.purchase!==false?'checked':''}> Purchases</label>
           <label><input type="checkbox" id="editSummary" ${perms.summary!==false?'checked':''}> Daily Summary</label>
           <label><input type="checkbox" id="editStock" ${perms.stock!==false?'checked':''}> Stock</label>
-        </div></div>
-        <div class="form-grid"><label>Employment status<select id="editEmploymentStatus">${[['ACTIVE','Active'],['VACATION','Vacation'],['LEAVE','On leave'],['INACTIVE','Inactive'],['LEFT','Left employment']].map(([v,l])=>`<option value="${v}" ${v===(s.employment_status||(s.active?'ACTIVE':'INACTIVE'))?'selected':''}>${l}</option>`).join('')}</select></label><label>Status effective from<input id="editStatusDate" type="date" value="${escapeHtml(s.status_effective_from||new Date().toISOString().slice(0,10))}"></label></div><label>Status note<textarea id="editStatusNote" rows="2" placeholder="Optional — e.g. annual vacation">${escapeHtml(s.status_note||'')}</textarea></label>
-        <div id="editMsg"></div>
-        <div class="action-row"><button id="saveStaff" class="primary">Save changes</button><button id="resetPin" class="secondary">Reset PIN setup</button></div>
+        </div></div></div>
+        <div class="card staff-editor profile-panel" data-profile-panel="employment" hidden><div class="section-heading"><div><span class="eyebrow">Employment</span><h3>Status</h3></div></div><div class="form-grid"><label>Employment status<select id="editEmploymentStatus">${[['ACTIVE','Active'],['VACATION','Vacation'],['LEAVE','On leave'],['INACTIVE','Inactive'],['LEFT','Left employment']].map(([v,l])=>`<option value="${v}" ${v===(s.employment_status||(s.active?'ACTIVE':'INACTIVE'))?'selected':''}>${l}</option>`).join('')}</select></label><label>Status effective from<input id="editStatusDate" type="date" value="${escapeHtml(s.status_effective_from||new Date().toISOString().slice(0,10))}"></label></div><label>Status note<textarea id="editStatusNote" rows="2" placeholder="Optional — e.g. annual vacation">${escapeHtml(s.status_note||'')}</textarea></label>
+        </div>
+        <div class="card profile-panel" data-profile-panel="attendance" hidden><span class="eyebrow">Attendance</span><h3>Attendance history</h3><p class="section-help">Use the Attendance workspace for the full calendar, corrections and daily status.</p><button type="button" class="secondary profile-open-module" data-module="attendance">Open Attendance</button></div>
+        <div class="card profile-panel" data-profile-panel="salary" hidden><span class="eyebrow">Salary</span><h3>Payroll</h3><p class="section-help">Salary is calculated from recorded attendance, paid off-days and staff payments.</p><button type="button" class="secondary profile-open-module" data-module="salary">Open Salary</button></div>
+        <div class="card profile-panel" data-profile-panel="documents" hidden><span class="eyebrow">Documents</span><h3>Employee documents</h3><p class="section-help">Identity and onboarding documents are kept in the private employee document storage.</p></div>
+        <div id="editMsg"></div><div class="profile-actions"><button id="saveStaff" class="primary">Save changes</button><button id="resetPin" class="secondary">Reset login</button></div>
       </div>`;
     view.querySelector('#cancelEdit').onclick=renderList;
+    view.querySelectorAll('[data-profile-tab]').forEach(tab=>tab.onclick=()=>{view.querySelectorAll('[data-profile-tab]').forEach(x=>x.classList.toggle('active',x===tab));view.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==tab.dataset.profileTab);});
+    view.querySelectorAll('.profile-open-module').forEach(btn=>btn.onclick=()=>{const nav=document.querySelector('[data-module="'+btn.dataset.module+'"]');if(nav)nav.click();});
     view.querySelector('#saveStaff').onclick=async()=>{
       const msg=view.querySelector('#editMsg'),btn=view.querySelector('#saveStaff');
       const permissions={attendance:view.querySelector('#editAttendance').checked,purchase:view.querySelector('#editPurchase').checked,summary:view.querySelector('#editSummary').checked,stock:view.querySelector('#editStock').checked,salary:false};
