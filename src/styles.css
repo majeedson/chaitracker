@@ -260,3 +260,8 @@ input,select,textarea{font-weight:400;font-size:15px}
 .leave-row>div:first-child{display:grid;gap:3px;min-width:0;flex:1}.leave-row small{font-size:11px;color:var(--muted,#777)}
 .leave-actions{display:flex;gap:6px}
 @media(max-width:620px){.leave-row{align-items:flex-start;flex-wrap:wrap}.leave-actions{width:100%;justify-content:flex-end}}
+
+/* Build 57 — employment history */
+.employment-history{margin-top:18px;padding-top:14px;border-top:1px solid var(--line,#eee)}
+.employment-history h4{margin:0 0 8px}.employment-history>div{display:flex;justify-content:space-between;gap:12px;padding:8px 0;font-size:12px;border-bottom:1px solid var(--line,#f1f1f1)}
+.employment-history span{color:var(--muted,#777);text-align:right}
