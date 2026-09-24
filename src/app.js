@@ -318,7 +318,7 @@ async function renderDashboard(view, supabase, profile) {
   const latestStock=new Map();
   (stockRows||[]).forEach(r=>{const key=Number(r.outlet_id)+'|'+r.item_id,old=latestStock.get(key);if(!old||String(r.business_date)>String(old.business_date))latestStock.set(key,r);});
   const lowByOutlet=new Map();
-  [...latestStock.values()].forEach(r=>{const min=Number(r.minimum_stock||0),count=Number(r.count_now||0);if(min>0&&count<min)lowByOutlet.set(Number(r.outlet_id),(lowByOutlet.get(Number(r.outlet_id))||0)+1);});
+  [...latestStock.values()].filter(r=>!profile.context_outlet_id||Number(r.outlet_id)===Number(profile.context_outlet_id)).forEach(r=>{const min=Number(r.minimum_stock||0),count=Number(r.count_now||0);if(min>0&&count<min)lowByOutlet.set(Number(r.outlet_id),(lowByOutlet.get(Number(r.outlet_id))||0)+1);});
   lowByOutlet.forEach((count,id)=>alerts.push({kind:'stock',outlet:outletMap.get(id)?.name||'Café',text:`${count} stock item${count===1?' is':'s are'} below minimum`,module:'stock'}));
   const scopedStaff=profile.context_outlet_id?(staffRows||[]).filter(s=>Number(s.outlet_id)===Number(profile.context_outlet_id)):(staffRows||[]);const activeStaff=scopedStaff.filter(s=>s.active&&s.employment_status==='ACTIVE').length;
   const awayStaff=scopedStaff.filter(s=>['VACATION','LEAVE'].includes(s.employment_status)).length;
