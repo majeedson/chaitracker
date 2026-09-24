@@ -212,3 +212,13 @@ input,select,textarea{font-weight:400;font-size:15px}
 .today-stat{border:1px solid var(--line,#ececec);border-radius:15px;padding:15px;background:#fff;display:flex;flex-direction:column;gap:4px}
 .today-stat strong{font-size:24px;letter-spacing:-.03em}.today-stat span{font-size:12px;color:var(--muted,#707070)}
 @media(max-width:700px){.dashboard-head{flex-direction:column}.today-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Build 35 — Salary */
+.salary-empty-note{display:flex;gap:12px;align-items:flex-start;padding:14px;border:1px solid var(--line,#ececec);border-radius:15px;background:var(--accent-soft,#fafafa);margin:14px 0}
+.salary-empty-note div{display:flex;flex-direction:column;gap:3px}.salary-empty-note span{font-size:12px;color:var(--muted,#707070)}
+.salary-hero{margin:16px 0;padding:20px;border-radius:18px;background:var(--accent-soft,#f7f7f7);display:flex;flex-direction:column;gap:4px}
+.salary-hero>span,.salary-hero>small{font-size:12px;color:var(--muted,#707070)}.salary-hero>strong{font-size:32px;letter-spacing:-.04em}
+.salary-breakdown{border:1px solid var(--line,#ececec);border-radius:16px;overflow:hidden;background:#fff}
+.salary-line{display:flex;justify-content:space-between;gap:12px;padding:13px 15px;border-bottom:1px solid var(--line,#ececec);font-size:13px}.salary-line:last-child{border-bottom:0}.salary-line.positive strong{color:var(--accent,#333)}
+.salary-meta{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.salary-meta>span{padding:8px 10px;border-radius:999px;background:#f5f5f5;font-size:11px}
+.salary-final{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:14px;border:1px solid var(--line,#ececec);border-radius:15px;margin-top:12px}.salary-final div{display:flex;flex-direction:column;gap:3px}.salary-final span{font-size:11px;color:var(--muted,#707070)}
