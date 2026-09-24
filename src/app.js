@@ -1,4 +1,4 @@
-const APP_BUILD = 56;
+const APP_BUILD = 57;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -707,11 +707,12 @@ async function renderPeople(view, supabase, profile) {
     };
   };
 
-  const openEditor = (staffId) => {
+  const openEditor = async (staffId) => {
     const s=staffRows.find(x=>Number(x.id)===staffId); if(!s)return;
     const u=Array.isArray(s.users)?s.users[0]:s.users;
     const perms=u?.permissions||{};
     const outletName=outlets.find(o=>Number(o.id)===Number(s.outlet_id))?.name||'—', currentStatus=s.employment_status||(s.active?'ACTIVE':'INACTIVE');
+    const {data:statusHistory}=await supabase.rpc('get_staff_status_history',{p_staff_id:staffId});
     view.querySelector('#staffList').innerHTML=`
       <div class="staff-profile-shell">
         <div class="staff-profile-head"><button id="cancelEdit" class="profile-back" type="button">‹</button><span class="person-avatar large">${escapeHtml((s.name||'?').trim().charAt(0).toUpperCase())}</span><div class="staff-profile-identity"><span class="eyebrow">Employee profile</span><h3>${escapeHtml(s.name)}</h3><p>${escapeHtml(u?.role||'Staff')} · ${escapeHtml(outletName)}</p></div><span class="person-status status-${currentStatus.toLowerCase()}">${escapeHtml(statusText(currentStatus))}</span></div>
@@ -734,7 +735,7 @@ async function renderPeople(view, supabase, profile) {
           <label><input type="checkbox" id="editStock" ${perms.stock!==false?'checked':''}> Stock</label>
         </div></div></div>
         <div class="card staff-editor profile-panel" data-profile-panel="employment" hidden><div class="section-heading"><div><span class="eyebrow">Employment</span><h3>Status</h3></div></div><div class="form-grid"><label>Employment status<select id="editEmploymentStatus">${[['ACTIVE','Active'],['VACATION','Vacation'],['LEAVE','On leave'],['INACTIVE','Inactive'],['LEFT','Left employment']].map(([v,l])=>`<option value="${v}" ${v===(s.employment_status||(s.active?'ACTIVE':'INACTIVE'))?'selected':''}>${l}</option>`).join('')}</select></label><label>Status effective from<input id="editStatusDate" type="date" value="${escapeHtml(s.status_effective_from||new Date().toISOString().slice(0,10))}"></label></div><label>Status note<textarea id="editStatusNote" rows="2" placeholder="Optional — e.g. annual vacation">${escapeHtml(s.status_note||'')}</textarea></label>
-        </div>
+        <div class="employment-history"><h4>Status history</h4>${(Array.isArray(statusHistory)?statusHistory:[]).map(h=>`<div><strong>${escapeHtml(statusText(h.status))}</strong><span>${escapeHtml(h.effective_from||'')}${h.note?' · '+escapeHtml(h.note):''}</span></div>`).join('')||'<p class="section-help">No status history recorded.</p>'}</div></div>
         <div class="card profile-panel" data-profile-panel="attendance" hidden><span class="eyebrow">Attendance</span><h3>Attendance history</h3><p class="section-help">Use the Attendance workspace for the full calendar, corrections and daily status.</p><button type="button" class="secondary profile-open-module" data-module="attendance">Open Attendance</button></div>
         <div class="card profile-panel" data-profile-panel="salary" hidden><span class="eyebrow">Salary</span><h3>Payroll</h3><p class="section-help">Salary is calculated from recorded attendance, paid off-days and staff payments.</p><button type="button" class="secondary profile-open-module" data-module="salary">Open Salary</button></div>
         <div class="card profile-panel" data-profile-panel="documents" hidden><span class="eyebrow">Documents</span><h3>Employee documents</h3><p class="section-help">Identity and onboarding documents are kept in the private employee document storage.</p></div>
