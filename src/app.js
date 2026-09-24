@@ -1,4 +1,4 @@
-const APP_BUILD = 45;
+const APP_BUILD = 46;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -864,6 +864,7 @@ async function renderPurchases(view, supabase, profile) {
     <div class="action-row">
       <button id="savePurchase" class="primary">Save Purchase</button>
     </div>
+    <div id="purchaseMessage" class="purchase-message" hidden></div>
 
     <div class="subsection">
       <div class="section-heading"><h3>Recent purchases</h3><span class="soft-badge">${isOwner ? 'All entries' : 'This outlet'}</span></div>
@@ -968,15 +969,17 @@ async function renderPurchases(view, supabase, profile) {
       </table></div>`;
   };
 
+  const showMessage=(message,type='error')=>{const box=view.querySelector('#purchaseMessage');box.textContent=message;box.className='purchase-message '+(type==='success'?'success':'error');box.hidden=false;if(type==='success')setTimeout(()=>{if(box.isConnected)box.hidden=true;},2400);else box.scrollIntoView({behavior:'smooth',block:'nearest'});};
+
   view.querySelector('#savePurchase').onclick = async () => {
     const categoryId = Number(view.querySelector('#purCategory').value) || null;
     const vendorName = view.querySelector('#purVendor').value.trim();
-    if (!categoryId && !vendorName) return alert('Select a category or enter a vendor.');
+    if (!categoryId && !vendorName) return showMessage('Select a category or enter a vendor.','error');
     let payloads = [];
 
     if (mode === 'invoice') {
       const amount = Number(view.querySelector('#purInvoice').value || 0);
-      if (amount <= 0) return alert('Enter the invoice amount.');
+      if (amount <= 0) return showMessage('Enter the invoice amount.','error');
       payloads = [{ item_id: null, qty: 0, unit: '', invoice_amount: amount, entry_type: 'invoice' }];
     } else {
       payloads = [...view.querySelectorAll('.purchase-entry-row')].map(row => {
@@ -990,7 +993,7 @@ async function renderPurchases(view, supabase, profile) {
           entry_type: 'item'
         };
       }).filter(r => r.item_id && r.qty > 0);
-      if (!payloads.length) return alert('Add at least one item with a quantity.');
+      if (!payloads.length) return showMessage('Add at least one item with a quantity.','error');
     }
 
     const saveBtn = view.querySelector('#savePurchase');
@@ -1014,13 +1017,13 @@ async function renderPurchases(view, supabase, profile) {
         });
         if (error) throw error;
       }
-      alert('Purchase saved.');
+      showMessage('Purchase saved.','success');
       await loadHistory();
       view.querySelector('#purRows').innerHTML = '';
       if (mode === 'item') addRow(); else view.querySelector('#purInvoice').value = '';
       updateTotal();
     } catch (err) {
-      alert(err.message || 'Purchase could not be saved.');
+      showMessage(err.message || 'Purchase could not be saved.','error');
     } finally {
       saveBtn.disabled = false;
       saveBtn.textContent = 'Save Purchase';
