@@ -1,4 +1,4 @@
-const APP_BUILD = 46;
+const APP_BUILD = 47;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -647,10 +647,10 @@ async function renderPeople(view, supabase, profile) {
   `;
 
   const renderAdmins=()=>{
-    const list=view.querySelector('#adminList');if(!list)return;
+    const list=view.querySelector('#adminList');if(!list)return;const message=view.querySelector('#adminMessage');const showAdminMessage=(text,type='error')=>{message.textContent=text;message.className='purchase-message '+(type==='success'?'success':'error');message.hidden=false;if(type==='success')setTimeout(()=>{if(message.isConnected)message.hidden=true;},2200);};
     list.innerHTML=adminRows.map(a=>`<div class="admin-row admin-manage-row"><div class="admin-identity"><strong>${escapeHtml(a.name)}</strong>${a.is_super_user?'<span class="soft-badge">Super User</span>':''}<span class="${a.active?'status-ok':'status-warn'}">${a.active?'Active':'Inactive'}</span></div>${profile.is_super_user&&!a.is_super_user?`<div class="admin-controls"><label>New PIN<input type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" class="admin-new-pin" data-id="${a.id}" placeholder="4–8 digits"></label><button type="button" class="secondary admin-pin-update" data-id="${a.id}">Update PIN</button><button type="button" class="ghost admin-active-toggle" data-id="${a.id}" data-active="${a.active}">${a.active?'Deactivate':'Reactivate'}</button></div>`:''}</div>`).join('');
-    list.querySelectorAll('.admin-pin-update').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,input=list.querySelector('.admin-new-pin[data-id="'+id+'"]'),pin=input?.value||'';if(!/^\\d{4,8}$/.test(pin))return alert('Enter a 4–8 digit numeric PIN.');btn.disabled=true;btn.textContent='Updating…';const {data,error}=await supabase.functions.invoke('chaitracker-admin-pin',{body:{target_user_id:id,new_pin:pin}});if(error||!data?.ok){alert(data?.error||error?.message||'Unable to update PIN.');btn.disabled=false;btn.textContent='Update PIN';return;}input.value='';btn.disabled=false;btn.textContent='Updated';setTimeout(()=>btn.textContent='Update PIN',1200);});
-    list.querySelectorAll('.admin-active-toggle').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,next=btn.dataset.active!=='true';if(!confirm((next?'Reactivate':'Deactivate')+' this Admin account?'))return;btn.disabled=true;const {error}=await supabase.rpc('superuser_set_admin_active',{p_user_id:id,p_active:next});if(error){alert(error.message);btn.disabled=false;return;}({outlets,staffRows,adminRows}=await loadData());renderAdmins();});
+    list.querySelectorAll('.admin-pin-update').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,input=list.querySelector('.admin-new-pin[data-id="'+id+'"]'),pin=input?.value||'';if(!/^\\d{4,8}$/.test(pin))return showAdminMessage('Enter a 4–8 digit numeric PIN.');btn.disabled=true;btn.textContent='Updating…';const {data,error}=await supabase.functions.invoke('chaitracker-admin-pin',{body:{target_user_id:id,new_pin:pin}});if(error||!data?.ok){showAdminMessage(data?.error||error?.message||'Unable to update PIN.');btn.disabled=false;btn.textContent='Update PIN';return;}input.value='';btn.disabled=false;btn.textContent='Updated';showAdminMessage('Admin PIN updated.','success');setTimeout(()=>btn.textContent='Update PIN',1200);});
+    list.querySelectorAll('.admin-active-toggle').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,next=btn.dataset.active!=='true';if(!confirm((next?'Reactivate':'Deactivate')+' this Admin account?'))return;btn.disabled=true;const {error}=await supabase.rpc('superuser_set_admin_active',{p_user_id:id,p_active:next});if(error){showAdminMessage(error.message);btn.disabled=false;return;}({outlets,staffRows,adminRows}=await loadData());renderAdmins();});
   };
   renderAdmins();
 
