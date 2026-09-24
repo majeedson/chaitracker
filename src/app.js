@@ -1,4 +1,4 @@
-const APP_BUILD = 61;
+const APP_BUILD = 62;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -228,7 +228,7 @@ function renderWorkspace(root, supabase, profile) {
           <button id="drawer-open" class="nav-icon-button" aria-label="Open app menu">${icon('menu',22)}</button>
           <button id="brand-home" class="brand-button" aria-label="Go to landing page">
             <span class="brand">CafeTracker</span>
-            <span class="subtitle">${escapeHtml(profile.name)} · ${isAdmin?'Admin':escapeHtml(profile.role)}</span>
+            <span class="subtitle">${escapeHtml(profile.name)} · ${isAdmin?'Admin':escapeHtml(profile.role)} · B${APP_BUILD}</span>
           </button>
         </div>
         <div class="topbar-actions">
