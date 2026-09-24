@@ -254,3 +254,9 @@ input,select,textarea{font-weight:400;font-size:15px}
 .po-vendor{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line,#eee)}
 .po-vendor>div{display:grid;gap:3px}.po-vendor small{font-size:11px;color:var(--muted,#777)}
 @media(max-width:520px){.po-vendor{align-items:flex-start}.po-vendor .secondary{white-space:nowrap}}
+
+/* Build 56 — leave workflow */
+.leave-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line,#eee)}
+.leave-row>div:first-child{display:grid;gap:3px;min-width:0;flex:1}.leave-row small{font-size:11px;color:var(--muted,#777)}
+.leave-actions{display:flex;gap:6px}
+@media(max-width:620px){.leave-row{align-items:flex-start;flex-wrap:wrap}.leave-actions{width:100%;justify-content:flex-end}}
