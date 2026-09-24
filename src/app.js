@@ -1,4 +1,4 @@
-const APP_BUILD = 31;
+const APP_BUILD = 32;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -579,7 +579,11 @@ async function renderPeople(view, supabase, profile) {
       </div></div>
       <button id="addStaffBtn" class="primary">Add staff member</button><div id="staffFormMsg"></div>
     </div>
-    <div id="peopleAdmins" class="subsection" hidden><div class="section-heading"><h3>Administrators</h3><span class="hint">Super User controls PIN hard resets</span></div><div class="admin-list">${adminRows.map(a=>`<div class="admin-row"><div><strong>${escapeHtml(a.name)}</strong>${a.is_super_user?'<span class="soft-badge">Super User</span>':''}</div><span class="${a.active?'status-ok':'status-warn'}">${a.active?'Active':'Inactive'}</span></div>`).join('')}</div></div>
+    <div id="peopleAdmins" class="subsection" hidden>
+      <div class="section-heading"><div><h3>Administrators</h3><span class="hint">Admin accounts are separate from employee records</span></div>${profile.is_super_user?'<button type="button" id="showAddAdmin" class="primary">Add Admin</button>':''}</div>
+      ${profile.is_super_user?`<div id="addAdminPanel" class="card admin-add-panel" hidden><div class="section-heading"><h3>Add administrator</h3><button type="button" id="cancelAddAdmin" class="ghost">Cancel</button></div><div class="form-grid"><label>Name<input id="adminName" placeholder="Administrator name"></label><label>Home café<select id="adminOutlet">${outlets.map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></label></div><p class="hint">Initial Admin PIN: 123456. The Admin can use it for first sign-in; later PIN changes do not restore this default.</p><div id="adminFormMsg"></div><button type="button" id="addAdminBtn" class="primary">Create Admin</button></div>`:''}
+      <div class="admin-list" id="adminList">${adminRows.map(a=>`<div class="admin-row"><div><strong>${escapeHtml(a.name)}</strong>${a.is_super_user?'<span class="soft-badge">Super User</span>':''}</div><span class="${a.active?'status-ok':'status-warn'}">${a.active?'Active':'Inactive'}</span></div>`).join('')}</div>
+    </div>
     <div id="peopleStaff" class="subsection"><div class="section-heading"><h3>Current staff</h3><span class="hint">Select a person to manage their employment and access</span></div><div id="staffList"></div></div>
   `;
 
@@ -688,6 +692,24 @@ async function renderPeople(view, supabase, profile) {
   };
 
   renderList();
+  if(profile.is_super_user){
+    const panel=view.querySelector('#addAdminPanel'),show=view.querySelector('#showAddAdmin'),cancel=view.querySelector('#cancelAddAdmin'),add=view.querySelector('#addAdminBtn');
+    if(show)show.onclick=()=>{panel.hidden=false;show.hidden=true;view.querySelector('#adminName')?.focus();};
+    if(cancel)cancel.onclick=()=>{panel.hidden=true;show.hidden=false;view.querySelector('#adminFormMsg').innerHTML='';};
+    if(add)add.onclick=async()=>{
+      const name=view.querySelector('#adminName').value.trim(),outletId=Number(view.querySelector('#adminOutlet').value),msg=view.querySelector('#adminFormMsg');
+      if(!name){msg.innerHTML='<p class="form-error">Admin name is required.</p>';return;}
+      add.disabled=true;add.textContent='Creating…';msg.innerHTML='';
+      try{
+        const {error}=await supabase.rpc('superuser_create_admin',{p_name:name,p_outlet_id:outletId});if(error)throw error;
+        ({outlets,staffRows,adminRows}=await loadData());
+        view.querySelector('#adminList').innerHTML=adminRows.map(a=>`<div class="admin-row"><div><strong>${escapeHtml(a.name)}</strong>${a.is_super_user?'<span class="soft-badge">Super User</span>':''}</div><span class="${a.active?'status-ok':'status-warn'}">${a.active?'Active':'Inactive'}</span></div>`).join('');
+        view.querySelector('#adminName').value='';panel.hidden=true;show.hidden=false;
+        msg.innerHTML='';
+      }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to create Admin.')+'</p>';}
+      finally{add.disabled=false;add.textContent='Create Admin';}
+    };
+  }
   view.querySelectorAll('[data-people-tab]').forEach(btn=>btn.onclick=()=>{const tab=btn.dataset.peopleTab;view.querySelectorAll('[data-people-tab]').forEach(b=>b.classList.toggle('active',b===btn));view.querySelector('#peopleStaff').hidden=tab!=='staff';view.querySelector('#peopleAdmins').hidden=tab!=='admins';view.querySelector('#peopleAdd').hidden=tab!=='add';if(tab==='staff')renderList();});
 
   view.querySelector('#addStaffBtn').onclick=async()=>{
