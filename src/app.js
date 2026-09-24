@@ -1,4 +1,4 @@
-const APP_BUILD = 40;
+const APP_BUILD = 41;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -1057,8 +1057,10 @@ async function renderSalary(view, supabase, profile) {
     if(!hasOperationalData&&!final){
       view.querySelector('#salaryEstimate').innerHTML=`<div class="salary-empty-note">${icon('attendance',21)}<div><strong>Not enough records to estimate salary yet</strong><span>No attendance or staff-payment activity is recorded for this period. CafeTracker will not treat missing records as absences.</span></div></div><section class="salary-hero"><span>${escapeHtml(person?.name||'Salary')}</span><strong>${money(est.basic_salary)}</strong><small>Basic salary · estimate pending attendance data</small></section><div class="salary-meta"><span>Daily rate <strong>${money(est.daily_rate)}</strong></span><span>Hourly rate <strong>${money(est.hourly_rate)}</strong></span><span>Paid off entitlement <strong>3 days/month</strong></span></div>`;return;
     }
+    const incomplete=est.data_complete===false||Number(est.unrecorded_days||0)>0;
     view.querySelector('#salaryEstimate').innerHTML=`
-      <section class="salary-hero"><span>${escapeHtml(person?.name||'Salary')}</span><strong>${money(est.estimated_net)}</strong><small>Estimated current-month payable</small></section>
+      ${incomplete?`<div class="salary-empty-note">${icon('attendance',21)}<div><strong>Estimate incomplete</strong><span>${Number(est.unrecorded_days||0)} day(s) have no attendance record. Missing records are not counted as absences.</span></div></div>`:''}
+      <section class="salary-hero"><span>${escapeHtml(person?.name||'Salary')}</span><strong>${money(est.estimated_net)}</strong><small>${incomplete?'Provisional amount from recorded data only':'Estimated current-month payable'}</small></section>
       <div class="salary-breakdown">
         <div class="salary-line"><span>Basic salary</span><strong>${money(est.basic_salary)}</strong></div>
         <div class="salary-line positive"><span>Holiday Duty · ${Number(est.holiday_duty_days||0)} day(s)</span><strong>+${money(est.holiday_duty_allowance)}</strong></div>
@@ -1070,7 +1072,7 @@ async function renderSalary(view, supabase, profile) {
       </div>
       <div class="salary-meta"><span>Daily rate <strong>${money(est.daily_rate)}</strong></span><span>Hourly rate <strong>${money(est.hourly_rate)}</strong></span><span>Paid off entitlement <strong>3 days/month</strong></span></div>
       ${final?`<div class="salary-final"><div><strong>Saved payroll record</strong><span>${escapeHtml(final.period_start)} – ${escapeHtml(final.period_end)}</span></div><strong>${money(final.net_salary)}</strong></div>`:''}
-      ${isAdmin?'<p class="section-help">Payroll remains an estimate until an Admin finalizes the salary record.</p>':''}`;
+      ${isAdmin?'<p class="section-help">Payroll remains an estimate until an Admin finalizes the salary record. Incomplete attendance must be reconciled first.</p>':''}`;
   };
   view.querySelector('#salaryStaff')?.addEventListener('change',render);await render();
 }
