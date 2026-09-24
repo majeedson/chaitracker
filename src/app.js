@@ -1,4 +1,4 @@
-const APP_BUILD = 51;
+const APP_BUILD = 52;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -271,6 +271,8 @@ async function loadModule(view, supabase, profile, module) {
   if (module === 'salary') { await renderSalary(view, supabase, profile); return; }
   if (module === 'purchase') { await renderPurchases(view, supabase, profile); return; }
   if (module === 'stock') { await renderStock(view, supabase, profile); return; }
+  if (module === 'po') { await renderPurchaseOrders(view, supabase, profile); return; }
+  if (module === 'delta') { await renderDelta(view, supabase, profile); return; }
   if (module === 'people') { await renderPeople(view, supabase, profile); return; }
 
   const labels = {
@@ -808,6 +810,31 @@ async function renderPeople(view, supabase, profile) {
     }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to add staff.')+'</p>';}
     finally{btn.disabled=false;btn.textContent='Add staff member';}
   };
+}
+
+async function renderPurchaseOrders(view,supabase,profile){
+  if(profile.access_class!=='ADMIN'){view.innerHTML='<span class="eyebrow">Purchase Order</span><h2>Admin access required</h2>';return;}
+  if(!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to review and generate purchase orders.</p>';return;}
+  const outletId=Number(profile.context_outlet_id);
+  const [{data:stock,error},{data:items},{data:vendors},{data:orders}]=await Promise.all([supabase.from('current_stock').select('item_id,item_name,count_now,minimum_stock,reorder_qty').eq('outlet_id',outletId),supabase.from('items').select('id,vendor_id').eq('active',true),supabase.from('vendors').select('id,name').order('name'),supabase.from('purchase_orders').select('id,business_date,vendor_id,status,created_at').eq('outlet_id',outletId).order('created_at',{ascending:false}).limit(20)]);
+  if(error){view.innerHTML='<span class="eyebrow">Purchase Order</span><h2>Unavailable</h2><p class="form-error">'+escapeHtml(error.message)+'</p>';return;}
+  const itemMap=new Map((items||[]).map(x=>[x.id,x])),vendorMap=new Map((vendors||[]).map(x=>[Number(x.id),x.name]),groups=new Map();
+  (stock||[]).filter(x=>Number(x.minimum_stock||0)>0&&Number(x.count_now||0)<Number(x.minimum_stock)).forEach(x=>{const vid=Number(itemMap.get(x.item_id)?.vendor_id||0);if(!vid)return;if(!groups.has(vid))groups.set(vid,[]);groups.get(vid).push(x);});
+  view.innerHTML=`<div class="section-heading"><div><span class="eyebrow">Inventory</span><h2>Purchase Orders</h2><p>Suggested from recorded stock below minimum</p></div><span class="soft-badge">${groups.size} vendor${groups.size===1?'':'s'}</span></div><div id="poMessage" class="purchase-message" hidden></div>
+  <section class="summary-section"><div class="summary-section-title"><span></span><h3>Needs ordering</h3></div>${groups.size?[...groups].map(([vid,rows])=>`<div class="po-vendor"><div><strong>${escapeHtml(vendorMap.get(vid)||'Vendor')}</strong><small>${rows.length} item${rows.length===1?'':'s'} below minimum</small></div><button class="secondary create-po" data-vendor="${vid}">Create draft</button></div>`).join(''):'<div class="notice">No vendor-linked items are currently below minimum stock.</div>'}</section>
+  <section class="summary-section"><div class="summary-section-title"><span></span><h3>Recent orders</h3></div>${(orders||[]).length?'<div class="table-wrap"><table><thead><tr><th>PO</th><th>Date</th><th>Vendor</th><th>Status</th></tr></thead><tbody>'+orders.map(o=>`<tr><td>${escapeHtml(o.id)}</td><td>${escapeHtml(o.business_date||'')}</td><td>${escapeHtml(vendorMap.get(Number(o.vendor_id))||'—')}</td><td>${escapeHtml(o.status||'DRAFT')}</td></tr>`).join('')+'</tbody></table></div>':'<div class="notice">No purchase orders yet.</div>'}</section>`;
+  const show=(m,t='error')=>{const b=view.querySelector('#poMessage');b.textContent=m;b.className='purchase-message '+(t==='success'?'success':'error');b.hidden=false;};
+  view.querySelectorAll('.create-po').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;btn.textContent='Creating…';const{data,error}=await supabase.rpc('create_low_stock_purchase_order',{p_outlet_id:outletId,p_vendor_id:Number(btn.dataset.vendor),p_user_id:profile.id});if(error){show(error.message);btn.disabled=false;btn.textContent='Create draft';return;}show('Draft '+data+' created.','success');await renderPurchaseOrders(view,supabase,profile);});
+}
+
+async function renderDelta(view,supabase,profile){
+  if(profile.access_class!=='ADMIN'){view.innerHTML='<span class="eyebrow">Delta</span><h2>Admin access required</h2>';return;}
+  if(!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to compare stock counts.</p>';return;}
+  const outletId=Number(profile.context_outlet_id);const{data,error}=await supabase.from('inventory_entries').select('business_date,item_id,count_now,unit,created_at').eq('outlet_id',outletId).order('business_date',{ascending:false}).order('created_at',{ascending:false}).limit(2000);
+  if(error){view.innerHTML='<span class="eyebrow">Delta</span><h2>Unavailable</h2><p class="form-error">'+escapeHtml(error.message)+'</p>';return;}
+  const dates=[...new Set((data||[]).map(x=>x.business_date))].slice(0,2);if(dates.length<2){view.innerHTML='<span class="eyebrow">Stock review</span><h2>Delta</h2><div class="notice">Two stock dates are needed before a delta can be calculated.</div>';return;}
+  const latestFor=d=>{const m=new Map();(data||[]).filter(x=>x.business_date===d).forEach(x=>{if(!m.has(x.item_id))m.set(x.item_id,x);});return m;},a=latestFor(dates[0]),b=latestFor(dates[1]);const ids=[...new Set([...a.keys(),...b.keys()])];const{data:items}=await supabase.from('items').select('id,name').in('id',ids);const names=new Map((items||[]).map(x=>[x.id,x.name]));const rows=ids.map(id=>({id,name:names.get(id)||id,now:Number(a.get(id)?.count_now||0),before:Number(b.get(id)?.count_now||0),unit:a.get(id)?.unit||b.get(id)?.unit||''})).map(x=>({...x,delta:x.now-x.before})).sort((x,y)=>Math.abs(y.delta)-Math.abs(x.delta));
+  view.innerHTML=`<div class="section-heading"><div><span class="eyebrow">Stock review</span><h2>Delta</h2><p>${escapeHtml(dates[1])} → ${escapeHtml(dates[0])}</p></div><span class="soft-badge">${rows.filter(x=>x.delta!==0).length} changed</span></div><div class="table-wrap"><table><thead><tr><th>Item</th><th>Previous</th><th>Current</th><th>Delta</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x.name)}</td><td>${x.before} ${escapeHtml(x.unit)}</td><td>${x.now} ${escapeHtml(x.unit)}</td><td>${x.delta>0?'+':''}${x.delta}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 async function renderStock(view,supabase,profile){
