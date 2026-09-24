@@ -1,4 +1,4 @@
-const APP_BUILD = 49;
+const APP_BUILD = 50;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -342,6 +342,7 @@ async function renderDashboard(view, supabase, profile) {
 }
 
 async function renderDailySummary(view, supabase, profile) {
+  if(profile.access_class==='ADMIN'&&!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to use this operational screen.</p>';return;}
   const isOwner=profile.access_class==='ADMIN';
   const canManageSummary=isOwner||['Manager','Ops Manager'].includes(profile.role);
   if(!canManageSummary){view.innerHTML='<span class="eyebrow">Daily Summary</span><h2>Manager access required</h2><p class="section-help">Daily Summary is available to Managers and Admins only.</p>';return;}
@@ -809,6 +810,7 @@ async function renderPeople(view, supabase, profile) {
 }
 
 async function renderPurchases(view, supabase, profile) {
+  if(profile.access_class==='ADMIN'&&!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to use this operational screen.</p>';return;}
   const isOwner = profile.access_class === 'ADMIN';
   const { data: categories } = await supabase.from('categories').select('id,name').order('name');
   const { data: items } = await supabase.from('items').select('id,name,category_id,unit,pack_size').eq('active', true).order('name');
@@ -1003,7 +1005,7 @@ async function renderPurchases(view, supabase, profile) {
     try {
       for (const row of payloads) {
         const { error } = await supabase.from('purchases').insert({
-          id: `PUR-${profile.outlet_id}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
+          id: `PUR-${outletId}-${Date.now()}-${Math.random().toString(36).slice(2,7)}`,
           business_date: businessDate,
           outlet_id: outletId,
           user_id: profile.id,
@@ -1081,6 +1083,7 @@ async function renderSalary(view, supabase, profile) {
 }
 
 async function renderAttendance(view, supabase, profile) {
+  if(profile.access_class==='ADMIN'&&!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to use this operational screen.</p>';return;}
   const isOwner=profile.access_class==='ADMIN',isManager=['Manager','Ops Manager'].includes(profile.role),isAdmin=isOwner||isManager;
   const [{data:outlets},{data:userRow}]=await Promise.all([
     isOwner?supabase.from('outlets').select('id,name,theme_key,theme_color').order('id'):Promise.resolve({data:[]}),
