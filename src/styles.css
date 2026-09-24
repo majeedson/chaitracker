@@ -230,3 +230,8 @@ input,select,textarea{font-weight:400;font-size:15px}
 /* Build 39 — persistent café context */
 .global-outlet{appearance:auto;max-width:170px;cursor:pointer;font:inherit;border:1px solid var(--line,#e8e8e8);background:#fff;color:inherit;padding:7px 9px;border-radius:999px}
 @media(max-width:620px){.global-outlet{max-width:112px;font-size:11px}}
+
+/* Build 46 — non-blocking purchase feedback */
+.purchase-message{margin-top:10px;padding:11px 13px;border-radius:12px;font-size:13px;line-height:1.4}
+.purchase-message.error{background:#fff4f4;border:1px solid #f2caca;color:#9f2424}
+.purchase-message.success{background:#f3faf5;border:1px solid #c9e6d1;color:#28713b}
