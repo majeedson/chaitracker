@@ -1,4 +1,4 @@
-const APP_BUILD = 43;
+const APP_BUILD = 44;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -344,7 +344,7 @@ async function renderDashboard(view, supabase, profile) {
 async function renderDailySummary(view, supabase, profile) {
   const isOwner=profile.access_class==='ADMIN';
   const canManageSummary=isOwner||['Manager','Ops Manager'].includes(profile.role);
-  if(!canManageSummary){view.innerHTML='<span class="eyebrow">Daily Summary</span><h2>Manager access required</h2><p class="section-help">Daily Summary is available to managers and owners only.</p>';return;}
+  if(!canManageSummary){view.innerHTML='<span class="eyebrow">Daily Summary</span><h2>Manager access required</h2><p class="section-help">Daily Summary is available to Managers and Admins only.</p>';return;}
   let outletId=Number(profile.outlet_id||1);
   let outlets=[];
   if(isOwner){const {data}=await supabase.from('outlets').select('id,name,theme_key,theme_color').order('id');outlets=data||[];outletId=Number(profile.context_outlet_id||profile.outlet_id||outlets[0]?.id||1);}
@@ -508,7 +508,7 @@ async function renderDailySummary(view, supabase, profile) {
     const actionBar=view.querySelector('.summary-actions')||view.querySelector('#closeSummary')?.parentElement;
     if(actionBar){
       const b=document.createElement('button');b.id='reopenSummary';b.className='primary';b.type='button';
-      b.textContent=canReopen?'Reopen Day':'Owner required to reopen';b.disabled=!canReopen;actionBar.appendChild(b);
+      b.textContent=canReopen?'Reopen Day':'Admin required to reopen';b.disabled=!canReopen;actionBar.appendChild(b);
       if(canReopen)b.onclick=async()=>{b.disabled=true;const {error}=await supabase.rpc('reopen_daily_summary',{p_summary_id:existing.id,p_user_id:profile.id});if(error){const msg=view.querySelector('#summaryMessage');msg.textContent=error.message;msg.hidden=false;b.disabled=false;return;}await renderDailySummary(view,supabase,profile);};
     }
   }
@@ -568,7 +568,7 @@ async function renderDailySummary(view, supabase, profile) {
     }catch(e){status.textContent='Could not copy. Press and hold the message to copy it.';status.className='summary-inline-status bad';status.hidden=false;}
   };
   view.querySelector('#saveSummary').onclick=save;
-  view.querySelector('#closeSummary').onclick=async()=>{if(!existing){const ok=await save();if(!ok)return;await renderDailySummary(view,supabase,profile);return;}const {error}=await supabase.rpc('close_daily_summary',{p_summary_id:existing.id,p_user_id:profile.id});if(error){const msg=view.querySelector('#summaryMessage');msg.textContent=error.message;msg.hidden=false;return;}await renderDailySummary(view,supabase,profile);};
+  view.querySelector('#closeSummary').onclick=async()=>{if(!confirm('Close this business day? Once closed, editing stops until the day is reopened.'))return;if(!existing){const ok=await save();if(!ok)return;await renderDailySummary(view,supabase,profile);return;}const {error}=await supabase.rpc('close_daily_summary',{p_summary_id:existing.id,p_user_id:profile.id});if(error){const msg=view.querySelector('#summaryMessage');msg.textContent=error.message;msg.hidden=false;return;}await renderDailySummary(view,supabase,profile);};
 }
 
 function staffWelcomeMessage(name, setupCode) {
