@@ -390,3 +390,10 @@ body{background:linear-gradient(180deg,var(--accent-faint,#fff) 0, #f7f7f7 260px
 .primary{background:var(--accent)}
 .order-group-toggle button.active{color:var(--accent)}
 input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,203,32,45),.20);border-color:var(--accent)}
+
+/* Build 76 — Stock workflow slider */
+.stock-workflow-toggle{position:sticky;top:0;z-index:8;display:grid;grid-template-columns:1fr 1fr;gap:3px;background:#ededed;border-radius:14px;padding:4px;margin:0 0 16px}
+.stock-workflow-toggle button{min-height:40px;border:0;border-radius:11px;background:transparent;color:#777;font:inherit;font-size:13px;font-weight:750;white-space:nowrap}
+.stock-workflow-toggle button.active{background:#fff;color:var(--accent);box-shadow:0 1px 5px rgba(0,0,0,.09)}
+#tomorrowOrderSection{margin-top:0}
+@media(max-width:390px){.stock-workflow-toggle button{font-size:12px}}
