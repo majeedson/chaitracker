@@ -1,4 +1,4 @@
-const APP_BUILD = 69;
+const APP_BUILD = 70;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -834,28 +834,39 @@ async function renderStock(view,supabase,profile){
   const outletId=Number(profile.access_class==='ADMIN'?profile.context_outlet_id:profile.outlet_id);
   const {data:businessDate,error:dateError}=await supabase.rpc('get_effective_business_day',{p_outlet_id:outletId,p_timestamp:new Date().toISOString()});
   if(dateError||!businessDate){view.innerHTML='<span class="eyebrow">Stock</span><h2>Stock unavailable</h2><p class="form-error">'+escapeHtml(dateError?.message||'Could not determine business day.')+'</p>';return;}
-  const [{data:outlet},{data:items,error:itemError},{data:existingTake}]=await Promise.all([
+  const [{data:outlet},{data:items,error:itemError},{data:existingTake},{data:recentPurchases}]=await Promise.all([
     supabase.from('outlets').select('name,theme_key,theme_color').eq('id',outletId).maybeSingle(),
     supabase.rpc('get_tonights_stock',{p_outlet_id:outletId,p_business_date:businessDate}),
-    supabase.from('stocktakes').select('id,status,submitted_at').eq('outlet_id',outletId).eq('business_date',businessDate).eq('status','SUBMITTED').order('submitted_at',{ascending:false}).limit(1).maybeSingle()
+    supabase.from('stocktakes').select('id,status,submitted_at').eq('outlet_id',outletId).eq('business_date',businessDate).eq('status','SUBMITTED').order('submitted_at',{ascending:false}).limit(1).maybeSingle(),
+    supabase.from('purchases').select('item_id,business_date,qty,unit').eq('outlet_id',outletId).not('item_id','is',null).lte('business_date',businessDate).order('business_date',{ascending:false}).limit(500)
   ]);
   if(itemError){view.innerHTML='<span class="eyebrow">Stock</span><h2>Stock unavailable</h2><p class="form-error">'+escapeHtml(itemError.message)+'</p>';return;}
   applyTheme(outlet);
   const due=items||[],controlled=due.filter(x=>x.count_cycle==='CONTROLLED'),ordinary=due.filter(x=>x.count_cycle!=='CONTROLLED');
+  const purchaseByItem=new Map();(recentPurchases||[]).forEach(p=>{if(!purchaseByItem.has(String(p.item_id)))purchaseByItem.set(String(p.item_id),p);});
+  const recentLabel=x=>{const p=purchaseByItem.get(String(x.item_id));if(!p)return'';const days=Math.round((new Date(String(businessDate)+'T12:00:00')-new Date(String(p.business_date)+'T12:00:00'))/86400000);if(days<0||days>7)return'';return days===0?'Purchased today':days===1?'Purchased yesterday':'Purchased '+days+'d ago';};
   const cycleLabel=x=>({DAILY:'Daily',WEEKLY:'Weekly',MONTHLY:'Monthly',CONTROLLED:'Controlled'})[x]||x;
+  const ordinaryGroups=new Map();ordinary.forEach(x=>{const k=x.category_name||'Other';if(!ordinaryGroups.has(k))ordinaryGroups.set(k,[]);ordinaryGroups.get(k).push(x);});
+  const renderOrdinaryGroup=(category,list)=>`<details class="stock-category" open><summary><span><strong>${escapeHtml(category)}</strong><small>${list.length} due</small></span><span class="category-progress" data-category="${escapeHtml(category)}">0/${list.length}</span></summary><div class="stock-category-body">${list.map(x=>{const rec=recentLabel(x);return `<label class="stock-count-row ordinary-stock" data-id="${x.item_id}" data-unit="${escapeHtml(x.stock_unit||'')}" data-category="${escapeHtml(category)}"><span><strong>${escapeHtml(x.item_name)}</strong><small>${cycleLabel(x.count_cycle)} · Last ${Number(x.last_count||0)} ${escapeHtml(x.stock_unit||'')}${rec?' · <b class="recent-purchase">'+escapeHtml(rec)+'</b>':''}</small></span><input class="stock-count" type="number" min="0" step="0.01" inputmode="decimal" placeholder="—"></label>`;}).join('')}</div></details>`;
   view.innerHTML=`
     <div class="summary-page night-stock">
       <div class="summary-title-row"><div><span class="eyebrow">Tonight's stock</span><h2>${escapeHtml(outlet?.name||'Stock')}</h2><p>${escapeHtml(String(businessDate))} · ${due.length} items due</p></div><span class="summary-state">${existingTake?'Saved':'Open'}</span></div>
       <div id="stockMessage" class="purchase-message" hidden></div>
       ${!due.length?'<div class="all-caught-up">'+icon('check',24)+'<div><strong>Nothing to count tonight</strong><span>No items are due on this count cycle.</span></div></div>':''}
-      ${controlled.length?`<section class="summary-section"><div class="summary-section-title"><span></span><h3>Cigarettes</h3></div><p class="section-help">Count full packs, then loose pieces from the opened pack.</p><div class="stock-count-list">${controlled.map(x=>`<div class="stock-count-row controlled-stock" data-id="${x.item_id}" data-unit="${escapeHtml(x.stock_unit||'Pc')}" data-pack="${Number(x.pieces_per_pack||10)}"><span><strong>${escapeHtml(x.item_name)}</strong><small>${Number(x.pieces_per_pack||10)} per pack · Last ${Number(x.last_count||0)} loose</small></span><div class="controlled-inputs"><label><small>Pack</small><input class="pack-count" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></label><span>+</span><label><small>Loose</small><input class="loose-count" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></label><strong class="controlled-total">0</strong></div></div>`).join('')}</div></section>`:''}
-      ${ordinary.length?`<section class="summary-section"><div class="summary-section-title"><span></span><h3>Due tonight</h3></div><label class="people-search"><span>${icon('search',18)}</span><input id="stockSearch" type="search" placeholder="Search items…"></label><div id="ordinaryStockRows" class="stock-count-list">${ordinary.map(x=>`<label class="stock-count-row ordinary-stock" data-id="${x.item_id}" data-unit="${escapeHtml(x.stock_unit||'')}"><span><strong>${escapeHtml(x.item_name)}</strong><small>${cycleLabel(x.count_cycle)} · Last ${Number(x.last_count||0)} ${escapeHtml(x.stock_unit||'')}</small></span><input class="stock-count" type="number" min="0" step="0.01" inputmode="decimal" value="${Number(x.last_count||0)}"></label>`).join('')}</div></section>`:''}
+      ${controlled.length?`<details class="stock-category cigarette-category" open><summary><span><strong>Cigarettes</strong><small>Pack + Loose</small></span><span id="cigProgress" class="category-progress">0/${controlled.length}</span></summary><div class="stock-category-body compact-cigarettes">${controlled.map(x=>`<div class="controlled-stock compact-cig-row" data-id="${x.item_id}" data-unit="Pc" data-pack="${Number(x.pieces_per_pack||10)}"><div class="compact-cig-info"><strong>${escapeHtml(x.item_name)}</strong><small>${Number(x.pieces_per_pack||10)}/pack · Last ${Number(x.last_count||0)}</small></div><div class="compact-cig-entry"><label><span>P</span><input class="pack-count" type="number" min="0" step="1" inputmode="numeric" placeholder="—"></label><span class="compact-plus">+</span><label><span>L</span><input class="loose-count" type="number" min="0" step="1" inputmode="numeric" placeholder="—"></label><strong class="controlled-total">—</strong></div></div>`).join('')}</div></details>`:''}
+      ${ordinary.length?`<section class="stock-ordinary"><div class="stock-search-wrap"><label class="people-search stock-search"><span>${icon('search',18)}</span><input id="stockSearch" type="search" placeholder="Search items…"></label></div>${[...ordinaryGroups].map(([k,v])=>renderOrdinaryGroup(k,v)).join('')}</section>`:''}
       ${due.length?'<div class="summary-actions"><button id="saveTonightStock" class="primary" type="button">Save tonight\'s stock</button></div>':''}
       <section id="tomorrowOrderSection" class="summary-section" hidden><div class="summary-section-title"><span></span><h3>Tomorrow's order</h3></div><p class="section-help">Suggested quantities are a starting point. Adjust before sending.</p><div id="tomorrowOrderRows"></div><div class="summary-actions"><button id="makeOrderMessage" class="secondary" type="button">Generate order message</button></div><div id="orderPreview" class="whatsapp-preview" hidden><div class="whatsapp-preview-head"><strong>Order message</strong><button id="copyOrderMessage" type="button" class="summary-add">Copy</button></div><textarea id="orderText" readonly></textarea><p id="orderCopyStatus" class="summary-inline-status" hidden></p></div></section>
     </div>`;
-  const show=(m,t='error')=>{const b=view.querySelector('#stockMessage');b.textContent=m;b.className='purchase-message '+(t==='success'?'success':'error');b.hidden=false;};
-  view.querySelectorAll('.controlled-stock').forEach(r=>{const update=()=>{const total=Math.max(0,Number(r.querySelector('.pack-count').value||0))*Number(r.dataset.pack)+Math.max(0,Number(r.querySelector('.loose-count').value||0));r.querySelector('.controlled-total').textContent=total+' loose';};r.querySelectorAll('input').forEach(i=>i.oninput=update);update();});
-  const search=view.querySelector('#stockSearch');if(search)search.oninput=e=>{const q=e.target.value.trim().toLowerCase();view.querySelectorAll('.ordinary-stock').forEach(r=>r.hidden=!!q&&!r.querySelector('strong').textContent.toLowerCase().includes(q));};
+  const show=(m,t='error')=>{const b=view.querySelector('#stockMessage');b.textContent=m;b.className='purchase-message '+(t==='success'?'success':'error');b.hidden=false;b.scrollIntoView({behavior:'smooth',block:'center'});};
+  const updateProgress=()=>{
+    const cig=[...view.querySelectorAll('.controlled-stock')],cigDone=cig.filter(r=>r.querySelector('.pack-count').value!==''&&r.querySelector('.loose-count').value!=='').length;
+    const cp=view.querySelector('#cigProgress');if(cp)cp.textContent=cigDone+'/'+cig.length;
+    view.querySelectorAll('.stock-category:not(.cigarette-category)').forEach(g=>{const rows=[...g.querySelectorAll('.ordinary-stock')],done=rows.filter(r=>r.querySelector('.stock-count').value!=='').length,p=g.querySelector('.category-progress');if(p)p.textContent=done+'/'+rows.length;});
+  };
+  view.querySelectorAll('.controlled-stock').forEach(r=>{const update=()=>{const a=r.querySelector('.pack-count'),l=r.querySelector('.loose-count'),complete=a.value!==''&&l.value!=='';r.querySelector('.controlled-total').textContent=complete?(Number(a.value)*Number(r.dataset.pack)+Number(l.value)):'—';updateProgress();};r.querySelectorAll('input').forEach(i=>i.oninput=update);});
+  view.querySelectorAll('.ordinary-stock .stock-count').forEach(i=>i.oninput=updateProgress);updateProgress();
+  const search=view.querySelector('#stockSearch');if(search)search.oninput=e=>{const q=e.target.value.trim().toLowerCase();view.querySelectorAll('.ordinary-stock').forEach(r=>r.hidden=!!q&&!r.querySelector('strong').textContent.toLowerCase().includes(q));view.querySelectorAll('.stock-category:not(.cigarette-category)').forEach(g=>{const visible=[...g.querySelectorAll('.ordinary-stock')].some(r=>!r.hidden);g.hidden=!visible;if(q&&visible)g.open=true;});};
   const loadOrders=async()=>{
     const {data,error}=await supabase.rpc('get_tomorrows_order',{p_outlet_id:outletId,p_business_date:businessDate});if(error)return;
     const rows=(data||[]).filter(x=>!['VENDOR_MANAGED','CONTROLLED','MANUAL'].includes(x.order_strategy)&&Number(x.suggested_qty)>0);
@@ -868,10 +879,10 @@ async function renderStock(view,supabase,profile){
     view.querySelector('#copyOrderMessage').onclick=async()=>{const ta=view.querySelector('#orderText'),s=view.querySelector('#orderCopyStatus');try{await navigator.clipboard.writeText(ta.value);s.textContent='Copied to clipboard';s.className='summary-inline-status ok';}catch{s.textContent='Press and hold the message to copy it.';s.className='summary-inline-status bad';}s.hidden=false;};
   };
   const save=view.querySelector('#saveTonightStock');if(save)save.onclick=async()=>{
-    const entries=[];
-    view.querySelectorAll('.ordinary-stock').forEach(r=>entries.push({item_id:r.dataset.id,count_now:Number(r.querySelector('.stock-count').value||0),unit:r.dataset.unit}));
-    view.querySelectorAll('.controlled-stock').forEach(r=>entries.push({item_id:r.dataset.id,count_now:Number(r.querySelector('.pack-count').value||0)*Number(r.dataset.pack)+Number(r.querySelector('.loose-count').value||0),unit:'Pc'}));
-    if(entries.length!==due.length)return show('Please complete every item due tonight.');
+    const entries=[];let missing=0;
+    view.querySelectorAll('.ordinary-stock').forEach(r=>{const i=r.querySelector('.stock-count');if(i.value===''){missing++;return;}entries.push({item_id:r.dataset.id,count_now:Number(i.value),unit:r.dataset.unit});});
+    view.querySelectorAll('.controlled-stock').forEach(r=>{const p=r.querySelector('.pack-count'),l=r.querySelector('.loose-count');if(p.value===''||l.value===''){missing++;return;}entries.push({item_id:r.dataset.id,count_now:Number(p.value)*Number(r.dataset.pack)+Number(l.value),unit:'Pc'});});
+    if(missing)return show('Complete all '+due.length+' due items. Enter 0 when the physical count is zero.');
     save.disabled=true;save.textContent='Saving…';
     const {error}=await supabase.rpc('save_tonights_stocktake',{p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_entries:entries});
     if(error){show(error.message);save.disabled=false;save.textContent="Save tonight's stock";return;}
