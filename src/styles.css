@@ -374,3 +374,19 @@ input,select,textarea{font-weight:400;font-size:15px}
 .order-category-group .order-suggestion-row em{font-size:11px}
 .order-category-group .order-include{width:18px!important;height:18px!important;min-height:18px!important}
 .order-category-group .order-add-item{width:30px;height:30px;font-size:20px}
+
+/* Build 75 — lively outlet identity */
+body{background:linear-gradient(180deg,var(--accent-faint,#fff) 0, #f7f7f7 260px)}
+.topbar{border-bottom-color:rgba(var(--accent-rgb,203,32,45),.18)}
+.topbar::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--accent);opacity:.8}
+.brand{color:var(--accent)}
+.outlet-context-bar{background:var(--accent-faint)}
+.outlet-context-bar select,.cafe-switcher select,#global-outlet,#mobile-global-outlet{border-color:rgba(var(--accent-rgb,203,32,45),.22)}
+.card,.home-hero,.dashboard-card{border-color:rgba(var(--accent-rgb,203,32,45),.14)}
+.home-hero,.hero-card{background:linear-gradient(145deg,#fff 55%,var(--accent-soft))}
+.eyebrow,.accent,.summary-section-title span{color:var(--accent)}
+.soft-badge,.outlet-badge{background:var(--accent-soft);color:var(--accent)}
+.module-card:hover,.module-card:focus{border-color:var(--accent)}
+.primary{background:var(--accent)}
+.order-group-toggle button.active{color:var(--accent)}
+input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,203,32,45),.20);border-color:var(--accent)}
