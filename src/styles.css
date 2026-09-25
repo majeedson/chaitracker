@@ -359,3 +359,18 @@ input,select,textarea{font-weight:400;font-size:15px}
 .category-add-results{display:grid;margin-top:6px}
 .category-add-result{border:0;border-bottom:1px solid #eee;background:#fff;padding:9px 4px;text-align:left;display:flex;justify-content:space-between;font:inherit}
 .category-add-result small{color:#888}
+
+/* Build 73 — vendor/category toggle + tighter orders */
+.order-group-toggle{display:grid;grid-template-columns:1fr 1fr;background:#f2f2f2;border-radius:12px;padding:3px;margin:8px 0 12px}
+.order-group-toggle button{border:0;background:transparent;border-radius:9px;padding:8px;font:inherit;font-size:13px;font-weight:700;color:#777}
+.order-group-toggle button.active{background:#fff;color:#111;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.order-category-group>summary{padding:10px 12px}
+.order-category-body{padding:0 10px 9px}
+.order-category-group .order-suggestion-row{padding:7px 0;grid-template-columns:20px minmax(0,1fr) 68px auto;gap:7px}
+.order-category-group .order-suggestion-row span{gap:0}
+.order-category-group .order-suggestion-row span strong{font-size:14px;line-height:1.2}
+.order-category-group .order-suggestion-row span small{font-size:11px;line-height:1.2}
+.order-category-group .order-suggestion-row input.order-qty{min-height:34px;height:34px;border-radius:9px;padding:4px 7px}
+.order-category-group .order-suggestion-row em{font-size:11px}
+.order-category-group .order-include{width:18px!important;height:18px!important;min-height:18px!important}
+.order-category-group .order-add-item{width:30px;height:30px;font-size:20px}
