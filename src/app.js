@@ -1,4 +1,4 @@
-const APP_BUILD = 68;
+const APP_BUILD = 69;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -833,21 +833,52 @@ async function renderStock(view,supabase,profile){
   if(profile.access_class==='ADMIN'&&!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to manage stock.</p>';return;}
   const outletId=Number(profile.access_class==='ADMIN'?profile.context_outlet_id:profile.outlet_id);
   const {data:businessDate,error:dateError}=await supabase.rpc('get_effective_business_day',{p_outlet_id:outletId,p_timestamp:new Date().toISOString()});
-  if(dateError){view.innerHTML='<span class="eyebrow">Stock</span><h2>Stock unavailable</h2><p class="form-error">'+escapeHtml(dateError.message)+'</p>';return;}
-  const [{data:rows,error},{data:day},{data:catalog,error:catalogError}]=await Promise.all([supabase.from('current_stock').select('item_id,item_name,unit,minimum_stock,reorder_qty,count_now,business_date').eq('outlet_id',outletId).order('item_name'),supabase.from('business_days').select('stock_status').eq('outlet_id',outletId).eq('business_date',businessDate).maybeSingle(),supabase.from('items').select('id,name,unit,minimum_stock,reorder_qty').eq('active',true).order('name')]);
-  if(error||catalogError){view.innerHTML='<span class="eyebrow">Stock</span><h2>Stock unavailable</h2><p class="form-error">'+escapeHtml((error||catalogError).message)+'</p>';return;}
-  const latest=new Map();(rows||[]).forEach(r=>{if(!latest.has(r.item_id))latest.set(r.item_id,r);});const firstSnapshot=latest.size===0;const items=(catalog||[]).map(i=>latest.get(i.id)||{item_id:i.id,item_name:i.name,unit:i.unit,minimum_stock:i.minimum_stock,reorder_qty:i.reorder_qty,count_now:0}),closed=day?.stock_status==='CLOSED',canClose=profile.access_class==='ADMIN'||['Manager','Ops Manager'].includes(profile.role);
-  view.innerHTML=`<div class="section-heading"><div><span class="eyebrow">Inventory</span><h2>Stock</h2><p>${escapeHtml(String(businessDate))}</p></div><span class="summary-state">${closed?'Closed':'Open'}</span></div>
-  <div id="stockMessage" class="purchase-message" hidden></div>${firstSnapshot?'<div class="notice">First stock snapshot: enter a count for every active item before saving.</div>':''}
-  <section class="summary-section"><div class="summary-section-title"><span></span><h3>Current counts</h3></div><label class="people-search"><span>${icon('search',18)}</span><input id="stockSearch" type="search" placeholder="Search items…"></label><div id="stockRows" class="stock-count-list"></div></section>
-  <div class="action-row"><button id="saveStock" class="primary" ${closed?'disabled':''}>Save changed counts</button>${canClose?`<button id="closeStock" class="secondary" ${closed?'disabled':''}>Close stock day</button>`:''}</div>`;
-  const list=view.querySelector('#stockRows'),show=(m,t='error')=>{const b=view.querySelector('#stockMessage');b.textContent=m;b.className='purchase-message '+(t==='success'?'success':'error');b.hidden=false;};
-  const render=(q='')=>{q=q.toLowerCase();list.innerHTML=items.filter(x=>!q||x.item_name.toLowerCase().includes(q)).map(x=>`<label class="stock-count-row" data-id="${x.item_id}"><span><strong>${escapeHtml(x.item_name)}</strong><small>${Number(x.minimum_stock||0)>0?'Min '+Number(x.minimum_stock):'No minimum'} · ${escapeHtml(x.unit||'')}</small></span><input class="stock-count" type="number" min="0" step="0.01" value="${Number(x.count_now||0)}" data-original="${Number(x.count_now||0)}" ${closed?'disabled':''}></label>`).join('')||'<div class="notice">No stock items found.</div>';};
-  render();view.querySelector('#stockSearch').oninput=e=>render(e.target.value);
-  view.querySelector('#saveStock').onclick=async()=>{const entries=[...view.querySelectorAll('.stock-count-row')].map(r=>{const input=r.querySelector('.stock-count'),item=items.find(x=>x.item_id===r.dataset.id);return {item_id:r.dataset.id,count_now:Number(input.value||0),unit:item?.unit||'',changed:Number(input.value||0)!==Number(input.dataset.original||0)};}).filter(x=>firstSnapshot||x.changed).map(({changed,...x})=>x);if(!entries.length)return show('No stock counts changed.');const btn=view.querySelector('#saveStock');btn.disabled=true;btn.textContent='Saving…';const{data,error}=await supabase.rpc('save_stock_counts',{p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_entries:entries});if(error){show(error.message);btn.disabled=false;btn.textContent='Save changed counts';return;}show((data||entries.length)+' stock count(s) saved.','success');await renderStock(view,supabase,profile);};
-  const close=view.querySelector('#closeStock');if(close)close.onclick=async()=>{if(!confirm('Close stock for this business day? Further stock counts will be blocked.'))return;close.disabled=true;const{error}=await supabase.rpc('close_stock_day',{p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id});if(error){show(error.message);close.disabled=false;return;}await renderStock(view,supabase,profile);};
+  if(dateError||!businessDate){view.innerHTML='<span class="eyebrow">Stock</span><h2>Stock unavailable</h2><p class="form-error">'+escapeHtml(dateError?.message||'Could not determine business day.')+'</p>';return;}
+  const [{data:outlet},{data:items,error:itemError},{data:existingTake}]=await Promise.all([
+    supabase.from('outlets').select('name,theme_key,theme_color').eq('id',outletId).maybeSingle(),
+    supabase.rpc('get_tonights_stock',{p_outlet_id:outletId,p_business_date:businessDate}),
+    supabase.from('stocktakes').select('id,status,submitted_at').eq('outlet_id',outletId).eq('business_date',businessDate).eq('status','SUBMITTED').order('submitted_at',{ascending:false}).limit(1).maybeSingle()
+  ]);
+  if(itemError){view.innerHTML='<span class="eyebrow">Stock</span><h2>Stock unavailable</h2><p class="form-error">'+escapeHtml(itemError.message)+'</p>';return;}
+  applyTheme(outlet);
+  const due=items||[],controlled=due.filter(x=>x.count_cycle==='CONTROLLED'),ordinary=due.filter(x=>x.count_cycle!=='CONTROLLED');
+  const cycleLabel=x=>({DAILY:'Daily',WEEKLY:'Weekly',MONTHLY:'Monthly',CONTROLLED:'Controlled'})[x]||x;
+  view.innerHTML=`
+    <div class="summary-page night-stock">
+      <div class="summary-title-row"><div><span class="eyebrow">Tonight's stock</span><h2>${escapeHtml(outlet?.name||'Stock')}</h2><p>${escapeHtml(String(businessDate))} · ${due.length} items due</p></div><span class="summary-state">${existingTake?'Saved':'Open'}</span></div>
+      <div id="stockMessage" class="purchase-message" hidden></div>
+      ${!due.length?'<div class="all-caught-up">'+icon('check',24)+'<div><strong>Nothing to count tonight</strong><span>No items are due on this count cycle.</span></div></div>':''}
+      ${controlled.length?`<section class="summary-section"><div class="summary-section-title"><span></span><h3>Cigarettes</h3></div><p class="section-help">Count full packs, then loose pieces from the opened pack.</p><div class="stock-count-list">${controlled.map(x=>`<div class="stock-count-row controlled-stock" data-id="${x.item_id}" data-unit="${escapeHtml(x.stock_unit||'Pc')}" data-pack="${Number(x.pieces_per_pack||10)}"><span><strong>${escapeHtml(x.item_name)}</strong><small>${Number(x.pieces_per_pack||10)} per pack · Last ${Number(x.last_count||0)} loose</small></span><div class="controlled-inputs"><label><small>Pack</small><input class="pack-count" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></label><span>+</span><label><small>Loose</small><input class="loose-count" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></label><strong class="controlled-total">0</strong></div></div>`).join('')}</div></section>`:''}
+      ${ordinary.length?`<section class="summary-section"><div class="summary-section-title"><span></span><h3>Due tonight</h3></div><label class="people-search"><span>${icon('search',18)}</span><input id="stockSearch" type="search" placeholder="Search items…"></label><div id="ordinaryStockRows" class="stock-count-list">${ordinary.map(x=>`<label class="stock-count-row ordinary-stock" data-id="${x.item_id}" data-unit="${escapeHtml(x.stock_unit||'')}"><span><strong>${escapeHtml(x.item_name)}</strong><small>${cycleLabel(x.count_cycle)} · Last ${Number(x.last_count||0)} ${escapeHtml(x.stock_unit||'')}</small></span><input class="stock-count" type="number" min="0" step="0.01" inputmode="decimal" value="${Number(x.last_count||0)}"></label>`).join('')}</div></section>`:''}
+      ${due.length?'<div class="summary-actions"><button id="saveTonightStock" class="primary" type="button">Save tonight\'s stock</button></div>':''}
+      <section id="tomorrowOrderSection" class="summary-section" hidden><div class="summary-section-title"><span></span><h3>Tomorrow's order</h3></div><p class="section-help">Suggested quantities are a starting point. Adjust before sending.</p><div id="tomorrowOrderRows"></div><div class="summary-actions"><button id="makeOrderMessage" class="secondary" type="button">Generate order message</button></div><div id="orderPreview" class="whatsapp-preview" hidden><div class="whatsapp-preview-head"><strong>Order message</strong><button id="copyOrderMessage" type="button" class="summary-add">Copy</button></div><textarea id="orderText" readonly></textarea><p id="orderCopyStatus" class="summary-inline-status" hidden></p></div></section>
+    </div>`;
+  const show=(m,t='error')=>{const b=view.querySelector('#stockMessage');b.textContent=m;b.className='purchase-message '+(t==='success'?'success':'error');b.hidden=false;};
+  view.querySelectorAll('.controlled-stock').forEach(r=>{const update=()=>{const total=Math.max(0,Number(r.querySelector('.pack-count').value||0))*Number(r.dataset.pack)+Math.max(0,Number(r.querySelector('.loose-count').value||0));r.querySelector('.controlled-total').textContent=total+' loose';};r.querySelectorAll('input').forEach(i=>i.oninput=update);update();});
+  const search=view.querySelector('#stockSearch');if(search)search.oninput=e=>{const q=e.target.value.trim().toLowerCase();view.querySelectorAll('.ordinary-stock').forEach(r=>r.hidden=!!q&&!r.querySelector('strong').textContent.toLowerCase().includes(q));};
+  const loadOrders=async()=>{
+    const {data,error}=await supabase.rpc('get_tomorrows_order',{p_outlet_id:outletId,p_business_date:businessDate});if(error)return;
+    const rows=(data||[]).filter(x=>!['VENDOR_MANAGED','CONTROLLED','MANUAL'].includes(x.order_strategy)&&Number(x.suggested_qty)>0);
+    const section=view.querySelector('#tomorrowOrderSection'),box=view.querySelector('#tomorrowOrderRows');if(!section||!box)return;
+    if(!rows.length){box.innerHTML='<div class="notice">No staff orders suggested from tonight’s stock.</div>';section.hidden=false;return;}
+    const groups=new Map();rows.forEach(x=>{const k=x.vendor_name||'Unassigned';if(!groups.has(k))groups.set(k,[]);groups.get(k).push(x);});
+    box.innerHTML=[...groups].map(([vendor,list])=>`<div class="order-vendor-group"><div class="section-heading"><h4>${escapeHtml(vendor)}</h4><span class="soft-badge">${list.length} item${list.length===1?'':'s'}</span></div>${list.map(x=>`<label class="order-suggestion-row" data-vendor="${escapeHtml(vendor)}" data-name="${escapeHtml(x.item_name)}" data-unit="${escapeHtml(x.order_unit||'')}"><span><strong>${escapeHtml(x.item_name)}</strong><small>Stock ${Number(x.current_stock||0)} · Suggested ${Number(x.suggested_qty||0)}</small></span><input class="order-qty" type="number" min="0" step="0.01" value="${Number(x.suggested_qty||0)}"><em>${escapeHtml(x.order_unit||'')}</em></label>`).join('')}</div>`).join('');
+    section.hidden=false;
+    view.querySelector('#makeOrderMessage').onclick=()=>{const lines=['*TOMORROW’S ORDER — '+String(outlet?.name||'CAFE').toUpperCase()+'*',String(businessDate),''];let last='';view.querySelectorAll('.order-suggestion-row').forEach(r=>{const qty=Number(r.querySelector('.order-qty').value||0);if(qty<=0)return;const vendor=r.dataset.vendor;if(vendor!==last){if(last)lines.push('');lines.push('*'+vendor+'*');last=vendor;}lines.push(r.dataset.name+' — '+qty+' '+r.dataset.unit);});if(!last)lines.push('No order required.');const text=lines.join('\n');const p=view.querySelector('#orderPreview'),ta=view.querySelector('#orderText');ta.value=text;p.hidden=false;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,420)+'px';p.scrollIntoView({behavior:'smooth',block:'center'});};
+    view.querySelector('#copyOrderMessage').onclick=async()=>{const ta=view.querySelector('#orderText'),s=view.querySelector('#orderCopyStatus');try{await navigator.clipboard.writeText(ta.value);s.textContent='Copied to clipboard';s.className='summary-inline-status ok';}catch{s.textContent='Press and hold the message to copy it.';s.className='summary-inline-status bad';}s.hidden=false;};
+  };
+  const save=view.querySelector('#saveTonightStock');if(save)save.onclick=async()=>{
+    const entries=[];
+    view.querySelectorAll('.ordinary-stock').forEach(r=>entries.push({item_id:r.dataset.id,count_now:Number(r.querySelector('.stock-count').value||0),unit:r.dataset.unit}));
+    view.querySelectorAll('.controlled-stock').forEach(r=>entries.push({item_id:r.dataset.id,count_now:Number(r.querySelector('.pack-count').value||0)*Number(r.dataset.pack)+Number(r.querySelector('.loose-count').value||0),unit:'Pc'}));
+    if(entries.length!==due.length)return show('Please complete every item due tonight.');
+    save.disabled=true;save.textContent='Saving…';
+    const {error}=await supabase.rpc('save_tonights_stocktake',{p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_entries:entries});
+    if(error){show(error.message);save.disabled=false;save.textContent="Save tonight's stock";return;}
+    show('Tonight’s stock saved. Tomorrow’s order is ready to review.','success');save.textContent='Saved ✓';await loadOrders();
+  };
+  if(existingTake)await loadOrders();
 }
-
 async function renderPurchases(view, supabase, profile) {
   if(profile.access_class==='ADMIN'&&!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to use this operational screen.</p>';return;}
   const isOwner = profile.access_class === 'ADMIN';
