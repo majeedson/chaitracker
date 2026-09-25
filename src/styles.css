@@ -343,3 +343,19 @@ input,select,textarea{font-weight:400;font-size:15px}
 .category-order-preview{margin:8px 0 12px}
 .category-order-preview textarea{width:100%;min-height:90px;border:1px solid #ddd;border-radius:12px;padding:10px;font:inherit;resize:vertical}
 @media(max-width:430px){.order-category-group .order-suggestion-row{grid-template-columns:22px minmax(0,1fr) 72px auto;gap:7px}}
+
+/* Build 72 — collapsed order categories + quick add */
+.order-category-group{border:1px solid #e8e8e8;border-radius:16px;margin:10px 0;padding:0;overflow:hidden;background:#fff}
+.order-category-group>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;padding:13px 14px;cursor:pointer}
+.order-category-group>summary::-webkit-details-marker{display:none}
+.order-category-group>summary>span{display:flex;align-items:baseline;gap:8px}
+.order-category-group>summary small{color:#888;font-size:12px}
+.order-add-item{width:34px;height:34px;border:0;border-radius:50%;background:#f2f2f2;font-size:23px;line-height:1;cursor:pointer}
+.order-category-body{padding:0 12px 12px}
+.order-category-actions{display:flex;justify-content:flex-end;padding-top:8px}
+.category-add-panel{border-top:1px solid #eee;margin-top:8px;padding-top:10px}
+.category-add-panel label{display:grid;gap:5px;font-size:12px;color:#777}
+.category-add-search{height:40px;border:1px solid #ddd;border-radius:11px;padding:0 11px;font:inherit}
+.category-add-results{display:grid;margin-top:6px}
+.category-add-result{border:0;border-bottom:1px solid #eee;background:#fff;padding:9px 4px;text-align:left;display:flex;justify-content:space-between;font:inherit}
+.category-add-result small{color:#888}
