@@ -1,4 +1,4 @@
-const APP_BUILD = 74;
+const APP_BUILD = 75;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -41,9 +41,21 @@ function icon(name, size=20) {
 }
 
 function applyTheme(outlet) {
-  const color=outlet?.theme_color||'#CB202D';
+  const themes={
+    teapot:{color:'#CB202D',rgb:'203,32,45'},
+    'chai-cafe':{color:'#D99000',rgb:'217,144,0'},
+    'planet-cafe':{color:'#C45100',rgb:'196,81,0'},
+    clove:{color:'#2563EB',rgb:'37,99,235'},
+    'chai-company':{color:'#6B7A32',rgb:'107,122,50'}
+  };
+  const key=outlet?.theme_key==='clover'?'clove':outlet?.theme_key;
+  const t=themes[key]||{color:outlet?.theme_color||'#CB202D',rgb:'203,32,45'};
+  const color=outlet?.theme_color||t.color;
   document.documentElement.style.setProperty('--accent',color);
-  document.documentElement.style.setProperty('--accent-soft',color+'18');
+  document.documentElement.style.setProperty('--accent-rgb',t.rgb);
+  document.documentElement.style.setProperty('--accent-soft','rgba('+t.rgb+',.10)');
+  document.documentElement.style.setProperty('--accent-faint','rgba('+t.rgb+',.045)');
+  document.documentElement.dataset.theme=key||'teapot';
 }
 
 export async function renderApp(root, supabase) {
