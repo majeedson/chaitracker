@@ -297,3 +297,40 @@ input,select,textarea{font-weight:400;font-size:15px}
  .controlled-inputs{width:100%;grid-template-columns:1fr auto 1fr}
  .order-suggestion-row{grid-template-columns:minmax(0,1fr) 76px auto}
 }
+
+
+/* Build 70 — grouped, compact night stock */
+.stock-category{border:1px solid #e8e8e8;border-radius:18px;background:#fff;margin:12px 0;overflow:hidden}
+.stock-category>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 16px;cursor:pointer}
+.stock-category>summary::-webkit-details-marker{display:none}
+.stock-category>summary span:first-child{display:flex;align-items:baseline;gap:9px}
+.stock-category>summary strong{font-size:17px}
+.stock-category>summary small{font-size:12px;color:#8a8a8a}
+.category-progress{font-size:12px;font-weight:700;background:#f4f4f4;border-radius:999px;padding:5px 9px;white-space:nowrap}
+.stock-category-body{padding:0 14px 8px}
+.stock-search-wrap{padding:4px 0 2px}
+.stock-search.people-search{margin:0 0 8px}
+.recent-purchase{font-weight:650;color:var(--accent);white-space:nowrap}
+.compact-cigarettes{padding-bottom:4px}
+.compact-cig-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(190px,46%);align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #ededed}
+.compact-cig-row:last-child{border-bottom:0}
+.compact-cig-info{min-width:0;display:grid;gap:1px}
+.compact-cig-info strong{font-size:15px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.compact-cig-info small{font-size:11px;color:#8a8a8a;white-space:nowrap}
+.compact-cig-entry{display:grid;grid-template-columns:1fr auto 1fr 36px;gap:5px;align-items:center}
+.compact-cig-entry label{position:relative}
+.compact-cig-entry label span{position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#999;pointer-events:none}
+.compact-cig-entry input{width:100%;height:36px;min-height:36px;border:1px solid #ddd;border-radius:10px;padding:5px 6px 5px 20px;text-align:right;font:inherit;font-size:15px;background:#fff}
+.compact-plus{font-size:14px;color:#777}
+.compact-cig-entry .controlled-total{grid-column:auto;text-align:right;font-size:12px;color:var(--accent);overflow:hidden;text-overflow:ellipsis}
+.stock-category .ordinary-stock{padding:11px 0}
+.stock-category .ordinary-stock input{max-width:96px}
+@media(max-width:430px){
+ .stock-category{border-radius:15px}
+ .stock-category>summary{padding:13px 12px}
+ .stock-category-body{padding:0 11px 6px}
+ .compact-cig-row{grid-template-columns:minmax(100px,1fr) 205px;gap:7px;padding:8px 0}
+ .compact-cig-info strong{font-size:14px}
+ .compact-cig-entry{grid-template-columns:64px auto 64px 34px}
+ .compact-cig-entry input{height:34px;min-height:34px}
+}
