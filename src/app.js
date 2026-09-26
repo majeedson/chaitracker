@@ -1,4 +1,4 @@
-const APP_BUILD = 83;
+const APP_BUILD = 84;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -884,7 +884,7 @@ async function renderStock(view,supabase,profile){
       ${ordinary.length?`<section class="stock-ordinary"><div class="stock-search-wrap"><label class="people-search stock-search"><span>${icon('search',18)}</span><input id="stockSearch" type="search" placeholder="Search items…"></label></div>${[...ordinaryGroups].map(([k,v])=>renderOrdinaryGroup(k,v)).join('')}</section>`:''}
       ${due.length?'<div class="summary-actions"><button id="saveTonightStock" class="primary" type="button">Save tonight\'s stock</button></div>':''}
       </div>
-      <section id="tomorrowOrderSection" class="summary-section" hidden><div class="summary-section-title"><span></span><h3>Tomorrow's order</h3></div><p class="section-help">Suggested quantities are a starting point. Adjust before sending.</p><div id="orderQuickSummary" class="order-quick-summary">0 selected · 0 vendors</div><div id="tomorrowOrderRows"></div><div class="summary-actions"><button id="finishOrders" class="primary" type="button">Finish Orders</button></div></section>
+      <section id="tomorrowOrderSection" class="summary-section" hidden><div class="summary-section-title"><span></span><h3>Tomorrow's order</h3></div><p class="section-help">Suggested quantities are a starting point. Adjust before sending.</p><div id="orderQuickSummary" class="order-quick-summary">0 selected · 0 vendors</div><div id="tomorrowOrderRows"></div><div class="summary-actions"><button id="finishOrders" class="primary" type="button">Continue to Day Close →</button></div></section>
     <div id="stockUndoToast" class="stock-undo-toast" hidden><span>Item removed</span><button type="button">Undo</button></div>
     </div>`;
   const countPane=view.querySelector('#tonightStockPane');
