@@ -1,4 +1,4 @@
-const APP_BUILD = 82;
+const APP_BUILD = 83;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -884,7 +884,7 @@ async function renderStock(view,supabase,profile){
       ${ordinary.length?`<section class="stock-ordinary"><div class="stock-search-wrap"><label class="people-search stock-search"><span>${icon('search',18)}</span><input id="stockSearch" type="search" placeholder="Search items…"></label></div>${[...ordinaryGroups].map(([k,v])=>renderOrdinaryGroup(k,v)).join('')}</section>`:''}
       ${due.length?'<div class="summary-actions"><button id="saveTonightStock" class="primary" type="button">Save tonight\'s stock</button></div>':''}
       </div>
-      <section id="tomorrowOrderSection" class="summary-section" hidden><div class="summary-section-title"><span></span><h3>Tomorrow's order</h3></div><p class="section-help">Suggested quantities are a starting point. Adjust before sending.</p><div id="orderQuickSummary" class="order-quick-summary">0 selected · 0 vendors</div><div id="tomorrowOrderRows"></div><div class="summary-actions"><button id="makeOrderMessage" class="secondary" type="button">Generate order message</button><button id="finishOrders" class="primary" type="button">Finish Orders</button></div><div id="orderPreview" class="whatsapp-preview" hidden><div class="whatsapp-preview-head"><strong>Order message</strong><button id="copyOrderMessage" type="button" class="summary-add">Copy</button></div><textarea id="orderText" readonly></textarea><p id="orderCopyStatus" class="summary-inline-status" hidden></p></div></section>
+      <section id="tomorrowOrderSection" class="summary-section" hidden><div class="summary-section-title"><span></span><h3>Tomorrow's order</h3></div><p class="section-help">Suggested quantities are a starting point. Adjust before sending.</p><div id="orderQuickSummary" class="order-quick-summary">0 selected · 0 vendors</div><div id="tomorrowOrderRows"></div><div class="summary-actions"><button id="finishOrders" class="primary" type="button">Finish Orders</button></div></section>
     <div id="stockUndoToast" class="stock-undo-toast" hidden><span>Item removed</span><button type="button">Undo</button></div>
     </div>`;
   const countPane=view.querySelector('#tonightStockPane');
@@ -941,8 +941,6 @@ async function renderStock(view,supabase,profile){
     renderGroups();
     const undo=view.querySelector('#stockUndoToast button');if(undo)undo.onclick=()=>{if(!lastRemoved)return;state.set(lastRemoved.id,lastRemoved.prev);lastRemoved=null;view.querySelector('#stockUndoToast').hidden=true;clearTimeout(undoTimer);renderGroups();};
     const finish=view.querySelector('#finishOrders');if(finish)finish.onclick=()=>{try{localStorage.setItem('cafetracker-orders-finished:'+outletId+':'+businessDate,'1');}catch{}const target=document.querySelector('.drawer-item[data-module="summary"]');if(target)target.click();};
-    view.querySelector('#makeOrderMessage').onclick=()=>{const text=buildMessage(view.querySelector('#tomorrowOrderRows'),'Tomorrow’s order');const p=view.querySelector('#orderPreview'),ta=view.querySelector('#orderText');ta.value=text;p.hidden=false;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,420)+'px';p.scrollIntoView({behavior:'smooth',block:'center'});};
-    view.querySelector('#copyOrderMessage').onclick=async()=>{const ta=view.querySelector('#orderText'),s=view.querySelector('#orderCopyStatus');try{await navigator.clipboard.writeText(ta.value);s.textContent='Copied to clipboard';s.className='summary-inline-status ok';}catch{s.textContent='Press and hold the message to copy it.';s.className='summary-inline-status bad';}s.hidden=false;};
   };
   const save=view.querySelector('#saveTonightStock');if(save)save.onclick=async()=>{
     const entries=[];let missing=0;
