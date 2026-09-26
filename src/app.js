@@ -1,4 +1,4 @@
-const APP_BUILD = 79;
+const APP_BUILD = 80;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -364,19 +364,21 @@ async function renderDailySummary(view, supabase, profile) {
   const {data:businessDay,error:businessDayError}=await supabase.rpc('get_effective_business_day',{p_outlet_id:outletId,p_timestamp:new Date().toISOString()});
   if(businessDayError||!businessDay){view.innerHTML='<span class="eyebrow">Daily Summary</span><h2>Business day unavailable</h2><p class="form-error">'+escapeHtml(businessDayError?.message||'Could not determine the café business day.')+'</p>';return;}
   const businessDate=String(businessDay);
-  const [{data:vendors},{data:staff},{data:existing},{data:previous},{data:outlet}]=await Promise.all([
+  const [{data:vendors},{data:staff},{data:existing},{data:previous},{data:outlet},{data:stocktake}]=await Promise.all([
     supabase.from('vendors').select('id,name').order('name'),
     supabase.from('staff').select('id,name,outlet_id').eq('active',true).eq('outlet_id',outletId).order('name'),
     supabase.from('daily_summaries').select('*').eq('outlet_id',outletId).eq('business_date',businessDate).maybeSingle(),
     supabase.from('daily_summaries').select('business_date,physical_cash').eq('outlet_id',outletId).lt('business_date',businessDate).order('business_date',{ascending:false}).limit(1).maybeSingle(),
-    supabase.from('outlets').select('name,swiggy_payout_rate,zomato_payout_rate,theme_key,theme_color').eq('id',outletId).maybeSingle()
+    supabase.from('outlets').select('name,swiggy_payout_rate,zomato_payout_rate,theme_key,theme_color').eq('id',outletId).maybeSingle(),
+    supabase.from('stocktakes').select('id,status').eq('outlet_id',outletId).eq('business_date',businessDate).eq('status','SUBMITTED').limit(1).maybeSingle()
   ]);
   applyTheme(outlet);
   const swRate=Number(outlet?.swiggy_payout_rate??.5),zoRate=Number(outlet?.zomato_payout_rate??.5);
   const systemOpening=Number(existing?.opening_cash_system??previous?.physical_cash??0);
   const actualOpening=Number(existing?.opening_cash_actual??systemOpening);
   const money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2});
-  const statusText=existing?('Editing · '+businessDate):('New summary · '+businessDate);
+  const statusText=existing?.is_closed?('Closed · '+businessDate):existing?('Editing · '+businessDate):('New summary · '+businessDate);
+  const ordersDone=(()=>{try{return localStorage.getItem('cafetracker-orders-finished:'+outletId+':'+businessDate)==='1';}catch{return false;}})();
 
   view.innerHTML=`
     <div class="summary-page">
@@ -384,7 +386,9 @@ async function renderDailySummary(view, supabase, profile) {
         <div><span class="eyebrow">Daily closing</span><h2>Daily Summary</h2><p>${escapeHtml(outlet?.name||'')} · ${businessDate}</p></div>
         <span class="summary-state">${escapeHtml(statusText)}</span>
       </div>
-
+      <div class="close-status-strip">
+        <span id="closeSalesStatus">Sales <b>○</b></span><span id="closeExpenseStatus">Expenses <b>○</b></span><span class="${stocktake?'done':'pending'}">Stock <b>${stocktake?'✓':'○'}</b></span><span class="${ordersDone?'done':'pending'}">Orders <b>${ordersDone?'✓':'○'}</b></span>
+      </div>
 
       <section class="summary-section">
         <div class="summary-section-title"><span></span><h3>Opening cash</h3></div>
@@ -432,7 +436,7 @@ async function renderDailySummary(view, supabase, profile) {
 
       <section class="summary-section">
         <div class="summary-section-title"><span></span><h3>Cash counter</h3></div>
-        <p class="section-help">Count the cash drawer by denomination. The total becomes Physical Cash in Hand.</p>
+        <p class="section-help">Count the drawer. The total becomes physical cash automatically.</p>
         <div class="cash-counter">
           ${[500,200,100,50,20,10].map(d=>`<label><span>₹${d}</span><span class="cash-multiply">×</span><input class="denom-count" data-value="${d}" type="number" min="0" step="1" inputmode="numeric" placeholder="0"><strong class="denom-total">₹0</strong></label>`).join('')}
         </div>
@@ -448,8 +452,8 @@ async function renderDailySummary(view, supabase, profile) {
       </section>
 
       <div class="summary-actions">
-        <button id="saveSummary" class="primary" type="button">Save Summary</button>
-        <button id="closeSummary" class="close-day" type="button">Close Day</button>\n        <button id="whatsappSummary" class="summary-add full" type="button">Generate WhatsApp message</button>\n        <div id="whatsappPreview" class="whatsapp-preview" hidden><div class="whatsapp-preview-head"><strong>WhatsApp message</strong><button id="copyWhatsappSummary" type="button" class="summary-add">Copy</button></div><textarea id="whatsappText" readonly></textarea><p id="copyStatus" class="summary-inline-status" hidden></p></div>
+        <button id="saveSummary" class="summary-add" type="button">Save draft</button>
+        <button id="closeSummary" class="close-day primary" type="button">Close Day</button>\n        <button id="whatsappSummary" class="summary-add full" type="button">Generate WhatsApp message</button>\n        <div id="whatsappPreview" class="whatsapp-preview" hidden><div class="whatsapp-preview-head"><strong>WhatsApp message</strong><button id="copyWhatsappSummary" type="button" class="summary-add">Copy</button></div><textarea id="whatsappText" readonly></textarea><p id="copyStatus" class="summary-inline-status" hidden></p></div>
       </div>
       <p id="summaryMessage" class="form-error" hidden></p>
       ${existing?.is_closed?'<div class="notice warning">This day is closed and cannot be edited.</div>':''}
@@ -469,6 +473,11 @@ async function renderDailySummary(view, supabase, profile) {
     const dc=view.querySelector('#differenceCard');dc.classList.toggle('negative',diff<0);dc.classList.toggle('positive',diff>0);
     view.querySelector('#cashStatus').innerHTML=diff===0?'<span class="ok">Cash matches expected</span>':`<span class="${diff<0?'bad':'warn'}">${diff<0?'Short':'Excess'} ${money(Math.abs(diff))}</span>`;
     view.querySelector('#openingVariance').innerHTML=openDiff===0?'<span class="ok">Matches previous closing</span>':`<span class="warn">${openDiff<0?'Opening short':'Opening excess'} ${money(Math.abs(openDiff))}</span>`;
+    const salesReady=[n('sCash'),n('sUpi'),n('sSwGross'),n('sZoGross'),n('sOwn'),n('sDisc')].some(v=>v!==0)||!!existing;
+    const salesStatus=view.querySelector('#closeSalesStatus');if(salesStatus){salesStatus.className=salesReady?'done':'pending';salesStatus.querySelector('b').textContent=salesReady?'✓':'○';}
+    const expenseStatus=view.querySelector('#closeExpenseStatus');if(expenseStatus){expenseStatus.className='done';expenseStatus.querySelector('b').textContent='✓';}
+    const closeBtn=view.querySelector('#closeSummary');if(closeBtn&&!existing?.is_closed){closeBtn.classList.toggle('close-ready',salesReady&&!!stocktake);}
+  
   }
 
   const addRow=(container,type,data={})=>{
@@ -543,6 +552,7 @@ async function renderDailySummary(view, supabase, profile) {
       await renderDailySummary(view,supabase,profile);return true;
     }catch(e){msg.textContent=e.message||'Could not save summary.';msg.hidden=false;return false;}finally{if(btn.isConnected){btn.disabled=false;btn.textContent='Save Summary';}}
   };
+  const saveWithoutRender=async()=>{try{const {expenses,vendorPayouts,staffPayouts}=collect();const id=existing?.id||`SUM-${outletId}-${businessDate}`;const args={p_summary_id:id,p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_user_name:profile.name,p_role:profile.access_class==='ADMIN'?'Admin':profile.role,p_cash_sale:n('sCash'),p_upi_sale:n('sUpi'),p_swiggy_gross:n('sSwGross'),p_swiggy_payout:n('sSwPay'),p_zomato_gross:n('sZoGross'),p_zomato_payout:n('sZoPay'),p_own_digital:n('sOwn'),p_discount:n('sDisc'),p_opening_cash_system:systemOpening,p_opening_cash_actual:n('sOpen'),p_physical_cash:n('sPhysical'),p_expenses:expenses,p_vendor_payouts:vendorPayouts,p_staff_payouts:staffPayouts};const {error}=await supabase.rpc('save_daily_summary',args);if(error)throw error;return true;}catch(e){const msg=view.querySelector('#summaryMessage');msg.textContent=e.message||'Could not save summary.';msg.hidden=false;return false;}};
   const whatsappSummary=()=>{
     calc();
     const {expenses,vendorPayouts,staffPayouts}=collect();
@@ -581,7 +591,7 @@ async function renderDailySummary(view, supabase, profile) {
     }catch(e){status.textContent='Could not copy. Press and hold the message to copy it.';status.className='summary-inline-status bad';status.hidden=false;}
   };
   view.querySelector('#saveSummary').onclick=save;
-  view.querySelector('#closeSummary').onclick=async()=>{if(!confirm('Close this business day? Once closed, editing stops until the day is reopened.'))return;if(!existing){const ok=await save();if(!ok)return;await renderDailySummary(view,supabase,profile);return;}const {error}=await supabase.rpc('close_daily_summary',{p_summary_id:existing.id,p_user_id:profile.id});if(error){const msg=view.querySelector('#summaryMessage');msg.textContent=error.message;msg.hidden=false;return;}await renderDailySummary(view,supabase,profile);};
+  view.querySelector('#closeSummary').onclick=async()=>{const msg=view.querySelector('#summaryMessage');msg.hidden=true;if(!stocktake){msg.textContent='Tonight’s stock is not finished yet. Complete Stock before closing the day.';msg.hidden=false;return;}if(!confirm('Close this business day? Once closed, editing stops until the day is reopened.'))return;const btn=view.querySelector('#closeSummary');btn.disabled=true;btn.textContent='Closing…';let summaryId=existing?.id;if(!summaryId){const {expenses,vendorPayouts,staffPayouts}=collect();summaryId=`SUM-${outletId}-${businessDate}`;const args={p_summary_id:summaryId,p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_user_name:profile.name,p_role:profile.access_class==='ADMIN'?'Admin':profile.role,p_cash_sale:n('sCash'),p_upi_sale:n('sUpi'),p_swiggy_gross:n('sSwGross'),p_swiggy_payout:n('sSwPay'),p_zomato_gross:n('sZoGross'),p_zomato_payout:n('sZoPay'),p_own_digital:n('sOwn'),p_discount:n('sDisc'),p_opening_cash_system:systemOpening,p_opening_cash_actual:n('sOpen'),p_physical_cash:n('sPhysical'),p_expenses:expenses,p_vendor_payouts:vendorPayouts,p_staff_payouts:staffPayouts};const saved=await supabase.rpc('save_daily_summary',args);if(saved.error){msg.textContent=saved.error.message;msg.hidden=false;btn.disabled=false;btn.textContent='Close Day';return;}}else{const ok=await saveWithoutRender();if(!ok){btn.disabled=false;btn.textContent='Close Day';return;}}const {error}=await supabase.rpc('close_daily_summary',{p_summary_id:summaryId,p_user_id:profile.id});if(error){msg.textContent=error.message;msg.hidden=false;btn.disabled=false;btn.textContent='Close Day';return;}await renderDailySummary(view,supabase,profile);const share=view.querySelector('#whatsappSummary');if(share)share.click();};
 }
 
 function staffWelcomeMessage(name) {
@@ -929,7 +939,7 @@ async function renderStock(view,supabase,profile){
     section.querySelectorAll('.order-group-toggle button').forEach(btn=>btn.onclick=()=>{section.querySelectorAll('.order-group-toggle button').forEach(b=>b.classList.toggle('active',b===btn));groupMode=btn.dataset.mode;renderGroups();});
     renderGroups();
     const undo=view.querySelector('#stockUndoToast button');if(undo)undo.onclick=()=>{if(!lastRemoved)return;state.set(lastRemoved.id,lastRemoved.prev);lastRemoved=null;view.querySelector('#stockUndoToast').hidden=true;clearTimeout(undoTimer);renderGroups();};
-    const finish=view.querySelector('#finishOrders');if(finish)finish.onclick=()=>{const target=document.querySelector('.drawer-item[data-module="summary"]');if(target)target.click();};
+    const finish=view.querySelector('#finishOrders');if(finish)finish.onclick=()=>{try{localStorage.setItem('cafetracker-orders-finished:'+outletId+':'+businessDate,'1');}catch{}const target=document.querySelector('.drawer-item[data-module="summary"]');if(target)target.click();};
     view.querySelector('#makeOrderMessage').onclick=()=>{const text=buildMessage(view.querySelector('#tomorrowOrderRows'),'Tomorrow’s order');const p=view.querySelector('#orderPreview'),ta=view.querySelector('#orderText');ta.value=text;p.hidden=false;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,420)+'px';p.scrollIntoView({behavior:'smooth',block:'center'});};
     view.querySelector('#copyOrderMessage').onclick=async()=>{const ta=view.querySelector('#orderText'),s=view.querySelector('#orderCopyStatus');try{await navigator.clipboard.writeText(ta.value);s.textContent='Copied to clipboard';s.className='summary-inline-status ok';}catch{s.textContent='Press and hold the message to copy it.';s.className='summary-inline-status bad';}s.hidden=false;};
   };
