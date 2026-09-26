@@ -419,3 +419,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 #closeSummary.close-ready{box-shadow:0 0 0 3px var(--accent-soft)}
 .summary-actions #closeSummary{min-height:48px;font-weight:800}
 @media(max-width:360px){.close-status-strip{gap:3px}.close-status-strip span{font-size:10px;padding:7px 2px}}
+
+/* Build 82 — group select all */
+.order-select-all{display:flex;align-items:center;gap:7px;padding:7px 0 8px;border-bottom:1px solid #eee;color:#777;font-size:12px;font-weight:700;cursor:pointer}
+.order-select-all input{width:17px;height:17px;min-height:17px;accent-color:var(--accent)}
