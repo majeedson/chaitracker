@@ -1,4 +1,4 @@
-const APP_BUILD = 76;
+const APP_BUILD = 77;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -876,6 +876,16 @@ async function renderStock(view,supabase,profile){
       </div>
       <section id="tomorrowOrderSection" class="summary-section" hidden><div class="summary-section-title"><span></span><h3>Tomorrow's order</h3></div><p class="section-help">Suggested quantities are a starting point. Adjust before sending.</p><div id="tomorrowOrderRows"></div><div class="summary-actions"><button id="makeOrderMessage" class="secondary" type="button">Generate order message</button></div><div id="orderPreview" class="whatsapp-preview" hidden><div class="whatsapp-preview-head"><strong>Order message</strong><button id="copyOrderMessage" type="button" class="summary-add">Copy</button></div><textarea id="orderText" readonly></textarea><p id="orderCopyStatus" class="summary-inline-status" hidden></p></div></section>
     </div>`;
+  const countPane=view.querySelector('#tonightStockPane');
+  const orderPane=view.querySelector('#tomorrowOrderSection');
+  const workflowBtns=[...view.querySelectorAll('[data-stock-view]')];
+  const switchStockView=async mode=>{
+    workflowBtns.forEach(b=>b.classList.toggle('active',b.dataset.stockView===mode));
+    countPane.hidden=mode!=='count';
+    orderPane.hidden=mode!=='order';
+    if(mode==='order'&&!orderPane.dataset.loaded) await loadOrders();
+  };
+  workflowBtns.forEach(b=>b.addEventListener('click',()=>switchStockView(b.dataset.stockView)));
   const show=(m,t='error')=>{const b=view.querySelector('#stockMessage');b.textContent=m;b.className='purchase-message '+(t==='success'?'success':'error');b.hidden=false;b.scrollIntoView({behavior:'smooth',block:'center'});};
   const updateProgress=()=>{
     const cig=[...view.querySelectorAll('.controlled-stock')],cigDone=cig.filter(r=>r.querySelector('.pack-count').value!==''&&r.querySelector('.loose-count').value!=='').length;
