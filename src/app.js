@@ -1,4 +1,4 @@
-const APP_BUILD = 85;
+const APP_BUILD = 86;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -1231,14 +1231,15 @@ async function renderAttendance(view, supabase, profile) {
   let filter='today',selectedMonth=monthKey,staffRows=[];
   view.innerHTML=`
     <div class="attendance-page ${isAdmin?'attendance-admin':'attendance-staff'}">
+      <div class="attendance-workspace-toggle"><button type="button" class="active" data-att-view="attendance">Attendance</button><button type="button" data-att-view="leave">Leave</button></div>
+      <div id="attendancePanel">
       <div class="attendance-home-context"><div><span class="eyebrow">Today</span><strong id="attendanceTodayContext">Loading café day…</strong><small id="attendanceActionContext">Checking attendance status…</small></div></div>
       ${!isAdmin?`<section class="attendance-checkin attendance-primary-action"><div><strong id="staffAttendanceStatus">Ready to check in</strong><span id="staffAttendanceHint">Take a photo to mark today’s attendance.</span></div><input id="attendancePhoto" type="file" accept="image/jpeg,image/png,image/webp" capture="user" hidden><button id="checkinBtn" class="primary" type="button">Take photo & check in</button><p id="checkinMsg" class="summary-inline-status" hidden></p></section>`:''}
       <div class="summary-title-row attendance-heading"><div><span class="eyebrow">${isAdmin?'Workforce':'History'}</span><h2>Attendance</h2><p id="attendanceContext">Today’s attendance</p></div><span class="summary-state" id="attendanceState">Loading…</span></div>
 
       <section class="attendance-filter-bar"><div class="attendance-tabs"><button data-range="today" class="active">Today</button><button data-range="yesterday">Yesterday</button><button data-range="month">Month</button></div><label id="monthPickerWrap" class="summary-label attendance-month" hidden><span>Month</span><input id="attMonth" type="month" value="${selectedMonth}"></label></section>
       ${isAdmin?`<section class="summary-section compact"><div class="summary-section-title"><span></span><h3>Filter by staff</h3></div><label class="summary-label">Staff<select id="attStaff"><option value="">All staff</option></select></label></section>`:''}
-      ${userRow?.staff_id?`<details class="attendance-disclosure"><summary><span>Request leave</span><span class="disclosure-chevron">›</span></summary><div class="attendance-disclosure-body"><div class="summary-two"><label class="summary-label">From<input id="leaveStart" type="date"></label><label class="summary-label">To<input id="leaveEnd" type="date"></label></div><label class="summary-label full-field">Reason<input id="leaveReason" placeholder="Reason (optional)"></label><button id="submitLeave" class="secondary" type="button">Submit leave request</button><div id="leaveMessage" class="purchase-message" hidden></div></div></details>`:''}
-      <details class="attendance-disclosure" ${isAdmin?'open':''}><summary><span>${isAdmin?'Leave requests':'My leave requests'}</span><span class="disclosure-chevron">›</span></summary><div class="attendance-disclosure-body" id="leaveRequests"><p class="section-help">Loading leave requests…</p></div></details>
+
       <div id="attendanceMessage" class="purchase-message" hidden></div>
       <div id="attendanceCorrection" class="attendance-correction" hidden>
         <div class="attendance-correction-card"><div class="section-heading"><div><span class="eyebrow">Correction</span><h3>Correct check-in</h3></div><button id="cancelCorrection" class="ghost" type="button">Cancel</button></div>
@@ -1247,7 +1248,13 @@ async function renderAttendance(view, supabase, profile) {
         <button id="saveCorrection" class="primary" type="button">Save correction</button></div>
       </div>
       <div id="attendanceStats"></div>
-      <section class="summary-section"><div class="summary-section-title"><span></span><h3 id="attendanceListTitle">Attendance</h3></div><div id="attendanceList"><p class="section-help">Loading attendance…</p></div></section>
+      <details id="attendanceRecordsDisclosure" class="attendance-disclosure attendance-records" open><summary><span id="attendanceListTitle">Attendance</span><span class="disclosure-chevron">›</span></summary><div class="attendance-disclosure-body" id="attendanceList"><p class="section-help">Loading attendance…</p></div></details>
+      </div>
+      <div id="leavePanel" hidden>
+        <div class="summary-title-row attendance-heading"><div><span class="eyebrow">Time off</span><h2>Leave</h2><p>Request leave and check its status.</p></div></div>
+        ${userRow?.staff_id?`<section class="summary-section compact"><div class="summary-section-title"><span></span><h3>Request leave</h3></div><div class="summary-two"><label class="summary-label">From<input id="leaveStart" type="date"></label><label class="summary-label">To<input id="leaveEnd" type="date"></label></div><label class="summary-label full-field">Reason<input id="leaveReason" placeholder="Reason (optional)"></label><button id="submitLeave" class="secondary" type="button">Submit leave request</button><div id="leaveMessage" class="purchase-message" hidden></div></section>`:''}
+        <section class="summary-section"><div class="summary-section-title"><span></span><h3>${isAdmin?'Leave requests':'My leave requests'}</h3></div><div id="leaveRequests"><p class="section-help">Loading leave requests…</p></div></section>
+      </div>
     </div>`;
   const outletSelect=view.querySelector('#attOutlet'),staffSelect=view.querySelector('#attStaff'),monthInput=view.querySelector('#attMonth');
   const loadLeaveRequests=async()=>{const{data,error}=await supabase.rpc('get_leave_requests',{p_outlet_id:isAdmin?outletId:null});const box=view.querySelector('#leaveRequests');if(error){box.innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';return;}const rows=Array.isArray(data)?data:[];box.innerHTML=rows.length?rows.map(r=>`<div class="leave-row"><div><strong>${escapeHtml(r.staff_name||'Leave')}</strong><small>${escapeHtml(r.start_date)} → ${escapeHtml(r.end_date)} · ${escapeHtml(r.leave_type||'Leave')}</small>${r.reason?`<small>${escapeHtml(r.reason)}</small>`:''}</div><span class="soft-badge">${escapeHtml(r.status||'PENDING')}</span>${isAdmin&&r.status==='PENDING'?`<div class="leave-actions"><button class="secondary leave-review" data-id="${r.id}" data-status="APPROVED">Approve</button><button class="ghost leave-review" data-id="${r.id}" data-status="REJECTED">Reject</button></div>`:''}</div>`).join(''):'<div class="notice">No leave requests.</div>';box.querySelectorAll('.leave-review').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;const{error}=await supabase.rpc('review_leave_request',{p_request_id:Number(btn.dataset.id),p_status:btn.dataset.status,p_review_note:null});if(error){showAttendanceMessage(error.message);btn.disabled=false;return;}showAttendanceMessage('Leave request '+btn.dataset.status.toLowerCase()+'.','success');await loadLeaveRequests();await refresh();});};
@@ -1279,7 +1286,7 @@ async function renderAttendance(view, supabase, profile) {
     const notInCount=rows.filter(r=>r.status==='NOT_CHECKED_IN').length;
     view.querySelector('#attendanceActionContext').textContent=filter!=='today'?'Viewing attendance history':!isAdmin?'Your attendance for today':reviewCount?reviewCount+' attendance '+(reviewCount===1?'record needs':'records need')+' review':notInCount?notInCount+' '+(notInCount===1?'person has':'people have')+' not checked in':'No attendance action pending';
     view.querySelector('#attendanceContext').textContent=filter==='today'?'Today’s attendance':filter==='yesterday'?'Yesterday’s attendance':new Date(selectedMonth+'-01T12:00:00').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
-    view.querySelector('#attendanceState').textContent=rows.length+(filter==='month'?' calendar rows':' staff');view.querySelector('#attendanceListTitle').textContent=filter==='month'?'Calendar':'Attendance';
+    view.querySelector('#attendanceState').textContent=rows.length+(filter==='month'?' calendar rows':' staff');view.querySelector('#attendanceListTitle').textContent=filter==='month'?'View daily attendance':'Attendance';const recordsDisclosure=view.querySelector('#attendanceRecordsDisclosure');if(recordsDisclosure)recordsDisclosure.open=filter!=='month';
     const priority={NEEDS_REVIEW:0,ABSENT:1,NOT_CHECKED_IN:2,LATE:3,HALF_DAY:4,LEAVE:5,PRESENT:6,WEEKLY_OFF:7,UPCOMING:8};
     const ordered=[...rows].sort((a,b)=>filter==='month'?(b.attendance_date.localeCompare(a.attendance_date)||a.staff_name.localeCompare(b.staff_name)):((priority[a.status]??9)-(priority[b.status]??9)||a.staff_name.localeCompare(b.staff_name)));
     view.querySelector('#attendanceList').innerHTML=ordered.length?ordered.map(r=>`<article class="attendance-row ${r.status==='NEEDS_REVIEW'?'attention':''}"><div class="attendance-main"><div class="attendance-name">${escapeHtml(r.staff_name)}</div><div class="attendance-meta">${prettyDate(r.attendance_date)} · Shift ${prettyTime(r.shift_start)}</div></div><div class="attendance-result"><div class="attendance-time">${r.punch_time?prettyTime(r.punch_time):'—'}</div><span class="attendance-badge ${statusClass(r.status)}">${escapeHtml(statusLabel(r))}</span></div><div class="attendance-actions">${r.photo_url?'<button type="button" class="text-action photo-btn">View photo</button>':''}${isAdmin&&r.punch_time?'<button type="button" class="text-action correct-btn">Correct</button>':''}</div></article>`).join(''):'<p class="section-help">No staff records for this period.</p>';
@@ -1287,6 +1294,7 @@ async function renderAttendance(view, supabase, profile) {
     if(!isAdmin){const row=rows.find(r=>r.attendance_date===todayIST&&Number(r.staff_id)===Number(staffId)),btn=view.querySelector('#checkinBtn'),status=view.querySelector('#staffAttendanceStatus'),hint=view.querySelector('#staffAttendanceHint');if(btn){const checked=!!row?.punch_time;btn.disabled=checked;btn.textContent=checked?'Checked in · '+prettyTime(row.punch_time):'Take photo & check in';if(status)status.textContent=checked?'Checked in':'Not checked in';if(hint)hint.textContent=checked?'Today’s attendance is recorded.':'Take a photo to mark today’s attendance.';}}
   };
 
+  view.querySelectorAll('[data-att-view]').forEach(btn=>btn.onclick=()=>{const leave=btn.dataset.attView==='leave';view.querySelectorAll('[data-att-view]').forEach(b=>b.classList.toggle('active',b===btn));view.querySelector('#attendancePanel').hidden=leave;view.querySelector('#leavePanel').hidden=!leave;});
   if(isAdmin){await loadStaff();staffSelect.onchange=()=>{staffId=staffSelect.value?Number(staffSelect.value):null;refresh();};}
   view.querySelectorAll('.attendance-tabs button').forEach(btn=>btn.onclick=()=>{filter=btn.dataset.range;view.querySelectorAll('.attendance-tabs button').forEach(b=>b.classList.toggle('active',b===btn));view.querySelector('#monthPickerWrap').hidden=filter!=='month';refresh();});
   if(monthInput)monthInput.onchange=()=>{selectedMonth=monthInput.value||monthKey;refresh();};
