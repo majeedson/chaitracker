@@ -590,3 +590,18 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .spinner-buttons button+button{border-top:1px solid var(--line)!important}
 @media(max-width:520px){.compact-cig-row{grid-template-columns:minmax(0,1fr) 122px!important}.compact-cig-entry{grid-template-columns:58px 58px!important;width:122px!important}.compact-cig-info strong{font-size:14px!important}}
 @media(max-width:350px){.compact-cig-row{grid-template-columns:1fr!important}.compact-cig-entry{justify-content:start!important}}
+
+
+/* Build 96 — clean compact cigarette spinner */
+.compact-cig-row{grid-template-columns:minmax(0,1fr) 112px!important;gap:8px!important}
+.compact-cig-entry{grid-template-columns:53px 53px!important;gap:6px!important;min-width:112px!important;width:112px!important}
+.compact-cig-entry label{width:53px!important;min-width:53px!important}
+.stock-spinner{display:grid!important;grid-template-columns:33px 18px!important;width:51px!important;height:34px!important;border:1px solid var(--line)!important;border-radius:9px!important;overflow:hidden!important}
+.stock-spinner input{width:33px!important;min-width:33px!important;max-width:33px!important;height:32px!important;font-size:15px!important;line-height:32px!important;padding:0!important;border:0!important;text-align:center!important}
+.spinner-buttons{width:18px!important;height:32px!important;border-left:1px solid var(--line)!important}
+.spinner-buttons button{width:18px!important;min-width:18px!important;height:16px!important;font-size:0!important;color:transparent!important;position:relative!important}
+.spinner-buttons button::before{content:"";display:block;width:0;height:0;border-left:3.5px solid transparent;border-right:3.5px solid transparent;position:absolute;left:5px}
+.spinner-buttons .step-up::before{border-bottom:5px solid currentColor;border-top:0;top:5px;color:#168cf5}
+.spinner-buttons .step-down::before{border-top:5px solid currentColor;border-bottom:0;bottom:5px;color:#168cf5}
+.compact-cig-entry label>span:first-child{font-size:8px!important}
+@media(max-width:520px){.compact-cig-row{grid-template-columns:minmax(0,1fr) 112px!important}.compact-cig-entry{grid-template-columns:53px 53px!important;width:112px!important;min-width:112px!important}}
