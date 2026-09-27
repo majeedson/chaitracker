@@ -605,3 +605,18 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .spinner-buttons .step-down::before{border-top:5px solid currentColor;border-bottom:0;bottom:5px;color:#168cf5}
 .compact-cig-entry label>span:first-child{font-size:8px!important}
 @media(max-width:520px){.compact-cig-row{grid-template-columns:minmax(0,1fr) 112px!important}.compact-cig-entry{grid-template-columns:53px 53px!important;width:112px!important;min-width:112px!important}}
+
+
+/* Build 97 — iOS-safe cigarette controls */
+.stock-spinner{display:flex!important;width:48px!important;height:32px!important;min-width:48px!important;border:1px solid #ddd!important;border-radius:8px!important;overflow:hidden!important;background:#fff!important;box-sizing:border-box!important}
+.stock-spinner input[type="text"]{display:block!important;flex:0 0 30px!important;width:30px!important;min-width:30px!important;max-width:30px!important;height:30px!important;min-height:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;outline:0!important;margin:0!important;padding:0!important;background:#fff!important;text-align:center!important;font-size:14px!important;font-weight:700!important;line-height:30px!important;color:inherit!important}
+.stock-spinner .spinner-buttons{display:flex!important;flex-direction:column!important;flex:0 0 17px!important;width:17px!important;height:30px!important;border-left:1px solid #ddd!important}
+.stock-spinner .spinner-buttons button{display:block!important;position:relative!important;flex:0 0 15px!important;width:17px!important;min-width:17px!important;height:15px!important;min-height:15px!important;border:0!important;border-radius:0!important;margin:0!important;padding:0!important;background:#f8f8f8!important;box-shadow:none!important}
+.stock-spinner .spinner-buttons button+button{border-top:1px solid #ddd!important}
+.stock-spinner .spinner-buttons .step-up:after,.stock-spinner .spinner-buttons .step-down:after{content:""!important;position:absolute!important;left:5px!important;width:0!important;height:0!important;border-left:3px solid transparent!important;border-right:3px solid transparent!important}
+.stock-spinner .spinner-buttons .step-up:after{top:5px!important;border-bottom:4px solid #168cf5!important}
+.stock-spinner .spinner-buttons .step-down:after{bottom:5px!important;border-top:4px solid #168cf5!important}
+.compact-cig-entry{grid-template-columns:50px 50px!important;gap:5px!important;width:105px!important;min-width:105px!important}
+.compact-cig-entry label{width:50px!important;min-width:50px!important}
+.compact-cig-row{grid-template-columns:minmax(0,1fr) 105px!important}
+@media(max-width:520px){.compact-cig-row{grid-template-columns:minmax(0,1fr) 105px!important}.compact-cig-entry{grid-template-columns:50px 50px!important;width:105px!important;min-width:105px!important}}
