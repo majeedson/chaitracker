@@ -628,3 +628,11 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .compact-cig-entry label{display:block!important;width:44px!important;min-width:44px!important}
 .cig-simple-input{display:block!important;width:44px!important;min-width:44px!important;max-width:44px!important;height:34px!important;min-height:34px!important;margin:0!important;padding:0 4px!important;border:1px solid var(--line,#ddd)!important;border-radius:9px!important;background:var(--surface,#fff)!important;box-sizing:border-box!important;text-align:center!important;font-size:15px!important;font-weight:700!important;line-height:34px!important;box-shadow:none!important}
 @media(max-width:520px){.compact-cig-row{grid-template-columns:minmax(0,1fr) 94px!important}.compact-cig-entry{grid-template-columns:44px 44px!important;width:94px!important;min-width:94px!important}}
+
+
+/* Build 99 — stock quantity + unit */
+.stock-count-row{grid-template-columns:minmax(0,1fr) auto!important;gap:10px!important}
+.stock-qty-unit{display:grid;grid-template-columns:74px 62px;gap:6px;align-items:center}
+.stock-qty-unit .stock-count{width:74px!important;min-width:0!important;box-sizing:border-box!important;text-align:center}
+.stock-unit-select{width:62px;height:42px;min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:0 7px;font:inherit;font-size:13px;font-weight:600;box-sizing:border-box}
+@media(max-width:420px){.stock-qty-unit{grid-template-columns:64px 56px;gap:5px}.stock-qty-unit .stock-count{width:64px!important}.stock-unit-select{width:56px;padding:0 5px}}
