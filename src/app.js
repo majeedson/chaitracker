@@ -1,4 +1,4 @@
-const APP_BUILD = 92;
+const APP_BUILD = 93;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
