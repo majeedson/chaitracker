@@ -510,3 +510,18 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .compact-cig-entry{gap:7px}
 .compact-cig-entry label{min-width:0}
 @media(max-width:420px){.compact-cig-row{align-items:flex-start}.compact-cig-entry{width:100%;justify-content:space-between}.stock-stepper{grid-template-columns:32px 42px 32px}.stock-stepper button{width:32px;height:32px}.stock-stepper input{width:42px!important}}
+
+
+/* Build 91 — verified cigarette count + stock cycle */
+.stock-cycle-toggle{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin:0 0 10px;background:var(--soft,#f4f4f5);border-radius:13px}
+.stock-cycle-toggle button{border:0;background:transparent;border-radius:10px;padding:9px 10px;font-weight:700}
+.stock-cycle-toggle button.active{background:var(--surface,#fff);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.compact-cig-row{padding:8px 0;min-height:0}
+.compact-cig-info strong{font-size:15px}.compact-cig-info small{font-size:11px}
+.compact-cig-entry label>span:first-child{display:block;font-size:9px;line-height:1;margin:0 0 3px;text-align:center;text-transform:uppercase;letter-spacing:.04em;opacity:.58}
+.stock-stepper{grid-template-columns:29px 38px 29px;gap:2px}
+.stock-stepper button{width:29px;height:29px;border-radius:8px;font-size:17px}
+.stock-stepper input{width:38px!important;height:29px;padding:3px 1px!important;font-size:15px}
+.cigarette-confirm{width:calc(100% - 20px);margin:10px}
+.controlled-stock:has(.pack-count[value="0"]){opacity:.86}
+@media(max-width:420px){.stock-stepper{grid-template-columns:28px 37px 28px}.stock-stepper button{width:28px;height:28px}.stock-stepper input{width:37px!important}.compact-cig-entry{gap:5px}}
