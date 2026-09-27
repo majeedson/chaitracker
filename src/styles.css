@@ -481,3 +481,9 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .attendance-staff .attendance-filter-bar .attendance-month{display:grid;grid-template-columns:auto minmax(0,1fr);width:100%;box-sizing:border-box}
 .attendance-staff .attendance-filter-bar .attendance-month input{min-width:0;width:100%;box-sizing:border-box}
 .attendance-staff .attendance-records{width:100%;box-sizing:border-box}
+
+
+/* Build 88 — iOS month control containment */
+.attendance-staff .attendance-filter-bar .attendance-month{display:block;width:100%;margin:10px 0 0;min-width:0}
+.attendance-staff .attendance-filter-bar .attendance-month>span{display:block;margin:0 0 6px}
+.attendance-staff .attendance-filter-bar .attendance-month input[type="month"]{display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box;margin:0;-webkit-appearance:none;appearance:none}
