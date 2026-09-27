@@ -1,10 +1,13 @@
-const APP_BUILD = 102;
+import { renderExtraTime } from './extraTime.js';
+
+const APP_BUILD = 103;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
   ['salary', 'Salary'],
   ['stock', 'Stock'],
   ['purchase', 'Purchase'],
+  ['extra-time', 'Extra Time'],
   ['summary', 'Daily Summary'],
   ['po', 'Purchase Order'],
   ['delta', 'Delta'],
@@ -21,6 +24,7 @@ function icon(name, size=20) {
     attendance:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     stock:'<path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
     purchase:'<path d="M6 7h15l-2 8H8L6 3H3"/><circle cx="9" cy="19" r="1"/><circle cx="18" cy="19" r="1"/>',
+    'extra-time':'<path d="M13 2 5 14h6l-1 8 9-13h-6z"/>',
     po:'<path d="M6 3h12v18H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>',
     summary:'<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>',
     delta:'<path d="m7 7 5-4 5 4M12 3v8"/><path d="m17 17-5 4-5-4M12 21v-8"/>',
@@ -222,10 +226,10 @@ function renderWorkspace(root, supabase, profile) {
   const isAdmin = profile.access_class === 'ADMIN';
   const isManager = ['Manager','Ops Manager'].includes(profile.role);
   const allowedIds = isAdmin
-    ? ['dashboard','attendance','salary','stock','purchase','summary','po','delta','people']
+    ? ['dashboard','attendance','salary','stock','purchase','extra-time','summary','po','delta','people']
     : isManager
-      ? ['attendance','salary','stock','purchase','summary']
-      : ['attendance','salary','stock','purchase'];
+      ? ['attendance','salary','stock','purchase','extra-time','summary']
+      : ['attendance','salary','stock','purchase','extra-time'];
   const visibleModules = modules.filter(([id]) => allowedIds.includes(id));
   const landing = isAdmin ? 'dashboard' : 'attendance';
 
@@ -279,6 +283,7 @@ async function loadModule(view, supabase, profile, module) {
   if (module === 'summary') { await renderDailySummary(view, supabase, profile); return; }
   if (module === 'salary') { await renderSalary(view, supabase, profile); return; }
   if (module === 'purchase') { await renderPurchases(view, supabase, profile); return; }
+  if (module === 'extra-time') { await renderExtraTime(view, supabase, profile, {escapeHtml,icon}); return; }
   if (module === 'stock') { await renderStock(view, supabase, profile); return; }
   if (module === 'po') { await renderPurchaseOrders(view, supabase, profile); return; }
   if (module === 'delta') { await renderDelta(view, supabase, profile); return; }
