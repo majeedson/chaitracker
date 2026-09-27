@@ -471,3 +471,13 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .attendance-records>summary{min-height:48px}
 #leavePanel .attendance-heading{margin-top:4px}
 #leavePanel>.summary-section{margin-top:10px}
+
+
+/* Build 87 — stable monthly attendance layout */
+.attendance-staff .attendance-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;overflow:visible;padding:2px 0 6px}
+.attendance-staff .attendance-stats>div{min-width:0;width:auto;min-height:66px;padding:9px 5px}
+.attendance-staff .attendance-stats span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.attendance-staff .attendance-filter-bar{min-width:0}
+.attendance-staff .attendance-filter-bar .attendance-month{display:grid;grid-template-columns:auto minmax(0,1fr);width:100%;box-sizing:border-box}
+.attendance-staff .attendance-filter-bar .attendance-month input{min-width:0;width:100%;box-sizing:border-box}
+.attendance-staff .attendance-records{width:100%;box-sizing:border-box}
