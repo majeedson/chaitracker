@@ -423,3 +423,41 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 /* Build 82 — group select all */
 .order-select-all{display:flex;align-items:center;gap:7px;padding:7px 0 8px;border-bottom:1px solid #eee;color:#777;font-size:12px;font-weight:700;cursor:pointer}
 .order-select-all input{width:17px;height:17px;min-height:17px;accent-color:var(--accent)}
+
+
+/* Build 85 — staff-first attendance */
+.attendance-staff .attendance-home-context{padding:14px 16px;margin-bottom:10px}
+.attendance-staff .attendance-home-context strong{font-size:18px}
+.attendance-staff .attendance-home-context small{margin-top:2px}
+.attendance-primary-action{margin:0 0 14px;padding:16px;border-radius:18px}
+.attendance-primary-action>div{display:flex;flex-direction:column;gap:3px}
+.attendance-primary-action>div strong{font-size:17px}
+.attendance-primary-action>div span{font-size:13px;color:#888}
+.attendance-primary-action .primary{width:100%;min-height:48px;margin-top:12px}
+.attendance-heading{margin:10px 2px 8px}
+.attendance-staff .attendance-heading .eyebrow{font-size:11px}
+.attendance-staff .attendance-heading h2{font-size:25px;margin:1px 0}
+.attendance-staff .attendance-heading p{font-size:13px;margin:0}
+.attendance-filter-bar{margin:0 0 12px}
+.attendance-filter-bar .attendance-tabs{margin:0}
+.attendance-filter-bar .attendance-month{display:flex;align-items:center;gap:9px;margin:9px 0 0}
+.attendance-filter-bar .attendance-month[hidden]{display:none}
+.attendance-filter-bar .attendance-month span{font-size:12px;color:#777;font-weight:700}
+.attendance-filter-bar .attendance-month input{flex:1;min-height:40px}
+.attendance-disclosure{border:1px solid rgba(var(--accent-rgb,203,32,45),.13);border-radius:16px;background:#fff;margin:10px 0;overflow:hidden}
+.attendance-disclosure>summary{list-style:none;display:flex;align-items:center;justify-content:space-between;min-height:50px;padding:0 15px;cursor:pointer;font-size:14px;font-weight:750}
+.attendance-disclosure>summary::-webkit-details-marker{display:none}
+.attendance-disclosure .disclosure-chevron{font-size:24px;line-height:1;color:#aaa;transition:transform .18s ease}
+.attendance-disclosure[open] .disclosure-chevron{transform:rotate(90deg);color:var(--accent)}
+.attendance-disclosure-body{padding:0 14px 14px}
+.attendance-staff .attendance-stats{display:flex;overflow-x:auto;gap:7px;padding:2px 0 6px;scrollbar-width:none}
+.attendance-staff .attendance-stats::-webkit-scrollbar{display:none}
+.attendance-staff .attendance-stats>div{flex:0 0 92px;min-height:70px;padding:10px 8px;border-radius:14px}
+.attendance-staff .attendance-stats strong{font-size:22px}
+.attendance-staff .attendance-stats span{font-size:10px}
+@media(max-width:430px){
+ .attendance-staff{padding-top:0}
+ .attendance-staff .summary-section{padding:14px}
+ .attendance-staff .attendance-row{padding:12px 2px}
+ .attendance-primary-action{padding:14px}
+}
