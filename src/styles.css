@@ -498,3 +498,15 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .attendance-staff .attendance-heading{margin:4px 2px 5px}
 .attendance-staff .attendance-filter-bar{margin-bottom:6px}
 .attendance-staff .attendance-workspace-toggle{margin-bottom:9px}
+
+
+/* Build 90 — compact stock counting */
+.night-stock .stock-category{margin:8px 0}
+.night-stock .stock-category>summary{padding:12px 13px}
+.night-stock .stock-category-body{padding-top:4px}
+.stock-stepper{display:grid;grid-template-columns:34px 46px 34px;align-items:center;gap:3px}
+.stock-stepper button{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;background:var(--surface);font-size:20px;line-height:1;padding:0}
+.stock-stepper input{width:46px!important;min-width:0;text-align:center;padding:7px 2px!important}
+.compact-cig-entry{gap:7px}
+.compact-cig-entry label{min-width:0}
+@media(max-width:420px){.compact-cig-row{align-items:flex-start}.compact-cig-entry{width:100%;justify-content:space-between}.stock-stepper{grid-template-columns:32px 42px 32px}.stock-stepper button{width:32px;height:32px}.stock-stepper input{width:42px!important}}
