@@ -636,3 +636,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .stock-qty-unit .stock-count{width:74px!important;min-width:0!important;box-sizing:border-box!important;text-align:center}
 .stock-unit-select{width:62px;height:42px;min-width:0;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:0 7px;font:inherit;font-size:13px;font-weight:600;box-sizing:border-box}
 @media(max-width:420px){.stock-qty-unit{grid-template-columns:64px 56px;gap:5px}.stock-qty-unit .stock-count{width:64px!important}.stock-unit-select{width:56px;padding:0 5px}}
+
+
+/* Build 101 — procurement workspace */
+.purchase-workspace-toggle{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin:0 0 12px;background:var(--soft,#f4f4f5);border-radius:13px}
+.purchase-workspace-toggle button{border:0;background:transparent;border-radius:10px;padding:10px;font-weight:700}
+.purchase-workspace-toggle button.active{background:var(--surface,#fff);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+#purchaseOrderWorkspace .compact-heading{margin-bottom:8px}
+#purchaseOrderWorkspace .order-group-toggle{margin:8px 0 10px}
+#purchaseEntryWorkspace[hidden],#purchaseOrderWorkspace[hidden]{display:none!important}
