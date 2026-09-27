@@ -1,3 +1,5 @@
+import './extraTime.css';
+
 export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon} = {}) {
   const esc = escapeHtml || (v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])));
   if(profile.access_class==='ADMIN'&&!profile.context_outlet_id){
