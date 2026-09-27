@@ -55,7 +55,7 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
     const receiptHtml=[...receiptGroups.values()].map(items=>`<div class="extra-time-receipt" data-receipt-ids="${items.map(x=>x.id).join(',')}"><div><strong>Incoming from ${esc(outletMap.get(Number(items[0].source_outlet_id))||'Café')}</strong><small>${items.map(x=>esc(x.item_name)+' '+Number(x.requested_qty)+' '+esc(x.unit)).join(' · ')}</small></div><button type="button" class="secondary receipt-confirm">Received ✓</button></div>`).join('');
     panel.innerHTML=`
       <div class="extra-time-note">Enter only what this café needs. Saving creates the request; WhatsApp is optional.</div>
-      ${['CHICKEN_PATTY','SNACKS','JUICES'].map(requestSection).join('')}
+      ${['CHICKEN_PATTY','SNACKS','JUICES'].filter(category=>sourceFor[category]!==outletId).map(requestSection).join('')}
       ${receiptHtml?`<div class="extra-time-receipts"><span class="eyebrow">Awaiting receipt</span>${receiptHtml}</div>`:''}
       <div class="extra-time-actions"><button id="saveExtraRequest" class="primary full">Save Request</button><button id="generateExtraRequest" class="secondary full" ${lastSaved.length?'':'disabled'}>Generate Message</button></div>
       <div id="extraRequestMessage" class="whatsapp-preview" hidden><div class="whatsapp-preview-head"><strong>Request message</strong><button id="copyExtraRequest" class="summary-add" type="button">Copy</button></div><textarea readonly></textarea></div>
