@@ -19,6 +19,9 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
   };
   const labels={CHICKEN_PATTY:'Chicken Patty',SNACKS:'Snacks',JUICES:'Juices'};
   let tab='request',manual={CHICKEN_PATTY:[],SNACKS:[],JUICES:[]},lastSaved=[];
+  const rateKey=category=>'cafetracker-transfer-rate:'+category;
+  const getRate=category=>{const saved=Number(localStorage.getItem(rateKey(category)));return saved>0?saved:(category==='CHICKEN_PATTY'?20:category==='SNACKS'?2:0);};
+  const setRate=(category,value)=>localStorage.setItem(rateKey(category),String(value));
 
   view.innerHTML=`
     <div class="extra-time-page">
@@ -112,7 +115,7 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
         <div class="extra-time-dispatch-head"><div><span>${labels[cat]}</span><strong>To ${esc(outletMap.get(Number(first.request_outlet_id))||'Café')}</strong></div><small>${new Date(first.requested_at).toLocaleString()}</small></div>
         <div class="extra-time-dispatch-lines">${items.map(r=>`<div class="extra-time-dispatch-line" data-request-id="${r.id}"><span>${esc(r.item_name)} <small>Requested ${Number(r.requested_qty)} ${esc(r.unit)}</small></span><input class="dispatch-qty" type="number" min="0.01" step="0.01" inputmode="decimal" value="${Number(r.requested_qty)}"><em>${esc(r.unit)}</em></div>`).join('')}</div>
         <label class="extra-time-field">Prepared by<select class="prepared-by"><option value="">Select staff</option>${staff.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select></label>
-        ${pay?`<div class="extra-time-pay-basis"><label>${cat==='CHICKEN_PATTY'?'Whole chickens processed':'Pieces prepared'}<input class="prep-qty" type="number" min="0" step="1" inputmode="decimal" placeholder="0"></label><span>${cat==='CHICKEN_PATTY'?'Chicken':'Pc'} · payment basis</span></div>`:'<div class="extra-time-note compact">Juice dispatch is tracked without an Transfers payment entry.</div>'}
+        ${pay?`<div class="extra-time-pay-basis"><label>${cat==='CHICKEN_PATTY'?'Whole chickens processed':'Pieces prepared'}<input class="prep-qty" type="number" min="0" step="1" inputmode="decimal" placeholder="0"></label><label>Rate ₹<input class="prep-rate" type="number" min="0" step="0.01" inputmode="decimal" value="${getRate(cat)}"></label><span>${cat==='CHICKEN_PATTY'?'Chicken':'Pc'} · payment basis</span></div>`:'<div class="extra-time-note compact">Juice dispatch is tracked without a preparation payment entry.</div>'}
         <div class="extra-time-actions inline"><button class="primary dispatch-confirm" type="button">Confirm & Dispatch</button><button class="secondary dispatch-message" type="button" disabled>Generate Message</button></div>
         <div class="dispatch-preview whatsapp-preview" hidden><div class="whatsapp-preview-head"><strong>Dispatch message</strong><button class="summary-add copy-dispatch" type="button">Copy</button></div><textarea readonly></textarea></div>
         <p class="dispatch-status form-error" hidden></p>
@@ -125,6 +128,9 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
     const cat=card.dataset.category,status=card.querySelector('.dispatch-status'),preparedBy=card.querySelector('.prepared-by').value;
     if(!preparedBy){status.textContent='Select who prepared this batch.';status.hidden=false;return;}
     const prepQty=cat==='JUICES'?null:Number(card.querySelector('.prep-qty')?.value||0);
+    const prepRate=cat==='JUICES'?null:Number(card.querySelector('.prep-rate')?.value||0);
+    if(cat!=='JUICES'&&prepRate<0){status.textContent='Rate cannot be negative.';status.hidden=false;return;}
+    if(cat!=='JUICES')setRate(cat,prepRate);
     if(cat!=='JUICES'&&prepQty<=0){status.textContent='Enter the preparation quantity used for Transfers payment.';status.hidden=false;return;}
     const lines=[...card.querySelectorAll('.extra-time-dispatch-line')].map(r=>({request_id:Number(r.dataset.requestId),qty:Number(r.querySelector('.dispatch-qty').value||0),unit:r.querySelector('em').textContent}));
     if(lines.some(x=>x.qty<=0)){status.textContent='Dispatch quantities must be greater than zero.';status.hidden=false;return;}
@@ -136,7 +142,7 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
     const {error:updateError}=await supabase.from('extra_time_requests').update({status:'DISPATCHED'}).in('id',ids);
     if(updateError){status.textContent=updateError.message;status.hidden=false;btn.disabled=false;btn.textContent='Confirm & Dispatch';return;}
     if(cat!=='JUICES'&&dispatches?.length){
-      const {error:payError}=await supabase.from('extra_time_payments').insert({dispatch_id:dispatches[0].id,staff_user_id:preparedBy,category:cat,basis_qty:prepQty,basis_unit:cat==='CHICKEN_PATTY'?'Chicken':'Pc',status:'PENDING_RATE'});
+      const {error:payError}=await supabase.from('extra_time_payments').insert({dispatch_id:dispatches[0].id,staff_user_id:preparedBy,category:cat,basis_qty:prepQty,basis_unit:cat==='CHICKEN_PATTY'?'Chicken':'Pc',rate:prepRate,status:'READY'});
       if(payError){status.textContent='Dispatched, but payment entry needs attention: '+payError.message;status.hidden=false;}
     }
     card.querySelectorAll('input,select').forEach(x=>x.disabled=true);btn.textContent='Dispatched ✓';card.querySelector('.dispatch-message').disabled=false;
