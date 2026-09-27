@@ -46,9 +46,14 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
   };
 
   async function drawRequest(){
+    const {data:awaitingReceipt}=await supabase.from('extra_time_requests').select('id,request_group,source_outlet_id,category,item_name,requested_qty,unit').eq('request_outlet_id',outletId).eq('status','DISPATCHED').order('requested_at',{ascending:false});
+    const receiptGroups=new Map();
+    (awaitingReceipt||[]).forEach(r=>{if(!receiptGroups.has(r.request_group))receiptGroups.set(r.request_group,[]);receiptGroups.get(r.request_group).push(r);});
+    const receiptHtml=[...receiptGroups.values()].map(items=>`<div class="extra-time-receipt" data-receipt-ids="${items.map(x=>x.id).join(',')}"><div><strong>Incoming from ${esc(outletMap.get(Number(items[0].source_outlet_id))||'Café')}</strong><small>${items.map(x=>esc(x.item_name)+' '+Number(x.requested_qty)+' '+esc(x.unit)).join(' · ')}</small></div><button type="button" class="secondary receipt-confirm">Received ✓</button></div>`).join('');
     panel.innerHTML=`
       <div class="extra-time-note">Enter only what this café needs. Saving creates the request; WhatsApp is optional.</div>
       ${['CHICKEN_PATTY','SNACKS','JUICES'].map(requestSection).join('')}
+      ${receiptHtml?`<div class="extra-time-receipts"><span class="eyebrow">Awaiting receipt</span>${receiptHtml}</div>`:''}
       <div class="extra-time-actions"><button id="saveExtraRequest" class="primary full">Save Request</button><button id="generateExtraRequest" class="secondary full" ${lastSaved.length?'':'disabled'}>Generate Message</button></div>
       <div id="extraRequestMessage" class="whatsapp-preview" hidden><div class="whatsapp-preview-head"><strong>Request message</strong><button id="copyExtraRequest" class="summary-add" type="button">Copy</button></div><textarea readonly></textarea></div>
       <p id="extraTimeStatus" class="form-error" hidden></p>`;
@@ -59,6 +64,13 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
     });
     panel.querySelector('#saveExtraRequest').onclick=saveRequest;
     panel.querySelector('#generateExtraRequest').onclick=generateRequestMessage;
+    panel.querySelectorAll('.receipt-confirm').forEach(btn=>btn.onclick=async()=>{
+      const row=btn.closest('.extra-time-receipt'),ids=row.dataset.receiptIds.split(',').map(Number);
+      btn.disabled=true;btn.textContent='Saving…';
+      const {error}=await supabase.from('extra_time_requests').update({status:'RECEIVED',received_at:new Date().toISOString()}).in('id',ids);
+      if(error){btn.disabled=false;btn.textContent='Received ✓';alert(error.message);return;}
+      row.remove();
+    });
   }
 
   async function saveRequest(){
@@ -128,7 +140,7 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
       if(payError){status.textContent='Dispatched, but payment entry needs attention: '+payError.message;status.hidden=false;}
     }
     card.querySelectorAll('input,select').forEach(x=>x.disabled=true);btn.textContent='Dispatched ✓';card.querySelector('.dispatch-message').disabled=false;
-    if(status.hidden){status.textContent='Dispatch saved ✓';status.className='dispatch-status summary-inline-status ok';status.hidden=false;}
+    if(status.hidden){status.textContent=cat==='JUICES'?'Dispatch saved ✓':'Dispatch saved ✓ · Extra Time payment linked';status.className='dispatch-status summary-inline-status ok';status.hidden=false;}
   }
 
   function generateDispatchMessage(card){
