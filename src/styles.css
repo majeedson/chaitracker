@@ -620,3 +620,11 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .compact-cig-entry label{width:50px!important;min-width:50px!important}
 .compact-cig-row{grid-template-columns:minmax(0,1fr) 105px!important}
 @media(max-width:520px){.compact-cig-row{grid-template-columns:minmax(0,1fr) 105px!important}.compact-cig-entry{grid-template-columns:50px 50px!important;width:105px!important;min-width:105px!important}}
+
+
+/* Build 98 — simple prefilled cigarette fields */
+.compact-cig-row{grid-template-columns:minmax(0,1fr) 94px!important}
+.compact-cig-entry{display:grid!important;grid-template-columns:44px 44px!important;gap:6px!important;width:94px!important;min-width:94px!important}
+.compact-cig-entry label{display:block!important;width:44px!important;min-width:44px!important}
+.cig-simple-input{display:block!important;width:44px!important;min-width:44px!important;max-width:44px!important;height:34px!important;min-height:34px!important;margin:0!important;padding:0 4px!important;border:1px solid var(--line,#ddd)!important;border-radius:9px!important;background:var(--surface,#fff)!important;box-sizing:border-box!important;text-align:center!important;font-size:15px!important;font-weight:700!important;line-height:34px!important;box-shadow:none!important}
+@media(max-width:520px){.compact-cig-row{grid-template-columns:minmax(0,1fr) 94px!important}.compact-cig-entry{grid-template-columns:44px 44px!important;width:94px!important;min-width:94px!important}}
