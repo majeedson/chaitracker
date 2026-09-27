@@ -487,3 +487,14 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .attendance-staff .attendance-filter-bar .attendance-month{display:block;width:100%;margin:10px 0 0;min-width:0}
 .attendance-staff .attendance-filter-bar .attendance-month>span{display:block;margin:0 0 6px}
 .attendance-staff .attendance-filter-bar .attendance-month input[type="month"]{display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box;margin:0;-webkit-appearance:none;appearance:none}
+
+
+/* Build 89 — tighter staff attendance rhythm */
+.attendance-staff{gap:10px}
+.attendance-staff .attendance-home-context{padding:10px 14px;margin-bottom:4px}
+.attendance-staff .attendance-home-context small:empty{display:none}
+.attendance-staff .attendance-primary-action{margin:0 0 8px;padding:12px 14px}
+.attendance-staff .attendance-primary-action .primary{margin-top:9px;min-height:46px}
+.attendance-staff .attendance-heading{margin:4px 2px 5px}
+.attendance-staff .attendance-filter-bar{margin-bottom:6px}
+.attendance-staff .attendance-workspace-toggle{margin-bottom:9px}
