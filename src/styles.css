@@ -531,3 +531,27 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .stock-monthly-notice{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
 .stock-monthly-notice strong{font-size:13px;white-space:nowrap}.stock-monthly-notice span{font-size:11px;line-height:1.25;opacity:.65;text-align:right}
 .stock-cycle-toggle button{position:relative}
+
+
+/* Build 93 — responsive cigarette controls */
+.compact-cig-row{display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}
+.compact-cig-info{min-width:0}
+.compact-cig-entry{display:flex!important;align-items:flex-end;justify-content:flex-end;gap:6px;min-width:0;width:auto!important}
+.compact-cig-entry label{display:block;min-width:0}
+.stock-stepper{display:grid!important;grid-template-columns:30px 40px 30px!important;gap:3px!important;align-items:center}
+.stock-stepper button{position:static!important;display:flex;align-items:center;justify-content:center;width:30px!important;min-width:30px!important;height:32px!important;padding:0!important;margin:0!important;box-sizing:border-box}
+.stock-stepper input{position:static!important;width:40px!important;min-width:40px!important;max-width:40px!important;height:32px!important;margin:0!important;padding:2px!important;box-sizing:border-box;text-align:center}
+.compact-cig-entry .controlled-total{display:none}
+@media(max-width:520px){
+ .compact-cig-row{grid-template-columns:1fr!important;gap:5px}
+ .compact-cig-entry{justify-content:space-between!important;width:100%!important}
+ .compact-cig-entry label{flex:0 1 auto}
+ .stock-stepper{grid-template-columns:32px minmax(42px,1fr) 32px!important}
+ .stock-stepper button{width:32px!important;min-width:32px!important}
+ .stock-stepper input{width:100%!important;min-width:42px!important;max-width:58px!important}
+}
+@media(max-width:360px){
+ .stock-stepper{grid-template-columns:29px 40px 29px!important}
+ .stock-stepper button{width:29px!important;min-width:29px!important}
+ .stock-stepper input{width:40px!important;min-width:40px!important}
+}
