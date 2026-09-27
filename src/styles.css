@@ -575,3 +575,18 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
  .compact-cig-row{grid-template-columns:1fr!important;gap:5px!important}
  .compact-cig-entry{justify-content:start!important}
 }
+
+
+/* Build 95 — compact in-field cigarette spinners */
+.compact-cig-row{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;gap:8px!important;align-items:center!important;padding:8px 0!important}
+.compact-cig-entry{display:grid!important;grid-template-columns:58px 58px!important;gap:6px!important;width:auto!important;min-width:122px!important;justify-content:end!important;align-items:end!important}
+.compact-cig-entry label{display:block!important;width:58px!important;min-width:58px!important;margin:0!important}
+.compact-cig-entry label>span:first-child{display:block!important;font-size:8px!important;line-height:1!important;margin:0 0 3px!important;text-align:center!important;text-transform:uppercase}
+.stock-spinner{display:grid!important;grid-template-columns:36px 20px!important;width:56px!important;height:36px!important;border:1px solid var(--line)!important;border-radius:9px!important;overflow:hidden!important;background:var(--surface,#fff)!important;box-sizing:border-box!important}
+.stock-spinner input{appearance:textfield!important;-webkit-appearance:none!important;width:36px!important;min-width:36px!important;max-width:36px!important;height:34px!important;border:0!important;border-radius:0!important;margin:0!important;padding:0 2px!important;text-align:center!important;font-size:15px!important;font-weight:700!important;background:transparent!important;box-sizing:border-box!important}
+.stock-spinner input::-webkit-inner-spin-button,.stock-spinner input::-webkit-outer-spin-button{-webkit-appearance:none!important;margin:0!important}
+.spinner-buttons{display:grid!important;grid-template-rows:1fr 1fr!important;width:20px!important;height:34px!important;border-left:1px solid var(--line)!important}
+.spinner-buttons button{position:static!important;width:20px!important;min-width:20px!important;height:17px!important;border:0!important;border-radius:0!important;margin:0!important;padding:0!important;background:transparent!important;font-size:8px!important;line-height:1!important;display:flex!important;align-items:center!important;justify-content:center!important}
+.spinner-buttons button+button{border-top:1px solid var(--line)!important}
+@media(max-width:520px){.compact-cig-row{grid-template-columns:minmax(0,1fr) 122px!important}.compact-cig-entry{grid-template-columns:58px 58px!important;width:122px!important}.compact-cig-info strong{font-size:14px!important}}
+@media(max-width:350px){.compact-cig-row{grid-template-columns:1fr!important}.compact-cig-entry{justify-content:start!important}}
