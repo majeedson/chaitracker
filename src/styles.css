@@ -461,3 +461,13 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
  .attendance-staff .attendance-row{padding:12px 2px}
  .attendance-primary-action{padding:14px}
 }
+
+
+/* Build 86 — Attendance / Leave workspace */
+.attendance-workspace-toggle{position:sticky;top:0;z-index:8;display:grid;grid-template-columns:1fr 1fr;gap:3px;background:#ededed;border-radius:14px;padding:4px;margin:0 0 14px}
+.attendance-workspace-toggle button{min-height:40px;border:0;border-radius:11px;background:transparent;color:#777;font:inherit;font-size:13px;font-weight:750}
+.attendance-workspace-toggle button.active{background:#fff;color:var(--accent);box-shadow:0 1px 5px rgba(0,0,0,.09)}
+.attendance-records{margin-top:8px}
+.attendance-records>summary{min-height:48px}
+#leavePanel .attendance-heading{margin-top:4px}
+#leavePanel>.summary-section{margin-top:10px}
