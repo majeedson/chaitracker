@@ -11,9 +11,10 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
     supabase.from('users').select('id,name,outlet_id,active,staff_id').eq('active',true).order('name')
   ]);
   const outletMap=new Map((outlets||[]).map(o=>[Number(o.id),o.name]));
-  const sourceFor={CHICKEN_PATTY:2,SNACKS:1,JUICES:6};
+  const itemSource={Rumali:2,Samosa:1,Cutlet:1};
+  const sourceForItem=(category,name)=>category==='CHICKEN_PATTY'?2:category==='JUICES'?6:(itemSource[name]||1);
   const defaults={
-    CHICKEN_PATTY:[['Finger','Pc'],['Kheema','g'],['Chicken Patty','Pc']],
+    CHICKEN_PATTY:[['Tikka','g'],['Finger','Pc'],['Crispcross','Pc'],['Firehouse','Pc'],['Fried','Pc'],['Boiled Chicken','g'],['Kheema','g'],['Wings','Pc']],
     SNACKS:[['Samosa','Pc'],['Cutlet','Pc'],['Rumali','Pc']],
     JUICES:[['Watermelon','Pc'],['Lime','Pc'],['Kulukki','Pc'],['Kannur Cocktail','Pc']]
   };
@@ -26,22 +27,18 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
   view.innerHTML=`
     <div class="extra-time-page">
       <div class="compact-heading"><span class="eyebrow">Inter-café preparation</span><h2>Transfers</h2><p>${esc(outletMap.get(outletId)||'Café')}</p></div>
-      <div class="extra-time-toggle"><button class="active" data-et-tab="request">Request</button><button data-et-tab="dispatch">Dispatch</button></div>
+      <div class="extra-time-toggle"><button class="active" data-et-tab="request">Request</button><button data-et-tab="dispatch">Dispatch</button><button data-et-tab="receive">Receive</button></div>
       <div id="extraTimePanel"></div>
     </div>`;
   const panel=view.querySelector('#extraTimePanel');
   view.querySelectorAll('[data-et-tab]').forEach(btn=>btn.onclick=()=>{tab=btn.dataset.etTab;view.querySelectorAll('[data-et-tab]').forEach(b=>b.classList.toggle('active',b===btn));draw();});
 
-  const requestRows=category=>[...defaults[category],...manual[category]].map(([name,unit])=>`
-    <div class="extra-time-item">
-      <div><strong>${esc(name)}</strong><small>${esc(unit)}</small></div>
-      <input type="number" min="0" step="0.01" inputmode="decimal" placeholder="0" data-et-qty data-category="${category}" data-name="${esc(name)}" data-unit="${esc(unit)}">
-    </div>`).join('');
+  const requestRows=category=>[...defaults[category],...manual[category]].filter(([name])=>sourceForItem(category,name)!==outletId).map(([name,unit])=>category==='CHICKEN_PATTY'?`<label class="extra-time-item request-choice"><div><strong>${esc(name)}</strong><small>Request preparation</small></div><input type="checkbox" data-et-request data-category="${category}" data-name="${esc(name)}" data-unit="${esc(unit)}"></label>`:`<div class="extra-time-item"><div><strong>${esc(name)}</strong><small>${esc(unit)}</small></div><input type="number" min="0" step="0.01" inputmode="decimal" placeholder="0" data-et-request data-category="${category}" data-name="${esc(name)}" data-unit="${esc(unit)}"></div>`).join('');
 
   const requestSection=category=>{
-    const source=sourceFor[category],same=source===outletId;
+    const available=[...defaults[category],...manual[category]].filter(([name])=>sourceForItem(category,name)!==outletId); if(!available.length)return ''; const sources=[...new Set(available.map(([name])=>sourceForItem(category,name)))],source=sources[0],same=false;
     return `<details class="extra-time-section" ${category==='CHICKEN_PATTY'?'open':''}>
-      <summary><span><strong>${labels[category]}</strong><small>${same?'Prepared at this café':'From '+esc(outletMap.get(source)||'source café')}</small></span><b>›</b></summary>
+      <summary><span><strong>${labels[category]}</strong><small>${sources.length===1?'From '+esc(outletMap.get(source)||'source café'):'Prepared at different cafés'}</small></span><b>›</b></summary>
       <div class="extra-time-body">${requestRows(category)}
         <button class="extra-time-add" type="button" data-et-add="${category}">＋ Add Item</button>
       </div>
@@ -55,7 +52,7 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
     const receiptHtml=[...receiptGroups.values()].map(items=>`<div class="extra-time-receipt" data-receipt-ids="${items.map(x=>x.id).join(',')}"><div><strong>Incoming from ${esc(outletMap.get(Number(items[0].source_outlet_id))||'Café')}</strong><small>${items.map(x=>esc(x.item_name)+' '+Number(x.requested_qty)+' '+esc(x.unit)).join(' · ')}</small></div><button type="button" class="secondary receipt-confirm">Received ✓</button></div>`).join('');
     panel.innerHTML=`
       <div class="extra-time-note">Enter only what this café needs. Saving creates the request; WhatsApp is optional.</div>
-      ${['CHICKEN_PATTY','SNACKS','JUICES'].filter(category=>sourceFor[category]!==outletId).map(requestSection).join('')}
+      ${['CHICKEN_PATTY','SNACKS','JUICES'].map(requestSection).join('')}
       ${receiptHtml?`<div class="extra-time-receipts"><span class="eyebrow">Awaiting receipt</span>${receiptHtml}</div>`:''}
       <div class="extra-time-actions"><button id="saveExtraRequest" class="primary full">Save Request</button><button id="generateExtraRequest" class="secondary full" ${lastSaved.length?'':'disabled'}>Generate Message</button></div>
       <div id="extraRequestMessage" class="whatsapp-preview" hidden><div class="whatsapp-preview-head"><strong>Request message</strong><button id="copyExtraRequest" class="summary-add" type="button">Copy</button></div><textarea readonly></textarea></div>
@@ -78,13 +75,13 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
 
   async function saveRequest(){
     const status=panel.querySelector('#extraTimeStatus'),btn=panel.querySelector('#saveExtraRequest');
-    const entered=[...panel.querySelectorAll('[data-et-qty]')].map(i=>({category:i.dataset.category,item_name:i.dataset.name,unit:i.dataset.unit,requested_qty:Number(i.value||0)})).filter(x=>x.requested_qty>0);
-    if(!entered.length){status.textContent='Enter at least one quantity.';status.hidden=false;return;}
-    const invalid=entered.find(x=>sourceFor[x.category]===outletId);
+    const entered=[...panel.querySelectorAll('[data-et-request]')].map(i=>({category:i.dataset.category,item_name:i.dataset.name,unit:i.dataset.unit,requested_qty:i.dataset.category==='CHICKEN_PATTY'?(i.checked?1:0):Number(i.value||0)})).filter(x=>x.requested_qty>0);
+    if(!entered.length){status.textContent='Choose at least one item.';status.hidden=false;return;}
+    const invalid=entered.find(x=>sourceForItem(x.category,x.item_name)===outletId);
     if(invalid){status.textContent=labels[invalid.category]+' is prepared at this café, so it does not need an inter-café request.';status.hidden=false;return;}
     btn.disabled=true;btn.textContent='Saving…';status.hidden=true;
     const group=crypto.randomUUID();
-    const rows=entered.map(x=>({...x,request_group:group,request_outlet_id:outletId,source_outlet_id:sourceFor[x.category],requested_by:profile.id,status:'REQUESTED'}));
+    const rows=entered.map(x=>({...x,request_group:group,request_outlet_id:outletId,source_outlet_id:sourceForItem(x.category,x.item_name),requested_by:profile.id,status:'REQUESTED'}));
     const {data,error}=await supabase.from('extra_time_requests').insert(rows).select('id,request_group,source_outlet_id,category,item_name,requested_qty,unit');
     btn.disabled=false;btn.textContent='Save Request';
     if(error){status.textContent=error.message;status.hidden=false;return;}
@@ -96,7 +93,7 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
     if(!lastSaved.length)return;
     const bySource=new Map();
     lastSaved.forEach(r=>{if(!bySource.has(r.source_outlet_id))bySource.set(r.source_outlet_id,[]);bySource.get(r.source_outlet_id).push(r);});
-    const text=[...bySource.entries()].map(([source,rows])=>`Transfers Request\n${outletMap.get(outletId)||'Café'} → ${outletMap.get(Number(source))||'Preparing café'}\n`+rows.map(r=>`• ${r.item_name}: ${Number(r.requested_qty)} ${r.unit}`).join('\n')).join('\n\n');
+    const text=[...bySource.entries()].map(([source,rows])=>`Transfers Request\n${outletMap.get(outletId)||'Café'} → ${outletMap.get(Number(source))||'Preparing café'}\n`+rows.map(r=>r.category==='CHICKEN_PATTY'?`• ${r.item_name}`:`• ${r.item_name}: ${Number(r.requested_qty)} ${r.unit}`).join('\n')).join('\n\n');
     const box=panel.querySelector('#extraRequestMessage');box.hidden=false;box.querySelector('textarea').value=text;
     box.querySelector('#copyExtraRequest').onclick=async()=>{await navigator.clipboard.writeText(text);box.querySelector('#copyExtraRequest').textContent='Copied ✓';};
   }
