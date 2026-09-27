@@ -1,13 +1,13 @@
 import { renderExtraTime } from './extraTime.js';
 
-const APP_BUILD = 103;
+const APP_BUILD = 104;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
   ['salary', 'Salary'],
   ['stock', 'Stock'],
   ['purchase', 'Purchase'],
-  ['extra-time', 'Extra Time'],
+  ['extra-time', 'Transfers'],
   ['summary', 'Daily Summary'],
   ['po', 'Purchase Order'],
   ['delta', 'Delta'],
