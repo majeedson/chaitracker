@@ -1,4 +1,4 @@
-const APP_BUILD = 86;
+const APP_BUILD = 87;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -1278,7 +1278,7 @@ async function renderAttendance(view, supabase, profile) {
     const{data,error}=await supabase.rpc('get_attendance_calendar',{p_outlet_id:outletId,p_staff_id:staffId||null,p_start_date:startDate,p_end_date:endDate});
     if(error){view.querySelector('#attendanceList').innerHTML=`<p class="form-error">${escapeHtml(error.message)}</p>`;view.querySelector('#attendanceState').textContent='Error';return;}
     const rows=data||[],counts={present:rows.filter(r=>['PRESENT','LATE','HALF_DAY','NEEDS_REVIEW'].includes(r.status)).length,late:rows.filter(r=>['LATE','HALF_DAY'].includes(r.status)&&Number(r.late_mins)>0).length,lateMins:rows.reduce((a,r)=>a+Number(r.late_mins||0),0),absent:rows.filter(r=>r.status==='ABSENT').length,leave:rows.filter(r=>r.status==='LEAVE').length,missing:rows.filter(r=>r.status==='NOT_CHECKED_IN').length,half:rows.filter(r=>r.status==='HALF_DAY').length};
-    view.querySelector('#attendanceStats').innerHTML=`<div class="attendance-stats"><div><strong>${counts.present}</strong><span>Present</span></div><div><strong>${counts.late}</strong><span>Late</span></div>${filter==='month'?`<div><strong>${counts.lateMins}</strong><span>Late min</span></div><div><strong>${counts.absent}</strong><span>Absent</span></div><div><strong>${counts.leave}</strong><span>Leave</span></div><div><strong>${counts.half}</strong><span>Half-day</span></div>`:`<div><strong>${counts.missing}</strong><span>Not in</span></div><div><strong>${counts.absent}</strong><span>Absent</span></div>`}</div>`;
+    view.querySelector('#attendanceStats').innerHTML=`<div class="attendance-stats"><div><strong>${counts.present}</strong><span>Present</span></div><div><strong>${counts.late}</strong><span>Late</span></div>${filter==='month'?`<div><strong>${counts.absent}</strong><span>Absent</span></div><div><strong>${counts.leave}</strong><span>Leave</span></div><div><strong>${counts.half}</strong><span>Half-day</span></div><div><strong>${counts.lateMins}</strong><span>Late min</span></div>`:`<div><strong>${counts.missing}</strong><span>Not in</span></div><div><strong>${counts.absent}</strong><span>Absent</span></div>`}</div>`;
     const outletName=isOwner?((outlets||[]).find(x=>Number(x.id)===Number(outletId))?.name||'Café'):(profile.outlets?.name||'Café');
     const dayLabel=new Date(todayIST+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'});
     view.querySelector('#attendanceTodayContext').textContent=outletName+' · '+dayLabel;
