@@ -525,3 +525,9 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .cigarette-confirm{width:calc(100% - 20px);margin:10px}
 .controlled-stock:has(.pack-count[value="0"]){opacity:.86}
 @media(max-width:420px){.stock-stepper{grid-template-columns:28px 37px 28px}.stock-stepper button{width:28px;height:28px}.stock-stepper input{width:37px!important}.compact-cig-entry{gap:5px}}
+
+
+/* Build 92 — monthly stock status */
+.stock-monthly-notice{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.stock-monthly-notice strong{font-size:13px;white-space:nowrap}.stock-monthly-notice span{font-size:11px;line-height:1.25;opacity:.65;text-align:right}
+.stock-cycle-toggle button{position:relative}
