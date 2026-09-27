@@ -1,6 +1,6 @@
 import { renderExtraTime } from './extraTime.js';
 
-const APP_BUILD = 106;
+const APP_BUILD = 107;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
