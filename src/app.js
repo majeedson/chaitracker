@@ -1,4 +1,4 @@
-const APP_BUILD = 88;
+const APP_BUILD = 89;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -1284,7 +1284,7 @@ async function renderAttendance(view, supabase, profile) {
     view.querySelector('#attendanceTodayContext').textContent=outletName+' · '+dayLabel;
     const reviewCount=rows.filter(r=>r.status==='NEEDS_REVIEW').length;
     const notInCount=rows.filter(r=>r.status==='NOT_CHECKED_IN').length;
-    view.querySelector('#attendanceActionContext').textContent=filter!=='today'?'Viewing attendance history':!isAdmin?'Your attendance for today':reviewCount?reviewCount+' attendance '+(reviewCount===1?'record needs':'records need')+' review':notInCount?notInCount+' '+(notInCount===1?'person has':'people have')+' not checked in':'No attendance action pending';
+    view.querySelector('#attendanceActionContext').textContent=filter!=='today'?'Viewing attendance history':!isAdmin?'':reviewCount?reviewCount+' attendance '+(reviewCount===1?'record needs':'records need')+' review':notInCount?notInCount+' '+(notInCount===1?'person has':'people have')+' not checked in':'No attendance action pending';
     view.querySelector('#attendanceContext').textContent=filter==='today'?'Today’s attendance':filter==='yesterday'?'Yesterday’s attendance':new Date(selectedMonth+'-01T12:00:00').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
     view.querySelector('#attendanceState').textContent=rows.length+(filter==='month'?' calendar rows':' staff');view.querySelector('#attendanceListTitle').textContent=filter==='month'?'View daily attendance':'Attendance';const recordsDisclosure=view.querySelector('#attendanceRecordsDisclosure');if(recordsDisclosure)recordsDisclosure.open=filter!=='month';
     const priority={NEEDS_REVIEW:0,ABSENT:1,NOT_CHECKED_IN:2,LATE:3,HALF_DAY:4,LEAVE:5,PRESENT:6,WEEKLY_OFF:7,UPCOMING:8};
