@@ -1,6 +1,6 @@
 import { renderExtraTime } from './extraTime.js';
 
-const APP_BUILD = 108;
+const APP_BUILD = 109;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -371,7 +371,7 @@ async function renderDailySummary(view, supabase, profile) {
   const businessDate=String(businessDay);
   const [{data:vendors},{data:staff},{data:existing},{data:previous},{data:outlet},{data:stocktake}]=await Promise.all([
     supabase.from('vendors').select('id,name').order('name'),
-    supabase.from('staff').select('id,name,outlet_id').eq('active',true).eq('outlet_id',outletId).order('name'),
+    supabase.rpc('get_staff_roster',{p_outlet_id:outletId}),
     supabase.from('daily_summaries').select('*').eq('outlet_id',outletId).eq('business_date',businessDate).maybeSingle(),
     supabase.from('daily_summaries').select('business_date,physical_cash').eq('outlet_id',outletId).lt('business_date',businessDate).order('business_date',{ascending:false}).limit(1).maybeSingle(),
     supabase.from('outlets').select('name,swiggy_payout_rate,zomato_payout_rate,theme_key,theme_color').eq('id',outletId).maybeSingle(),
@@ -1299,7 +1299,7 @@ async function renderAttendance(view, supabase, profile) {
   const prettyDate=d=>new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:filter==='month'?undefined:'numeric'});
   const statusLabel=r=>r.status==='LATE'?('Late · '+r.late_mins+' min'):r.status==='HALF_DAY'?('Half-day · '+r.late_mins+' min late'):({PRESENT:'On time',LEAVE:'Leave',ABSENT:'Absent',WEEKLY_OFF:'Weekly off',UPCOMING:'Upcoming',NOT_CHECKED_IN:'Not checked in',NEEDS_REVIEW:'Needs review'})[r.status]||r.status;
   const statusClass=x=>({PRESENT:'ok',LATE:'warn',HALF_DAY:'warn',LEAVE:'info',ABSENT:'bad',WEEKLY_OFF:'neutral',UPCOMING:'neutral',NOT_CHECKED_IN:'neutral',NEEDS_REVIEW:'bad'})[x]||'neutral';
-  const loadStaff=async()=>{if(!isAdmin)return;const{data}=await supabase.from('staff').select('id,name').eq('outlet_id',outletId).eq('active',true).order('name');staffRows=data||[];staffSelect.innerHTML='<option value="">All staff</option>'+staffRows.map(x=>`<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('');if(staffId)staffSelect.value=String(staffId);};
+  const loadStaff=async()=>{if(!isAdmin)return;const{data}=await supabase.rpc('get_staff_roster',{p_outlet_id:outletId});staffRows=data||[];staffSelect.innerHTML='<option value="">All staff</option>'+staffRows.map(x=>`<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('');if(staffId)staffSelect.value=String(staffId);};
   const showAttendanceMessage=(message,type='error')=>{const box=view.querySelector('#attendanceMessage');box.textContent=message;box.className='purchase-message '+(type==='success'?'success':'error');box.hidden=false;if(type==='success')setTimeout(()=>{if(box.isConnected)box.hidden=true;},2200);};
   const openPhoto=async path=>{if(!path)return;if(/^https?:/i.test(path)){window.open(path,'_blank','noopener,noreferrer');return;}const{data,error}=await supabase.storage.from('attendance-photos').createSignedUrl(path,60);if(error)return showAttendanceMessage(error.message);window.open(data.signedUrl,'_blank','noopener,noreferrer');};
   let correctionRow=null;
