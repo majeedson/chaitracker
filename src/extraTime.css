@@ -13,3 +13,9 @@
 .extra-time-receipts{margin:14px 0}.extra-time-receipts>.eyebrow{display:block;margin:0 2px 6px}.extra-time-receipt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:center;padding:10px 11px;margin:7px 0;border:1px solid var(--line,#e5e5e5);border-radius:13px;background:#fff}.extra-time-receipt>div{display:flex;flex-direction:column;min-width:0}.extra-time-receipt strong{font-size:13px}.extra-time-receipt small{font-size:10px;color:#888;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.extra-time-receipt button{min-height:36px;padding:7px 10px;font-size:11px}
 
 .request-choice{cursor:pointer}.request-choice input[type=checkbox]{width:22px;height:22px;justify-self:end;accent-color:var(--accent)}
+.has-payments .extra-time-toggle{grid-template-columns:repeat(4,minmax(0,1fr))}
+.has-payments .extra-time-toggle button{font-size:12px;padding:10px 3px}
+.receive-card .receipt-note{width:100%;box-sizing:border-box}
+.payment-details{font-size:12px;line-height:1.55;color:#666;margin:8px 0 0}
+.transfer-salary-review .salary-line{gap:12px;align-items:flex-start}
+.transfer-salary-review .salary-line span{min-width:0;overflow-wrap:anywhere}

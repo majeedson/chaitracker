@@ -1,6 +1,6 @@
 import { renderExtraTime } from './extraTime.js';
 
-const APP_BUILD = 107;
+const APP_BUILD = 108;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -1204,9 +1204,28 @@ async function renderSalary(view, supabase, profile) {
       supabase.rpc('get_salary_record',{p_staff_id:sid,p_period_start:start})
     ]);
     if(error){view.querySelector('#salaryEstimate').innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';return;}
+    let transferReview='';
+    if(isAdmin){
+      const {data:staffUsers,error:userError}=await supabase.from('users').select('id').eq('staff_id',sid);
+      if(userError){transferReview='<p class="form-error">Transfers review unavailable: '+escapeHtml(userError.message)+'</p>';}
+      else if(staffUsers?.length){
+        const {data:payments,error:paymentError}=await supabase.from('extra_time_payments').select('id,category,basis_qty,basis_unit,rate,amount,status,extra_time_dispatches!inner(dispatched_at,extra_time_requests!inner(request_group,requested_at))').in('staff_user_id',staffUsers.map(u=>u.id)).order('created_at',{ascending:false}).limit(300);
+        if(paymentError)transferReview='<p class="form-error">Transfers review unavailable: '+escapeHtml(paymentError.message)+'</p>';
+        else {
+          const current=(payments||[]).filter(p=>{const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(p.extra_time_dispatches.extra_time_requests.requested_at));return day>=start&&day<=end&&p.status!=='VOID';}).sort((a,b)=>new Date(a.extra_time_dispatches.extra_time_requests.requested_at)-new Date(b.extra_time_dispatches.extra_time_requests.requested_at));
+          const groups=[...new Set(current.map(p=>p.extra_time_dispatches.extra_time_requests.request_group))];
+          const {data:items,error:itemsError}=groups.length?await supabase.from('extra_time_requests').select('request_group,category,item_name').in('request_group',groups):{data:[]};
+          if(itemsError){transferReview='<p class="form-error">Transfers review unavailable: '+escapeHtml(itemsError.message)+'</p>';}
+          else {
+            const names=p=>(items||[]).filter(x=>x.request_group===p.extra_time_dispatches.extra_time_requests.request_group&&x.category===p.category).map(x=>x.item_name).join(', ');
+            transferReview=`<section class="summary-section compact transfer-salary-review"><span class="eyebrow">Transfers to review · by order sent date</span><h3>${money(current.reduce((sum,p)=>sum+Number(p.amount||0),0))}</h3>${current.length?current.map(p=>`<div class="salary-line"><span>${escapeHtml(new Date(p.extra_time_dispatches.extra_time_requests.requested_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}))} · ${escapeHtml(names(p))} · ${Number(p.basis_qty)} ${escapeHtml(p.basis_unit)} × ${money(p.rate)} · ${escapeHtml(p.status)}</span><strong>${money(p.amount)}</strong></div>`).join(''):'<p class="section-help">No preparation payments for this period.</p>'}<p class="section-help">Review only. This amount is not included in the salary estimate or finalized payroll.</p></section>`;
+          }
+        }
+      }
+    }
     const hasOperationalData=Number(est.present_equivalent_days||0)>0||Number(est.late_mins||0)>0||Number(est.advance_deduction||0)>0||Number(est.loan_deduction||0)>0;
     if(!hasOperationalData&&!final){
-      view.querySelector('#salaryEstimate').innerHTML=`<div class="salary-empty-note">${icon('attendance',21)}<div><strong>Not enough records to estimate salary yet</strong><span>No attendance or staff-payment activity is recorded for this period. CafeTracker will not treat missing records as absences.</span></div></div><section class="salary-hero"><span>${escapeHtml(person?.name||'Salary')}</span><strong>${money(est.basic_salary)}</strong><small>Basic salary · estimate pending attendance data</small></section><div class="salary-meta"><span>Daily rate <strong>${money(est.daily_rate)}</strong></span><span>Hourly rate <strong>${money(est.hourly_rate)}</strong></span><span>Paid off entitlement <strong>3 days/month</strong></span></div>`;return;
+      view.querySelector('#salaryEstimate').innerHTML=`<div class="salary-empty-note">${icon('attendance',21)}<div><strong>Not enough records to estimate salary yet</strong><span>No attendance or staff-payment activity is recorded for this period. CafeTracker will not treat missing records as absences.</span></div></div><section class="salary-hero"><span>${escapeHtml(person?.name||'Salary')}</span><strong>${money(est.basic_salary)}</strong><small>Basic salary · estimate pending attendance data</small></section><div class="salary-meta"><span>Daily rate <strong>${money(est.daily_rate)}</strong></span><span>Hourly rate <strong>${money(est.hourly_rate)}</strong></span><span>Paid off entitlement <strong>3 days/month</strong></span></div>${transferReview}`;return;
     }
     const incomplete=est.data_complete===false||Number(est.unrecorded_days||0)>0;
     view.querySelector('#salaryEstimate').innerHTML=`
@@ -1223,6 +1242,7 @@ async function renderSalary(view, supabase, profile) {
       </div>
       <div class="salary-meta"><span>Daily rate <strong>${money(est.daily_rate)}</strong></span><span>Hourly rate <strong>${money(est.hourly_rate)}</strong></span><span>Paid off entitlement <strong>3 days/month</strong></span></div>
       ${final?`<div class="salary-final"><div><strong>Saved payroll record</strong><span>${escapeHtml(final.period_start)} – ${escapeHtml(final.period_end)}</span></div><strong>${money(final.net_salary)}</strong></div>`:''}
+      ${transferReview}
       ${isAdmin?`<div id="salaryFinalizeMessage" class="purchase-message" hidden></div><button id="finalizeSalary" class="primary" type="button" ${incomplete?'disabled':''}>${final?'Re-finalize payroll':'Finalize payroll'}</button><p class="section-help">Finalization uses the recorded attendance and payment data shown above. Incomplete attendance must be reconciled first.</p>`:''}`;
     const finalize=view.querySelector('#finalizeSalary');if(finalize)finalize.onclick=async()=>{if(!confirm('Finalize this payroll period from the recorded data shown above?'))return;finalize.disabled=true;finalize.textContent='Finalizing…';const{error}=await supabase.rpc('finalize_salary_record',{p_staff_id:sid,p_period_start:start,p_period_end:end,p_pay_date:end,p_user_id:profile.id});if(error){const b=view.querySelector('#salaryFinalizeMessage');b.textContent=error.message;b.className='purchase-message error';b.hidden=false;finalize.disabled=false;finalize.textContent=final?'Re-finalize payroll':'Finalize payroll';return;}await render();};
   };

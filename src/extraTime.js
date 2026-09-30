@@ -19,15 +19,18 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
     JUICES:[['Watermelon','Pc'],['Lime','Pc'],['Kulukki','Pc'],['Kannur Cocktail','Pc']]
   };
   const labels={CHICKEN_PATTY:'Chicken Patty',SNACKS:'Snacks',JUICES:'Juices'};
+  const isReviewer=profile.access_class==='ADMIN'||['Manager','Ops Manager'].includes(profile.role);
+  const displayQty=r=>r.category==='CHICKEN_PATTY'?'Quantity decided at dispatch':`${Number(r.requested_qty)} ${r.unit} requested`;
+  const money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2,minimumFractionDigits:2});
   let tab='request',manual={CHICKEN_PATTY:[],SNACKS:[],JUICES:[]},lastSaved=[];
   const rateKey=category=>'cafetracker-transfer-rate:'+category;
-  const getRate=category=>{const saved=Number(localStorage.getItem(rateKey(category)));return saved>0?saved:(category==='CHICKEN_PATTY'?20:category==='SNACKS'?2:0);};
+  const getRate=category=>{const saved=localStorage.getItem(rateKey(category));return saved!==null&&Number.isFinite(Number(saved))?Number(saved):(category==='CHICKEN_PATTY'?20:category==='SNACKS'?2:0);};
   const setRate=(category,value)=>localStorage.setItem(rateKey(category),String(value));
 
   view.innerHTML=`
-    <div class="extra-time-page">
+    <div class="extra-time-page ${isReviewer?'has-payments':''}">
       <div class="compact-heading"><span class="eyebrow">Inter-café preparation</span><h2>Transfers</h2><p>${esc(outletMap.get(outletId)||'Café')}</p></div>
-      <div class="extra-time-toggle"><button class="active" data-et-tab="request">Request</button><button data-et-tab="dispatch">Dispatch</button><button data-et-tab="receive">Receive</button></div>
+      <div class="extra-time-toggle"><button class="active" data-et-tab="request">Request</button><button data-et-tab="dispatch">Dispatch</button><button data-et-tab="receive">Receive</button>${isReviewer?'<button data-et-tab="payments">Payments</button>':''}</div>
       <div id="extraTimePanel"></div>
     </div>`;
   const panel=view.querySelector('#extraTimePanel');
@@ -46,14 +49,9 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
   };
 
   async function drawRequest(){
-    const {data:awaitingReceipt}=await supabase.from('extra_time_requests').select('id,request_group,source_outlet_id,category,item_name,requested_qty,unit').eq('request_outlet_id',outletId).eq('status','DISPATCHED').order('requested_at',{ascending:false});
-    const receiptGroups=new Map();
-    (awaitingReceipt||[]).forEach(r=>{if(!receiptGroups.has(r.request_group))receiptGroups.set(r.request_group,[]);receiptGroups.get(r.request_group).push(r);});
-    const receiptHtml=[...receiptGroups.values()].map(items=>`<div class="extra-time-receipt" data-receipt-ids="${items.map(x=>x.id).join(',')}"><div><strong>Incoming from ${esc(outletMap.get(Number(items[0].source_outlet_id))||'Café')}</strong><small>${items.map(x=>esc(x.item_name)+' '+Number(x.requested_qty)+' '+esc(x.unit)).join(' · ')}</small></div><button type="button" class="secondary receipt-confirm">Received ✓</button></div>`).join('');
     panel.innerHTML=`
       <div class="extra-time-note">Enter only what this café needs. Saving creates the request; WhatsApp is optional.</div>
       ${['CHICKEN_PATTY','SNACKS','JUICES'].map(requestSection).join('')}
-      ${receiptHtml?`<div class="extra-time-receipts"><span class="eyebrow">Awaiting receipt</span>${receiptHtml}</div>`:''}
       <div class="extra-time-actions"><button id="saveExtraRequest" class="primary full">Save Request</button><button id="generateExtraRequest" class="secondary full" ${lastSaved.length?'':'disabled'}>Generate Message</button></div>
       <div id="extraRequestMessage" class="whatsapp-preview" hidden><div class="whatsapp-preview-head"><strong>Request message</strong><button id="copyExtraRequest" class="summary-add" type="button">Copy</button></div><textarea readonly></textarea></div>
       <p id="extraTimeStatus" class="form-error" hidden></p>`;
@@ -64,24 +62,17 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
     });
     panel.querySelector('#saveExtraRequest').onclick=saveRequest;
     panel.querySelector('#generateExtraRequest').onclick=generateRequestMessage;
-    panel.querySelectorAll('.receipt-confirm').forEach(btn=>btn.onclick=async()=>{
-      const row=btn.closest('.extra-time-receipt'),ids=row.dataset.receiptIds.split(',').map(Number);
-      btn.disabled=true;btn.textContent='Saving…';
-      const {error}=await supabase.from('extra_time_requests').update({status:'RECEIVED',received_at:new Date().toISOString()}).in('id',ids);
-      if(error){btn.disabled=false;btn.textContent='Received ✓';alert(error.message);return;}
-      row.remove();
-    });
   }
 
   async function saveRequest(){
     const status=panel.querySelector('#extraTimeStatus'),btn=panel.querySelector('#saveExtraRequest');
-    const entered=[...panel.querySelectorAll('[data-et-request]')].map(i=>({category:i.dataset.category,item_name:i.dataset.name,unit:i.dataset.unit,requested_qty:i.dataset.category==='CHICKEN_PATTY'?(i.checked?1:0):Number(i.value||0)})).filter(x=>x.requested_qty>0);
+    const entered=[...panel.querySelectorAll('[data-et-request]')].map(i=>({category:i.dataset.category,item_name:i.dataset.name,unit:i.dataset.unit,requested_qty:i.dataset.category==='CHICKEN_PATTY'?null:Number(i.value||0),selected:i.dataset.category==='CHICKEN_PATTY'?i.checked:Number(i.value||0)>0})).filter(x=>x.selected);
     if(!entered.length){status.textContent='Choose at least one item.';status.hidden=false;return;}
     const invalid=entered.find(x=>sourceForItem(x.category,x.item_name)===outletId);
     if(invalid){status.textContent=labels[invalid.category]+' is prepared at this café, so it does not need an inter-café request.';status.hidden=false;return;}
     btn.disabled=true;btn.textContent='Saving…';status.hidden=true;
     const group=crypto.randomUUID();
-    const rows=entered.map(x=>({...x,request_group:group,request_outlet_id:outletId,source_outlet_id:sourceForItem(x.category,x.item_name),requested_by:profile.id,status:'REQUESTED'}));
+    const rows=entered.map(({selected,...x})=>({...x,request_group:group,request_outlet_id:outletId,source_outlet_id:sourceForItem(x.category,x.item_name),requested_by:profile.id,status:'REQUESTED'}));
     const {data,error}=await supabase.from('extra_time_requests').insert(rows).select('id,request_group,source_outlet_id,category,item_name,requested_qty,unit');
     btn.disabled=false;btn.textContent='Save Request';
     if(error){status.textContent=error.message;status.hidden=false;return;}
@@ -109,8 +100,8 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
     panel.innerHTML=[...groups.entries()].map(([key,items])=>{
       const first=items[0],cat=first.category,staff=(staffUsers||[]).filter(u=>Number(u.outlet_id)===outletId),pay=cat!=='JUICES';
       return `<section class="extra-time-dispatch" data-et-group="${esc(key)}" data-category="${cat}">
-        <div class="extra-time-dispatch-head"><div><span>${labels[cat]}</span><strong>To ${esc(outletMap.get(Number(first.request_outlet_id))||'Café')}</strong></div><small>${new Date(first.requested_at).toLocaleString()}</small></div>
-        <div class="extra-time-dispatch-lines">${items.map(r=>`<div class="extra-time-dispatch-line" data-request-id="${r.id}"><span>${esc(r.item_name)} <small>Requested ${Number(r.requested_qty)} ${esc(r.unit)}</small></span><input class="dispatch-qty" type="number" min="0.01" step="0.01" inputmode="decimal" value="${Number(r.requested_qty)}"><em>${esc(r.unit)}</em></div>`).join('')}</div>
+        <div class="extra-time-dispatch-head"><div><span>${labels[cat]}</span><strong>To ${esc(outletMap.get(Number(first.request_outlet_id))||'Café')}</strong></div><small>Ordered ${new Date(first.requested_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})}</small></div>
+        <div class="extra-time-dispatch-lines">${items.map(r=>`<div class="extra-time-dispatch-line" data-request-id="${r.id}"><span>${esc(r.item_name)} <small>${esc(displayQty(r))}</small></span><input class="dispatch-qty" aria-label="${esc(r.item_name)} prepared" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0" value="${r.category==='CHICKEN_PATTY'?'':Number(r.requested_qty)}"><em>${esc(r.unit)}</em></div>`).join('')}</div>
         <label class="extra-time-field">Prepared by<select class="prepared-by"><option value="">Select staff</option>${staff.map(u=>`<option value="${u.id}">${esc(u.name)}</option>`).join('')}</select></label>
         ${pay?`<div class="extra-time-pay-basis"><label>${cat==='CHICKEN_PATTY'?'Whole chickens processed':'Pieces prepared'}<input class="prep-qty" type="number" min="0" step="1" inputmode="decimal" placeholder="0"></label><label>Rate ₹<input class="prep-rate" type="number" min="0" step="0.01" inputmode="decimal" value="${getRate(cat)}"></label><span>${cat==='CHICKEN_PATTY'?'Chicken':'Pc'} · payment basis</span></div>`:'<div class="extra-time-note compact">Juice dispatch is tracked without a preparation payment entry.</div>'}
         <div class="extra-time-actions inline"><button class="primary dispatch-confirm" type="button">Confirm & Dispatch</button><button class="secondary dispatch-message" type="button" disabled>Generate Message</button></div>
@@ -127,21 +118,14 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
     const prepQty=cat==='JUICES'?null:Number(card.querySelector('.prep-qty')?.value||0);
     const prepRate=cat==='JUICES'?null:Number(card.querySelector('.prep-rate')?.value||0);
     if(cat!=='JUICES'&&prepRate<0){status.textContent='Rate cannot be negative.';status.hidden=false;return;}
-    if(cat!=='JUICES')setRate(cat,prepRate);
     if(cat!=='JUICES'&&prepQty<=0){status.textContent='Enter the preparation quantity used for Transfers payment.';status.hidden=false;return;}
+    if(cat==='SNACKS'&&prepQty!==[...card.querySelectorAll('.dispatch-qty')].reduce((sum,i)=>sum+Number(i.value||0),0)){status.textContent='Pieces prepared must equal the snack pieces dispatched.';status.hidden=false;return;}
     const lines=[...card.querySelectorAll('.extra-time-dispatch-line')].map(r=>({request_id:Number(r.dataset.requestId),qty:Number(r.querySelector('.dispatch-qty').value||0),unit:r.querySelector('em').textContent}));
     if(lines.some(x=>x.qty<=0)){status.textContent='Dispatch quantities must be greater than zero.';status.hidden=false;return;}
     const btn=card.querySelector('.dispatch-confirm');btn.disabled=true;btn.textContent='Dispatching…';status.hidden=true;
-    const dispatchRows=lines.map((x,i)=>({request_id:x.request_id,prepared_by:preparedBy,prep_qty:i===0?prepQty:null,prep_unit:i===0&&prepQty?(cat==='CHICKEN_PATTY'?'Chicken':'Pc'):null,dispatched_qty:x.qty,dispatch_unit:x.unit,dispatched_by:profile.id}));
-    const {data:dispatches,error}=await supabase.from('extra_time_dispatches').insert(dispatchRows).select('id,request_id,dispatched_qty,dispatch_unit');
+    const {error}=await supabase.rpc('dispatch_transfer',{p_outlet_id:outletId,p_prepared_by:preparedBy,p_lines:lines.map(x=>({request_id:x.request_id,qty:x.qty})),p_prep_qty:prepQty,p_rate:prepRate});
     if(error){btn.disabled=false;btn.textContent='Confirm & Dispatch';status.textContent=error.message;status.hidden=false;return;}
-    const ids=lines.map(x=>x.request_id);
-    const {error:updateError}=await supabase.from('extra_time_requests').update({status:'DISPATCHED'}).in('id',ids);
-    if(updateError){status.textContent=updateError.message;status.hidden=false;btn.disabled=false;btn.textContent='Confirm & Dispatch';return;}
-    if(cat!=='JUICES'&&dispatches?.length){
-      const {error:payError}=await supabase.from('extra_time_payments').insert({dispatch_id:dispatches[0].id,staff_user_id:preparedBy,category:cat,basis_qty:prepQty,basis_unit:cat==='CHICKEN_PATTY'?'Chicken':'Pc',rate:prepRate,status:'READY'});
-      if(payError){status.textContent='Dispatched, but payment entry needs attention: '+payError.message;status.hidden=false;}
-    }
+    if(cat!=='JUICES')setRate(cat,prepRate);
     card.querySelectorAll('input,select').forEach(x=>x.disabled=true);btn.textContent='Dispatched ✓';card.querySelector('.dispatch-message').disabled=false;
     if(status.hidden){status.textContent=cat==='JUICES'?'Dispatch saved ✓':'Dispatch saved ✓ · Transfers payment linked';status.className='dispatch-status summary-inline-status ok';status.hidden=false;}
   }
@@ -154,6 +138,41 @@ export async function renderExtraTime(view, supabase, profile, {escapeHtml, icon
     box.querySelector('.copy-dispatch').onclick=async()=>{await navigator.clipboard.writeText(text);box.querySelector('.copy-dispatch').textContent='Copied ✓';};
   }
 
-  async function draw(){if(tab==='request')await drawRequest();else await drawDispatch();}
+  async function drawReceive(){
+    panel.innerHTML='<div class="loading">Loading incoming transfers…</div>';
+    const {data:requests,error}=await supabase.from('extra_time_requests').select('id,request_group,source_outlet_id,category,item_name,requested_at,extra_time_dispatches(id,dispatched_qty,dispatch_unit,dispatched_at)').eq('request_outlet_id',outletId).eq('status','DISPATCHED').order('requested_at',{ascending:true});
+    if(error){panel.innerHTML=`<p class="form-error">${esc(error.message)}</p>`;return;}
+    const groups=new Map();(requests||[]).forEach(r=>{const key=`${r.request_group}|${r.source_outlet_id}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(r);});
+    if(!groups.size){panel.innerHTML='<div class="extra-time-empty"><strong>Nothing awaiting receipt</strong><span>Dispatched items will appear here.</span></div>';return;}
+    panel.innerHTML='<div class="extra-time-note">Check what arrived against the dispatched quantities. Enter 0 for an item that did not arrive and add a note for any difference.</div>'+[...groups.values()].map(items=>`<section class="extra-time-dispatch receive-card"><div class="extra-time-dispatch-head"><div><span>Awaiting receipt</span><strong>From ${esc(outletMap.get(Number(items[0].source_outlet_id))||'Café')}</strong></div><small>Requested ${new Date(items[0].requested_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})}</small></div><div class="extra-time-dispatch-lines">${items.map(r=>{const d=r.extra_time_dispatches?.[0];return `<div class="extra-time-dispatch-line" data-request-id="${r.id}" data-expected="${d?Number(d.dispatched_qty):''}"><span>${esc(r.item_name)}<small>Dispatched ${d?Number(d.dispatched_qty):'—'} ${esc(d?.dispatch_unit||'')}</small></span><input class="received-qty" type="number" min="0" step="0.01" inputmode="decimal" aria-label="${esc(r.item_name)} received" value="${d?Number(d.dispatched_qty):''}"><em>${esc(d?.dispatch_unit||'')}</em></div>`}).join('')}</div><label class="extra-time-field">Difference or delivery note<input class="receipt-note" type="text" placeholder="Optional when everything matches"></label><button class="primary receive-confirm" type="button">Confirm Received</button><p class="dispatch-status form-error" hidden></p></section>`).join('');
+    panel.querySelectorAll('.receive-card').forEach(card=>card.querySelector('.receive-confirm').onclick=()=>confirmReceipt(card));
+  }
+
+  async function confirmReceipt(card){
+    const status=card.querySelector('.dispatch-status'),lines=[...card.querySelectorAll('.extra-time-dispatch-line')].map(row=>({request_id:Number(row.dataset.requestId),qty:Number(row.querySelector('.received-qty').value),entered:row.querySelector('.received-qty').value!=='' ,expected:Number(row.dataset.expected)}));
+    if(lines.some(x=>!x.entered||!Number.isFinite(x.qty)||x.qty<0||!Number.isFinite(x.expected))){status.textContent='Enter valid received quantities for every item.';status.hidden=false;return;}
+    const note=card.querySelector('.receipt-note').value.trim();
+    if(lines.some(x=>x.qty!==x.expected)&&!note){status.textContent='Add a note explaining the difference.';status.hidden=false;return;}
+    const btn=card.querySelector('.receive-confirm');btn.disabled=true;btn.textContent='Saving…';status.hidden=true;
+    const {error}=await supabase.rpc('receive_transfer',{p_outlet_id:outletId,p_lines:lines.map(x=>({request_id:x.request_id,qty:x.qty})),p_note:note||null});
+    if(error){status.textContent=error.message;status.hidden=false;btn.disabled=false;btn.textContent='Confirm Received';return;}
+    card.remove();if(!panel.querySelector('.receive-card'))drawReceive();
+  }
+
+  async function drawPayments(){
+    panel.innerHTML='<div class="loading">Loading preparation payments…</div>';
+    if(!isReviewer)return;
+    const {data,error}=await supabase.from('extra_time_payments').select('id,category,basis_qty,basis_unit,rate,amount,status,staff_user_id,created_at,extra_time_dispatches!inner(dispatched_at,extra_time_requests!inner(request_group,requested_at,source_outlet_id,request_outlet_id))').order('created_at',{ascending:false}).limit(300);
+    if(error){panel.innerHTML=`<p class="form-error">${esc(error.message)}</p>`;return;}
+    const rows=(data||[]).filter(p=>{const r=p.extra_time_dispatches?.extra_time_requests;return Number(r?.source_outlet_id)===outletId||Number(r?.request_outlet_id)===outletId;}).sort((a,b)=>new Date(b.extra_time_dispatches.extra_time_requests.requested_at)-new Date(a.extra_time_dispatches.extra_time_requests.requested_at));
+    const groups=[...new Set(rows.map(p=>p.extra_time_dispatches.extra_time_requests.request_group))];
+    const {data:groupItems,error:groupError}=groups.length?await supabase.from('extra_time_requests').select('request_group,category,item_name').in('request_group',groups):{data:[]};
+    if(groupError){panel.innerHTML=`<p class="form-error">${esc(groupError.message)}</p>`;return;}
+    const itemNames=(p)=>(groupItems||[]).filter(x=>x.request_group===p.extra_time_dispatches.extra_time_requests.request_group&&x.category===p.category).map(x=>x.item_name).join(', ');
+    const names=new Map((staffUsers||[]).map(u=>[u.id,u.name]));
+    panel.innerHTML='<div class="extra-time-note">Preparation payments, ordered by when the original request was sent. These are review records, not automatically added to salary.</div>'+(rows.length?rows.map(p=>{const r=p.extra_time_dispatches.extra_time_requests;return `<section class="extra-time-dispatch"><div class="extra-time-dispatch-head"><div><span>${esc(names.get(p.staff_user_id)||'Staff')} · ${esc(p.status)}</span><strong>${esc(labels[p.category]||p.category)} · ${money(p.amount)}</strong></div><small>Ordered ${new Date(r.requested_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})}</small></div><p class="payment-details">${esc(itemNames(p))} · ${Number(p.basis_qty)} ${esc(p.basis_unit)} × ${money(p.rate)}<br>Dispatch ${new Date(p.extra_time_dispatches.dispatched_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})} · ${esc(outletMap.get(Number(r.source_outlet_id))||'Café')} → ${esc(outletMap.get(Number(r.request_outlet_id))||'Café')}</p></section>`}).join(''):'<div class="extra-time-empty"><strong>No payment entries</strong></div>');
+  }
+
+  async function draw(){if(tab==='request')await drawRequest();else if(tab==='dispatch')await drawDispatch();else if(tab==='receive')await drawReceive();else await drawPayments();}
   draw();
 }
