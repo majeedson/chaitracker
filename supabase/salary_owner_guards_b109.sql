@@ -2,7 +2,7 @@
 alter function public.owner_update_staff(integer,text,integer,text,numeric,date,boolean,jsonb,text)
   security definer set search_path = public, pg_temp;
 alter function public.owner_reset_staff_pin_setup(integer)
-  security definer set search_path = public, pg_temp;
+  security definer set search_path = public, extensions, pg_temp;
 
 create or replace function public.save_salary_record(
   p_id varchar,p_outlet_id integer,p_staff_id integer,p_period_start date,
