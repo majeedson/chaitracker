@@ -1,6 +1,6 @@
 import { renderExtraTime } from './extraTime.js';
 
-const APP_BUILD = 110;
+const APP_BUILD = 111;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -947,6 +947,7 @@ async function renderPurchases(view, supabase, profile) {
   const { data: items } = await supabase.from('items').select('id,name,category_id,unit,pack_size').eq('active', true).order('name');
   const { data: outlets } = isOwner ? await supabase.from('outlets').select('id,name').order('id') : { data: [] };
   let outletId = (isOwner&&profile.context_outlet_id) || profile.outlet_id || outlets?.[0]?.id;
+  const outletName = isOwner ? (outlets||[]).find(o=>Number(o.id)===Number(outletId))?.name : profile.outlets?.name;
   const { data: bizDate, error: dateError } = await supabase.rpc('get_effective_business_day', {
     p_outlet_id: outletId,
     p_timestamp: new Date().toISOString()
@@ -1035,7 +1036,7 @@ async function renderPurchases(view, supabase, profile) {
       bindGroups();updateOrderSummary();
     };
     section.dataset.loaded='1';
-    const buildMessage=(scope,title)=>{const lines=['*'+title.toUpperCase()+' — '+String(outlet?.name||'CAFE').toUpperCase()+'*',String(businessDate),''];let last='';scope.querySelectorAll('.order-suggestion-row').forEach(r=>{if(!r.querySelector('.order-include').checked)return;const qty=Number(r.querySelector('.order-qty').value||0);if(qty<=0)return;const vendor=r.dataset.vendor;if(vendor!==last){if(last)lines.push('');lines.push('*'+vendor+'*');last=vendor;}lines.push(r.dataset.name+' — '+qty+' '+r.dataset.unit);});if(!last)lines.push('No items selected.');return lines.join('\n');};
+    const buildMessage=(scope,title)=>{const lines=['*'+title.toUpperCase()+' — '+String(outletName||'CAFE').toUpperCase()+'*',String(businessDate),''];let last='';scope.querySelectorAll('.order-suggestion-row').forEach(r=>{if(!r.querySelector('.order-include').checked)return;const qty=Number(r.querySelector('.order-qty').value||0);if(qty<=0)return;const vendor=r.dataset.vendor;if(vendor!==last){if(last)lines.push('');lines.push('*'+vendor+'*');last=vendor;}lines.push(r.dataset.name+' — '+qty+' '+r.dataset.unit);});if(!last)lines.push('No items selected.');return lines.join('\n');};
     const bindGroups=()=>view.querySelectorAll('.order-category-group').forEach(g=>{
       g.querySelectorAll('.order-remove-item').forEach(btn=>btn.onclick=e=>{e.preventDefault();e.stopPropagation();const row=btn.closest('.order-suggestion-row'),id=String(row.dataset.id),prev=state.get(id)||{};lastRemoved={id,prev};state.set(id,{...prev,checked:false,removed:true});renderGroups();const toast=view.querySelector('#stockUndoToast');if(toast){toast.hidden=false;clearTimeout(undoTimer);undoTimer=setTimeout(()=>toast.hidden=true,5000);}});
       const all=g.querySelector('.order-select-all-check');if(all)all.onchange=()=>{g.querySelectorAll('.order-suggestion-row').forEach(r=>{const ck=r.querySelector('.order-include'),q=r.querySelector('.order-qty');ck.checked=all.checked;const prev=state.get(String(r.dataset.id))||{};state.set(String(r.dataset.id),{...prev,checked:all.checked,qty:q.value,removed:false});});all.nextElementSibling.textContent=all.checked?'Unselect all':'Select all';updateOrderSummary();};
