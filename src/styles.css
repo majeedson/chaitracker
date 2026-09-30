@@ -253,7 +253,14 @@ input,select,textarea{font-weight:400;font-size:15px}
 /* Build 52 — purchase order */
 .po-vendor{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line,#eee)}
 .po-vendor>div{display:grid;gap:3px}.po-vendor small{font-size:11px;color:var(--muted,#777)}
+.po-manual-picker{display:grid;grid-template-columns:minmax(0,2fr) minmax(90px,1fr) auto;gap:10px;align-items:end}
+.po-manual-picker label{display:grid;gap:6px;font-size:12px;font-weight:700;color:#555;min-width:0}
+.po-manual-picker select,.po-manual-picker input{width:100%;min-height:43px;padding:10px;border:1px solid #ddd;border-radius:10px;background:#fff}
+.po-manual-line{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line,#eee)}
+.po-manual-line span{min-width:0}.po-manual-line small{display:block;color:var(--muted,#777)}
+.po-order-lines{padding:8px 0;line-height:1.7;white-space:nowrap}
 @media(max-width:520px){.po-vendor{align-items:flex-start}.po-vendor .secondary{white-space:nowrap}}
+@media(max-width:520px){.po-manual-picker{grid-template-columns:minmax(0,1fr) 90px}.po-manual-picker button{grid-column:1/-1}}
 
 /* Build 56 — leave workflow */
 .leave-row{display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--line,#eee)}
