@@ -12,7 +12,7 @@ ChaiTracker is the operational web/PWA application for Teapot and ChaiCafe.
 ## Development principles
 - Preserve the existing ChaiTracker UI and workflows.
 - Supabase is the target source of truth.
-- Do not enable RLS until the application is functionally complete and tested.
+- Keep RLS enabled on every exposed public table. Add narrow policies and guarded RPCs for new workflows, and test anonymous, staff, manager, and owner access before deployment.
 - Keep business-date logic, stock, purchases, attendance, daily summary, PO, delta and salary behavior aligned with the legacy application.
 - Outlet opening hours support seasonal effective date ranges.
 
