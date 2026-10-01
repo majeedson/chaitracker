@@ -1327,7 +1327,8 @@ async function renderSalary(view, supabase, profile, initialView='salary') {
 async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
   const money=n=>'₹'+Math.round(Number(n||0)).toLocaleString('en-IN');
   const periodEndFor=date=>{const [year,month,day]=date.split('-').map(Number);const nextMonthDays=new Date(Date.UTC(year,month+1,0)).getUTCDate();const end=new Date(Date.UTC(year,month,Math.min(day,nextMonthDays)));end.setUTCDate(end.getUTCDate()-1);return end.toISOString().slice(0,10);};
-  const payDateFor=date=>{const pay=new Date(periodEndFor(date)+'T00:00:00Z');pay.setUTCDate(pay.getUTCDate()+10);return pay.toISOString().slice(0,10);};
+  const payDateAfter=end=>{const pay=new Date(end+'T00:00:00Z');pay.setUTCDate(pay.getUTCDate()+10);return pay.toISOString().slice(0,10);};
+  const payDateFor=date=>payDateAfter(periodEndFor(date));
   const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   const month=today.slice(0,7);
   view.innerHTML=`<div class="salary-page salary-owner-page">
@@ -1423,7 +1424,7 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
     const updateAutoAbsence=()=>{if(form.elements.absent_deduction.dataset.auto!=='false')form.elements.absent_deduction.value=absenceDeduction(num(form,'basic_salary'),num(form,'absent_days'),num(form,'paid_off_entitlement'),Math.max(1,num(form,'day_divisor')),num(form,'period_days'));};
     form.addEventListener('input',e=>{const el=e.target;if(el.name==='absent_deduction')el.dataset.auto='false';if(el.name==='late_penalty')el.dataset.auto='false';if(el.name==='loan_remaining')el.dataset.auto='false';if(['basic_salary','absent_days','paid_off_entitlement','day_divisor'].includes(el.name))updateAutoAbsence();if(['basic_salary','late_hours','day_divisor'].includes(el.name)&&form.elements.late_penalty.dataset.auto!=='false')form.elements.late_penalty.value=Math.round(num(form,'late_hours')*num(form,'basic_salary')/(Math.max(1,num(form,'day_divisor'))*12));if(['loan_prev_balance','loan_deduct_this_month'].includes(el.name)&&form.elements.loan_remaining.dataset.auto!=='false')form.elements.loan_remaining.value=Math.max(0,num(form,'loan_prev_balance')-num(form,'loan_deduct_this_month')).toFixed(2);recalc();});form.addEventListener('change',recalc);
     const updatePeriodDays=()=>{const a=form.elements.period_start.value,b=form.elements.period_end.value;if(a&&b&&b>=a){form.elements.period_days.value=(new Date(b+'T12:00:00')-new Date(a+'T12:00:00'))/86400000+1;updateAutoAbsence();recalc();}};
-    form.elements.period_start.addEventListener('change',()=>{const start=form.elements.period_start.value;if(start){form.elements.period_end.value=periodEndFor(start);form.elements.pay_date.value=payDateFor(start);}updatePeriodDays();panel.querySelector('#refreshPayroll')?.click();});form.elements.period_end.addEventListener('change',updatePeriodDays);recalc();
+    form.elements.period_start.addEventListener('change',()=>{const start=form.elements.period_start.value;if(start){form.elements.period_end.value=periodEndFor(start);form.elements.pay_date.value=payDateFor(start);}updatePeriodDays();panel.querySelector('#refreshPayroll')?.click();});form.elements.period_end.addEventListener('change',()=>{updatePeriodDays();if(form.elements.period_end.value)form.elements.pay_date.value=payDateAfter(form.elements.period_end.value);});recalc();
     const payload=()=>{
       const included=transfers().filter(t=>t.include&&(t.status==='READY'||t.salary_record_id===current?.id));
       const extraEarn=adjustmentValues('earning').concat(included.map(t=>({label:t.label,amount:t.amount,transfer_id:t.id})));
