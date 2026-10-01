@@ -172,6 +172,29 @@ input,select,textarea{font-weight:400;font-size:15px}
 .person-row:last-child{border-bottom:0}
 .person-row:hover{background:#fafafa}
 .person-avatar{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:#f2f2f2;font-weight:700}
+.staff-avatar{display:inline-grid;place-items:center;flex:none;width:46px;height:46px;padding:3px;border:3px solid #dedee4;border-radius:50%;background:#fff;box-sizing:border-box;vertical-align:middle}
+.staff-avatar.checked-in{border-color:#25d366}
+.staff-avatar.not-checked-in{border-color:#e34b56}
+.staff-avatar.small{width:42px;height:42px;padding:2px}
+.staff-avatar.large{width:68px;height:68px;font-size:23px}
+.staff-avatar-content{position:relative;display:grid;place-items:center;width:100%;height:100%;border-radius:50%;background:#f0f0f3;overflow:hidden;color:#555;font-weight:750}
+.staff-avatar-content img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%}
+.avatar-edit-button{position:relative;display:inline-flex;flex:none;padding:0;border:0;border-radius:50%;background:transparent;cursor:pointer}
+.avatar-camera{position:absolute;right:0;bottom:0;display:grid;place-items:center;width:23px;height:23px;background:#24242b;color:#fff;border:2px solid #fff;border-radius:50%}
+.person-row{grid-template-columns:44px minmax(0,1fr) auto 16px}
+.attendance-main{display:flex;align-items:center;gap:10px;min-width:0}
+.attendance-main>div{min-width:0}
+.attendance-main .attendance-name{overflow-wrap:anywhere}
+.profile-photo-overlay{position:fixed;inset:0;z-index:120;background:rgba(20,20,26,.42);display:grid;place-items:center;padding:20px;backdrop-filter:blur(4px)}
+.profile-photo-dialog{background:#fff;border-radius:24px;padding:25px;width:min(100%,380px);box-sizing:border-box;box-shadow:0 20px 90px #0003}
+.profile-photo-dialog h2{margin:0;font-size:23px}
+.profile-photo-dialog>p{font-size:14px;color:var(--muted)}
+.profile-photo-preview{display:flex;justify-content:center;margin:24px 0}
+.profile-photo-preview .staff-avatar.large{width:132px;height:132px;font-size:44px}
+.profile-photo-choose,.profile-photo-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.profile-photo-choose button,.profile-photo-actions button{min-height:44px;border:1px solid #e4e4e9;border-radius:12px;background:#f7f7f9;font:inherit;font-size:13px}
+.profile-photo-actions{margin-top:20px}
+.profile-photo-dialog .form-error:empty{display:none}
 .person-main{min-width:0;display:flex;flex-direction:column;gap:3px}
 .person-main strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .person-main small{color:var(--muted,#777);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -439,6 +462,27 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .attendance-filter-bar .attendance-tabs{margin:0}
 .attendance-filter-bar .attendance-month{display:flex;align-items:center;gap:9px;margin:9px 0 0}
 .attendance-filter-bar .attendance-month[hidden]{display:none}
+#leaveEndWrap[hidden]{display:none}
+.leave-request-card{min-width:0;overflow:hidden}
+.leave-request-card .summary-label{min-width:0;max-width:100%}
+.leave-request-card input,.leave-request-card select{display:block;min-width:0;max-width:100%;width:100%;box-sizing:border-box}
+.leave-request-card input[type=date]{min-height:50px;line-height:normal;text-align:left;-webkit-appearance:none;appearance:none}
+.leave-request-card input[type=date]::-webkit-date-and-time-value{min-width:0;text-align:left}
+.leave-date-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}
+.leave-request-total{display:flex;align-items:center;justify-content:space-between;margin:15px 0 10px;padding:11px 13px;border-radius:12px;background:#f6f6f8;font-size:13px}
+.leave-request-total strong{font-size:17px;color:var(--accent)}
+.leave-allowance{display:grid;gap:8px}
+.leave-allowance-item{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;border:1px solid #e7e7eb;border-radius:12px}
+.leave-allowance-item div{min-width:0;display:grid;gap:4px}
+.leave-allowance-item small,.leave-allowance-item>span{font-size:11px;color:var(--muted)}
+.leave-allowance-item strong{font-size:15px}
+.leave-allowance-item>span{white-space:nowrap}
+.leave-allowance-warning{margin-top:12px;padding:12px;border:1px solid #ecd29d;background:#fff9e9;border-radius:12px;color:#87500c;font-size:13px;line-height:1.5}
+.leave-allowance-warning[hidden]{display:none}
+.leave-allowance-warning p{margin:0}
+.leave-allowance-warning p+p{margin-top:10px}
+.leave-request-card #submitLeave{width:100%;margin-top:16px}
+@media(max-width:560px){.leave-date-grid{grid-template-columns:minmax(0,1fr)}.leave-allowance-item{align-items:flex-start;flex-direction:column;gap:6px}}
 .attendance-filter-bar .attendance-month span{font-size:12px;color:#777;font-weight:700}
 .attendance-filter-bar .attendance-month input{flex:1;min-height:40px}
 .attendance-disclosure{border:1px solid rgba(var(--accent-rgb,203,32,45),.13);border-radius:16px;background:#fff;margin:10px 0;overflow:hidden}
@@ -718,3 +762,14 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .payroll-summary-message>div{display:flex;flex-wrap:wrap;gap:9px;margin-top:12px}
 .payroll-summary-feedback{min-height:22px;color:#555;font-size:13px}
 @media print{body.payroll-summary-open>#app{display:none!important}.payroll-summary-overlay{position:static;overflow:visible;background:#fff}.payroll-summary-toolbar,.payroll-summary-actions,.payroll-summary-message,.payroll-summary-feedback{display:none!important}.payroll-summary-content{max-width:none;padding:0}.payroll-summary-paper{border:0;box-shadow:none;padding:0}.payroll-summary-row{break-inside:avoid}}
+
+/* Abstract login artwork and gradient app identity. */
+.login-shell{background:radial-gradient(ellipse at 15% 10%,#fbe5df 0,transparent 52%),radial-gradient(ellipse at 85% 90%,#f8e6bf 0,transparent 50%),#faf7f4}
+.login-card{overflow:hidden}
+.login-art{height:132px;margin:-28px -28px 24px;overflow:hidden;background:#fff7f1}
+.login-art img{display:block;width:100%;height:100%;object-fit:cover}
+.login-card .brand-lockup{margin-bottom:24px}
+.login-card .brand-mark{background:none;flex:none;overflow:hidden;border-radius:11px;box-shadow:0 5px 14px #971a4420}
+.login-card .brand-mark img{display:block;width:100%;height:100%}
+.login-card .login-subtitle{margin-bottom:0;font-size:12px}
+@media(max-width:600px){.login-shell{padding:0;background:#fff}.login-art{height:clamp(108px,27vw,155px);margin:-26px -20px 24px}.login-card{padding-top:calc(26px + env(safe-area-inset-top))}.login-art{margin-top:calc(-26px - env(safe-area-inset-top));height:calc(clamp(108px,27vw,155px) + env(safe-area-inset-top))}}

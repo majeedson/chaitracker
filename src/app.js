@@ -1,7 +1,8 @@
+import { loadStaffAvatars,staffAvatar,bindAvatarImages,refreshStaffAvatarElements,editProfilePhoto } from './staffAvatars.js';
 import { renderExtraTime } from './extraTime.js';
 import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,chargeableLateHours,holidayDutyDays,balanceAttendance,payrollAbsenceDeduction,latePenalty } from './payrollRules.js';
 
-const APP_BUILD = 122;
+const APP_BUILD = 126;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -86,7 +87,7 @@ export async function renderApp(root, supabase) {
   const authId = authUser?.user?.id;
   const { data: profile } = await supabase
     .from('users')
-    .select('id,name,role,outlet_id,can_switch_outlet,active,access_class,is_super_user,outlets(name,theme_key,theme_color)')
+    .select('id,name,role,outlet_id,staff_id,can_switch_outlet,active,access_class,is_super_user,outlets(name,theme_key,theme_color)')
     .eq('auth_user_id', authId)
     .maybeSingle();
 
@@ -110,7 +111,8 @@ async function renderLogin(root, supabase) {
   root.innerHTML=`
     <main class="login-shell">
       <section class="login-card">
-        <div class="brand-lockup"><div class="brand-mark">${icon('home',22)}</div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -256,6 +258,7 @@ function renderWorkspace(root, supabase, profile) {
         </div>
         <div class="topbar-actions">
           ${isAdmin?'<select id="global-outlet" class="outlet-badge global-outlet"><option value="all">All cafés</option></select>':`<span class="outlet-badge">${escapeHtml(profile.outlets?.name||'Assigned outlet')}</span>`}
+          ${profile.staff_id?`<button id="myProfilePicture" class="avatar-edit-button" type="button" aria-label="Edit my profile picture">${staffAvatar(profile,null,'small')}</button>`:''}
           <button id="logout" class="nav-icon-button" aria-label="Logout">${icon('logout',20)}</button>
         </div>
       </header>
@@ -277,10 +280,11 @@ function renderWorkspace(root, supabase, profile) {
   const openModule=async module=>{
     currentModule=module;
     root.querySelectorAll('.drawer-item').forEach(b=>b.classList.toggle('active',b.dataset.module===module));
-    closeDrawer();window.scrollTo({top:0,behavior:'instant'});await loadModule(view,supabase,profile,module);view.scrollIntoView({block:'start',behavior:'instant'});
+    closeDrawer();window.scrollTo({top:0,behavior:'instant'});await loadModule(view,supabase,profile,module);if(profile.staff_id)refreshStaffAvatarElements(supabase,[Number(profile.staff_id)]).catch(console.warn);view.scrollIntoView({block:'start',behavior:'instant'});
   };
   root.querySelector('#drawer-open').onclick=openDrawer;root.querySelector('#drawer-close').onclick=closeDrawer;scrim.onclick=closeDrawer;
   root.querySelector('#brand-home').onclick=()=>openModule(landing);
+  root.querySelector('#myProfilePicture')?.addEventListener('click',async()=>{try{await editProfilePhoto(supabase,profile);}catch(error){alert(error.message);}});
   root.querySelector('#logout').addEventListener('click',async()=>{await supabase.auth.signOut();await renderApp(root,supabase);});
   root.querySelectorAll('.drawer-item').forEach(button=>button.addEventListener('click',()=>openModule(button.dataset.module)));
   document.onkeydown=e=>{if(e.key==='Escape')closeDrawer();};
@@ -648,16 +652,17 @@ async function renderPeople(view, supabase, profile) {
   }
 
   const loadData = async () => {
-    const [{ data: outlets, error: outletError }, { data: staffRows, error: staffError }, { data: adminRows, error: adminError }] = await Promise.all([
+    const [{ data: outlets, error: outletError }, { data: staffRows, error: staffError }, { data: adminRows, error: adminError },avatarRows] = await Promise.all([
       supabase.from('outlets').select('id,name').order('id'),
       supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status,status_effective_from,status_note,notes,users:users!staff_id(id,role,pin_set_at,permissions)').order('name'),
-      supabase.from('login_directory').select('id,name,active,is_super_user,access_class').eq('access_class','ADMIN').order('name')
+      supabase.from('login_directory').select('id,name,active,is_super_user,access_class').eq('access_class','ADMIN').order('name'),
+      loadStaffAvatars(supabase)
     ]);
     if(outletError)throw outletError;if(staffError)throw staffError;if(adminError)throw adminError;
-    return { outlets: outlets || [], staffRows: staffRows || [], adminRows: adminRows || [] };
+    return { outlets: outlets || [], staffRows: staffRows || [], adminRows: adminRows || [],avatarRows };
   };
 
-  let { outlets, staffRows, adminRows } = await loadData();
+  let { outlets, staffRows, adminRows,avatarRows } = await loadData();
 
   view.innerHTML = `
     <div class="section-heading"><div><span class="eyebrow">People</span><h2>Staff & Users</h2></div><span class="soft-badge" id="staffCount"></span></div>
@@ -691,7 +696,7 @@ async function renderPeople(view, supabase, profile) {
     const list=view.querySelector('#adminList');if(!list)return;const message=view.querySelector('#adminMessage');const showAdminMessage=(text,type='error')=>{message.textContent=text;message.className='purchase-message '+(type==='success'?'success':'error');message.hidden=false;if(type==='success')setTimeout(()=>{if(message.isConnected)message.hidden=true;},2200);};
     list.innerHTML=adminRows.map(a=>`<div class="admin-row admin-manage-row"><div class="admin-identity"><strong>${escapeHtml(a.name)}</strong>${a.is_super_user?'<span class="soft-badge">Super User</span>':''}<span class="${a.active?'status-ok':'status-warn'}">${a.active?'Active':'Inactive'}</span></div>${profile.is_super_user&&!a.is_super_user?`<div class="admin-controls"><label>New PIN<input type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" class="admin-new-pin" data-id="${a.id}" placeholder="4–8 digits"></label><button type="button" class="secondary admin-pin-update" data-id="${a.id}">Update PIN</button><button type="button" class="ghost admin-active-toggle" data-id="${a.id}" data-active="${a.active}">${a.active?'Deactivate':'Reactivate'}</button></div>`:''}</div>`).join('');
     list.querySelectorAll('.admin-pin-update').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,input=list.querySelector('.admin-new-pin[data-id="'+id+'"]'),pin=input?.value||'';if(!/^\d{4,8}$/.test(pin))return showAdminMessage('Enter a 4–8 digit numeric PIN.');btn.disabled=true;btn.textContent='Updating…';const {data,error}=await supabase.functions.invoke('chaitracker-admin-pin',{body:{target_user_id:id,new_pin:pin}});if(error||!data?.ok){showAdminMessage(data?.error||error?.message||'Unable to update PIN.');btn.disabled=false;btn.textContent='Update PIN';return;}input.value='';btn.disabled=false;btn.textContent='Updated';showAdminMessage('Admin PIN updated.','success');setTimeout(()=>btn.textContent='Update PIN',1200);});
-    list.querySelectorAll('.admin-active-toggle').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,next=btn.dataset.active!=='true';if(!confirm((next?'Reactivate':'Deactivate')+' this Admin account?'))return;btn.disabled=true;const {error}=await supabase.rpc('superuser_set_admin_active',{p_user_id:id,p_active:next});if(error){showAdminMessage(error.message);btn.disabled=false;return;}({outlets,staffRows,adminRows}=await loadData());renderAdmins();});
+    list.querySelectorAll('.admin-active-toggle').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,next=btn.dataset.active!=='true';if(!confirm((next?'Reactivate':'Deactivate')+' this Admin account?'))return;btn.disabled=true;const {error}=await supabase.rpc('superuser_set_admin_active',{p_user_id:id,p_active:next});if(error){showAdminMessage(error.message);btn.disabled=false;return;}({outlets,staffRows,adminRows,avatarRows}=await loadData());renderAdmins();});
   };
   renderAdmins();
 
@@ -718,8 +723,9 @@ async function renderPeople(view, supabase, profile) {
         ${[['ALL','All'],['ACTIVE','Active'],['VACATION','Vacation'],['LEAVE','Leave'],['INACTIVE','Inactive'],['LEFT','Left']].map(([v,l])=>`<button type="button" class="people-filter ${peopleStatus===v?'active':''}" data-status="${v}">${l} <span>${counts[v]||0}</span></button>`).join('')}
       </div>
       <div class="people-compact-list">
-        ${visible.length?visible.map(s=>{const u=Array.isArray(s.users)?s.users[0]:s.users,st=staffStatus(s);return `<button type="button" class="person-row manage-staff" data-id="${s.id}"><span class="person-avatar">${escapeHtml((s.name||'?').trim().charAt(0).toUpperCase())}</span><span class="person-main"><strong>${escapeHtml(s.name)}</strong><small>${escapeHtml(u?.role||'Staff')} · ${escapeHtml(outletMap.get(Number(s.outlet_id))||'—')}</small></span><span class="person-status status-${st.toLowerCase()}">${escapeHtml(statusText(st))}</span><span class="person-chevron">›</span></button>`}).join(''):'<div class="notice">No staff match this view.</div>'}
+        ${visible.length?visible.map(s=>{const u=Array.isArray(s.users)?s.users[0]:s.users,st=staffStatus(s);return `<button type="button" class="person-row manage-staff" data-id="${s.id}">${staffAvatar(s,avatarRows.get(Number(s.id)),'small')}<span class="person-main"><strong>${escapeHtml(s.name)}</strong><small>${escapeHtml(u?.role||'Staff')} · ${escapeHtml(outletMap.get(Number(s.outlet_id))||'—')}</small></span><span class="person-status status-${st.toLowerCase()}">${escapeHtml(statusText(st))}</span><span class="person-chevron">›</span></button>`}).join(''):'<div class="notice">No staff match this view.</div>'}
       </div>`;
+    bindAvatarImages(view);
     const outlet=view.querySelector('#peopleOutlet'); if(outlet)outlet.onchange=e=>{peopleOutlet=e.target.value;peopleStatus='ALL';renderList();};
     const search=view.querySelector('#peopleSearch'); if(search){search.oninput=e=>{peopleSearch=e.target.value;const pos=e.target.selectionStart;renderList();const next=view.querySelector('#peopleSearch');next?.focus();try{next?.setSelectionRange(pos,pos)}catch{}};}
     view.querySelectorAll('.people-filter').forEach(btn=>btn.onclick=()=>{peopleStatus=btn.dataset.status;renderList();});
@@ -740,7 +746,7 @@ async function renderPeople(view, supabase, profile) {
       const btn=view.querySelector('#saveStaffStatus'),msg=view.querySelector('#staffStatusMsg');btn.disabled=true;btn.textContent='Saving…';
       const {error}=await supabase.rpc('owner_set_staff_status',{p_staff_id:staffId,p_status:view.querySelector('#staffEmploymentStatus').value,p_effective_from:view.querySelector('#staffStatusDate').value,p_note:view.querySelector('#staffStatusNote').value.trim()||null});
       if(error){msg.innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';btn.disabled=false;btn.textContent='Save status';return;}
-      ({outlets,staffRows,adminRows}=await loadData());renderList();
+      ({outlets,staffRows,adminRows,avatarRows}=await loadData());renderList();
     };
   };
 
@@ -753,7 +759,7 @@ async function renderPeople(view, supabase, profile) {
     const {data:documentMeta}=await supabase.rpc('get_employee_document_metadata',{p_staff_id:staffId});
     view.querySelector('#staffList').innerHTML=`
       <div class="staff-profile-shell">
-        <div class="staff-profile-head"><button id="cancelEdit" class="profile-back" type="button">‹</button><span class="person-avatar large">${escapeHtml((s.name||'?').trim().charAt(0).toUpperCase())}</span><div class="staff-profile-identity"><span class="eyebrow">Employee profile</span><h3>${escapeHtml(s.name)}</h3><p>${escapeHtml(u?.role||'Staff')} · ${escapeHtml(outletName)}</p></div><span class="person-status status-${currentStatus.toLowerCase()}">${escapeHtml(statusText(currentStatus))}</span></div>
+        <div class="staff-profile-head"><button id="cancelEdit" class="profile-back" type="button">‹</button><button id="editStaffPhoto" class="avatar-edit-button" type="button" aria-label="Change profile picture">${staffAvatar(s,avatarRows.get(Number(s.id)),'large')}<span class="avatar-camera">${icon('camera',13)}</span></button><div class="staff-profile-identity"><span class="eyebrow">Employee profile</span><h3>${escapeHtml(s.name)}</h3><p>${escapeHtml(u?.role||'Staff')} · ${escapeHtml(outletName)}</p></div><span class="person-status status-${currentStatus.toLowerCase()}">${escapeHtml(statusText(currentStatus))}</span></div>
         <div class="profile-tabs"><button class="active" data-profile-tab="profile">Profile</button><button data-profile-tab="attendance">Attendance</button><button data-profile-tab="salary">Salary</button><button data-profile-tab="employment">Employment</button><button data-profile-tab="access">Access</button><button data-profile-tab="documents">Documents</button></div>
         <div class="card staff-editor profile-panel" data-profile-panel="profile">
         <div class="section-heading"><div><span class="eyebrow">Profile</span><h3>Employee details</h3></div></div>
@@ -776,10 +782,12 @@ async function renderPeople(view, supabase, profile) {
         <div class="employment-history"><h4>Status history</h4>${(Array.isArray(statusHistory)?statusHistory:[]).map(h=>`<div><strong>${escapeHtml(statusText(h.status))}</strong><span>${escapeHtml(h.effective_from||'')}${h.note?' · '+escapeHtml(h.note):''}</span></div>`).join('')||'<p class="section-help">No status history recorded.</p>'}</div></div>
         <div class="card profile-panel" data-profile-panel="attendance" hidden><span class="eyebrow">Attendance</span><h3>Attendance history</h3><p class="section-help">Use the Attendance workspace for the full calendar, corrections and daily status.</p><button type="button" class="secondary profile-open-module" data-module="attendance">Open Attendance</button></div>
         <div class="card profile-panel" data-profile-panel="salary" hidden><span class="eyebrow">Salary</span><h3>Payroll</h3><p class="section-help">Salary is calculated from recorded attendance, paid off-days and staff payments.</p><button type="button" class="secondary profile-open-module" data-module="salary">Open Salary</button></div>
-        <div class="card profile-panel" data-profile-panel="documents" hidden><span class="eyebrow">Documents</span><h3>Employee documents</h3><div class="document-meta"><div><span>Onboarding</span><strong>${escapeHtml(documentMeta?.onboarding_status||'invited')}</strong></div><div><span>Identity type</span><strong>${escapeHtml(documentMeta?.identity_type||'—')}</strong></div><div><span>Identity document</span><strong>${documentMeta?.identity_document_on_file?'On file':'Not uploaded'}</strong></div><div><span>Profile photo</span><strong>${documentMeta?.profile_photo_on_file?'On file':'Not uploaded'}</strong></div></div><p class="section-help">Files remain private. This profile shows document status without exposing identity numbers.</p></div>
+        <div class="card profile-panel" data-profile-panel="documents" hidden><span class="eyebrow">Documents</span><h3>Employee documents</h3><div class="document-meta"><div><span>Onboarding</span><strong>${escapeHtml(documentMeta?.onboarding_status||'invited')}</strong></div><div><span>Identity type</span><strong>${escapeHtml(documentMeta?.identity_type||'—')}</strong></div><div><span>Identity document</span><strong>${documentMeta?.identity_document_on_file?'On file':'Not uploaded'}</strong></div><div><span>Profile photo</span><strong id="profilePhotoOnFile">${documentMeta?.profile_photo_on_file?'On file':'Not uploaded'}</strong></div></div><p class="section-help">Files remain private. This profile shows document status without exposing identity numbers.</p></div>
         <div id="editMsg"></div><div class="profile-actions"><button id="saveStaff" class="primary">Save changes</button>${profile.is_super_user?'<button id="resetPin" class="secondary">Reset login</button>':''}</div>
       </div>`;
     view.querySelector('#cancelEdit').onclick=renderList;
+    bindAvatarImages(view);
+    view.querySelector('#editStaffPhoto').onclick=async()=>{try{if(await editProfilePhoto(supabase,s)){avatarRows=await loadStaffAvatars(supabase);view.querySelector('#profilePhotoOnFile').textContent='On file';}}catch(error){view.querySelector('#editMsg').innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';}};
     view.querySelectorAll('[data-profile-tab]').forEach(tab=>tab.onclick=()=>{view.querySelectorAll('[data-profile-tab]').forEach(x=>x.classList.toggle('active',x===tab));view.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==tab.dataset.profileTab);});
     view.querySelectorAll('.profile-open-module').forEach(btn=>btn.onclick=()=>{const nav=document.querySelector('[data-module="'+btn.dataset.module+'"]');if(nav)nav.click();});
     view.querySelector('#saveStaff').onclick=async()=>{
@@ -792,7 +800,7 @@ async function renderPeople(view, supabase, profile) {
         const {error:statusError}=await supabase.rpc('owner_set_staff_status',{p_staff_id:staffId,p_status:view.querySelector('#editEmploymentStatus').value,p_effective_from:view.querySelector('#editStatusDate').value,p_note:view.querySelector('#editStatusNote').value.trim()||null});
         if(statusError)throw statusError;
         if(error)throw error;
-        ({outlets,staffRows,adminRows}=await loadData()); view.querySelector('#staffList').innerHTML='<div class="notice">Staff profile updated.</div>'; renderList();
+        ({outlets,staffRows,adminRows,avatarRows}=await loadData()); view.querySelector('#staffList').innerHTML='<div class="notice">Staff profile updated.</div>'; renderList();
       }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to save changes.')+'</p>';}
       finally{btn.disabled=false;btn.textContent='Save changes';}
     };
@@ -805,7 +813,7 @@ async function renderPeople(view, supabase, profile) {
         msg.innerHTML='<div class="notice setup-share"><strong>Login reset.</strong><br><span class="hint">The staff member can select their name and complete setup again.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(s.name))}</div><div class="share-actions"><button type="button" id="copyResetWelcome" class="secondary">Copy message</button><button type="button" id="shareResetWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>';
         view.querySelector('#copyResetWelcome').onclick=(e)=>copyStaffWelcomeMessage(s.name,e.currentTarget);
         view.querySelector('#shareResetWhatsApp').onclick=()=>openStaffWelcomeWhatsApp(s.name);
-        ({outlets,staffRows}=await loadData());
+        ({outlets,staffRows,avatarRows}=await loadData());
       }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to reset PIN.')+'</p>';}
       finally{btn.disabled=false;btn.textContent='Reset login';}
     };
@@ -822,7 +830,7 @@ async function renderPeople(view, supabase, profile) {
       add.disabled=true;add.textContent='Creating…';msg.innerHTML='';
       try{
         const {error}=await supabase.rpc('superuser_create_admin',{p_name:name,p_outlet_id:outletId});if(error)throw error;
-        ({outlets,staffRows,adminRows}=await loadData());
+        ({outlets,staffRows,adminRows,avatarRows}=await loadData());
         renderAdmins();
         view.querySelector('#adminName').value='';panel.hidden=true;show.hidden=false;
         msg.innerHTML='';
@@ -845,7 +853,7 @@ async function renderPeople(view, supabase, profile) {
       view.querySelector('#copyNewWelcome').onclick=(e)=>copyStaffWelcomeMessage(name,e.currentTarget);
       view.querySelector('#shareNewWhatsApp').onclick=()=>openStaffWelcomeWhatsApp(name);
       view.querySelector('#staffName').value='';view.querySelector('#staffSalary').value='';
-      ({outlets,staffRows}=await loadData());renderList();
+      ({outlets,staffRows,avatarRows}=await loadData());renderList();
     }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to add staff.')+'</p>';}
     finally{btn.disabled=false;btn.textContent='Add staff member';}
   };
@@ -1605,20 +1613,61 @@ async function renderAttendance(view, supabase, profile) {
       <details id="attendanceRecordsDisclosure" class="attendance-disclosure attendance-records" open><summary><span id="attendanceListTitle">Attendance</span><span class="disclosure-chevron">›</span></summary><div class="attendance-disclosure-body" id="attendanceList"><p class="section-help">Loading attendance…</p></div></details>
       </div>
       <div id="leavePanel" hidden>
-        <div class="summary-title-row attendance-heading"><div><span class="eyebrow">Time off</span><h2>Leave</h2><p>Request leave and check its status.</p></div></div>
-        ${userRow?.staff_id?`<section class="summary-section compact"><div class="summary-section-title"><span></span><h3>Request leave</h3></div><div class="summary-two"><label class="summary-label">From<input id="leaveStart" type="date"></label><label class="summary-label">To<input id="leaveEnd" type="date"></label></div><label class="summary-label full-field">Reason<input id="leaveReason" placeholder="Reason (optional)"></label><button id="submitLeave" class="secondary" type="button">Submit leave request</button><div id="leaveMessage" class="purchase-message" hidden></div></section>`:''}
-        <section class="summary-section"><div class="summary-section-title"><span></span><h3>${isAdmin?'Leave requests':'My leave requests'}</h3></div><div id="leaveRequests"><p class="section-help">Loading leave requests…</p></div></section>
+        <div class="summary-title-row attendance-heading"><div><span class="eyebrow">Time off</span><h2>Leave</h2></div></div>
+        ${userRow?.staff_id?`<section class="summary-section compact leave-request-card"><div class="summary-section-title"><span></span><h3>Request leave</h3></div><label class="summary-label full-field">Duration<select id="leaveType"><option value="LEAVE">Full day</option><option value="HALF_DAY">Half day</option></select></label><div class="leave-date-grid"><label class="summary-label"><span id="leaveStartLabel">From</span><input id="leaveStart" type="date"></label><label id="leaveEndWrap" class="summary-label">To<input id="leaveEnd" type="date"></label></div><div class="leave-request-total"><span>Number of days</span><strong id="leaveDaysRequested">—</strong></div><div id="leaveAllowance" class="leave-allowance" aria-live="polite"><p class="section-help">Loading leave allowance…</p></div><div id="leaveAllowanceWarning" class="leave-allowance-warning" role="status" hidden></div><label class="summary-label full-field">Reason<input id="leaveReason" placeholder="Reason (optional)"></label><button id="submitLeave" class="secondary" type="button">Submit leave request</button><div id="leaveMessage" class="purchase-message" hidden></div></section>`:''}
+        <section class="summary-section"><div class="summary-section-title"><span></span><h3>${isAdmin?'Leave requests':'My leave requests'}</h3></div><div id="leaveReviewMessage" class="purchase-message" hidden></div><div id="leaveRequests"><p class="section-help">Loading leave requests…</p></div></section>
       </div>
     </div>`;
   const outletSelect=view.querySelector('#attOutlet'),staffSelect=view.querySelector('#attStaff'),monthInput=view.querySelector('#attMonth');
-  const loadLeaveRequests=async()=>{const{data,error}=await supabase.rpc('get_leave_requests',{p_outlet_id:isAdmin?outletId:null});const box=view.querySelector('#leaveRequests');if(error){box.innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';return;}const rows=Array.isArray(data)?data:[];box.innerHTML=rows.length?rows.map(r=>`<div class="leave-row"><div><strong>${escapeHtml(r.staff_name||'Leave')}</strong><small>${escapeHtml(r.start_date)} → ${escapeHtml(r.end_date)} · ${escapeHtml(r.leave_type||'Leave')}</small>${r.reason?`<small>${escapeHtml(r.reason)}</small>`:''}</div><span class="soft-badge">${escapeHtml(r.status||'PENDING')}</span>${isAdmin&&r.status==='PENDING'?`<div class="leave-actions"><button class="secondary leave-review" data-id="${r.id}" data-status="APPROVED">Approve</button><button class="ghost leave-review" data-id="${r.id}" data-status="REJECTED">Reject</button></div>`:''}</div>`).join(''):'<div class="notice">No leave requests.</div>';box.querySelectorAll('.leave-review').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;const{error}=await supabase.rpc('review_leave_request',{p_request_id:Number(btn.dataset.id),p_status:btn.dataset.status,p_review_note:null});if(error){showAttendanceMessage(error.message);btn.disabled=false;return;}showAttendanceMessage('Leave request '+btn.dataset.status.toLowerCase()+'.','success');await loadLeaveRequests();await refresh();});};
-  const submitLeave=view.querySelector('#submitLeave');if(submitLeave)submitLeave.onclick=async()=>{const start=view.querySelector('#leaveStart').value,end=view.querySelector('#leaveEnd').value||start,reason=view.querySelector('#leaveReason').value.trim(),msg=view.querySelector('#leaveMessage');if(!start){msg.textContent='Choose a leave start date.';msg.className='purchase-message error';msg.hidden=false;return;}submitLeave.disabled=true;const{error}=await supabase.rpc('submit_leave_request',{p_start_date:start,p_end_date:end,p_leave_type:'LEAVE',p_reason:reason||null});submitLeave.disabled=false;if(error){msg.textContent=error.message;msg.className='purchase-message error';msg.hidden=false;return;}msg.textContent='Leave request submitted.';msg.className='purchase-message success';msg.hidden=false;view.querySelector('#leaveReason').value='';await loadLeaveRequests();};
+  const loadLeaveRequests=async()=>{const{data,error}=await supabase.rpc('get_leave_requests',{p_outlet_id:isAdmin?outletId:null});const box=view.querySelector('#leaveRequests');if(error){box.innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';return;}const rows=Array.isArray(data)?data:[];box.innerHTML=rows.length?rows.map(r=>`<div class="leave-row"><div><strong>${escapeHtml(r.staff_name||'Leave')}</strong><small>${escapeHtml(r.start_date)}${r.leave_type==='HALF_DAY'?'':' → '+escapeHtml(r.end_date)} · ${escapeHtml(({LEAVE:'Full day',HALF_DAY:'Half day',PAID_OFF:'Paid off'})[r.leave_type]||r.leave_type||'Leave')}</small>${r.reason?`<small>${escapeHtml(r.reason)}</small>`:''}</div><span class="soft-badge">${escapeHtml(r.status||'PENDING')}</span>${isAdmin&&r.status==='PENDING'?`<div class="leave-actions"><button class="secondary leave-review" data-id="${r.id}" data-status="APPROVED">Approve</button><button class="ghost leave-review" data-id="${r.id}" data-status="REJECTED">Reject</button></div>`:''}</div>`).join(''):'<div class="notice">No leave requests.</div>';box.querySelectorAll('.leave-review').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;const{error}=await supabase.rpc('review_leave_request',{p_request_id:Number(btn.dataset.id),p_status:btn.dataset.status,p_review_note:null});const msg=view.querySelector('#leaveReviewMessage');msg.textContent=error?error.message:'Leave request '+btn.dataset.status.toLowerCase()+'.';msg.className='purchase-message '+(error?'error':'success');msg.hidden=false;if(error){btn.disabled=false;return;}await loadLeaveRequests();await updateLeaveAllowance();await refresh();});};
+  const leaveType=view.querySelector('#leaveType'),leaveStart=view.querySelector('#leaveStart'),leaveEnd=view.querySelector('#leaveEnd');
+  let allowanceRequest=0;
+  const dayCount=(start,end)=>Math.round((new Date(end+'T00:00:00Z')-new Date(start+'T00:00:00Z'))/86400000)+1;
+  const leaveDateLabel=date=>new Date(date+'T12:00:00Z').toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+  const updateLeaveAllowance=async()=>{
+    if(!leaveType)return;
+    const request=++allowanceRequest,hasDate=!!leaveStart.value,type=leaveType.value;
+    const start=leaveStart.value||todayIST,end=type==='HALF_DAY'?start:(leaveEnd.value||start);
+    const box=view.querySelector('#leaveAllowance'),warning=view.querySelector('#leaveAllowanceWarning'),days=view.querySelector('#leaveDaysRequested');
+    warning.hidden=true;
+    if(end<start||dayCount(start,end)>367){days.textContent='—';box.innerHTML='<p class="form-error">Choose a valid date range of up to one year.</p>';return;}
+    const count=type==='HALF_DAY'?.5:dayCount(start,end);
+    days.textContent=hasDate?count+(count===1?' day':' days'):'—';
+    box.innerHTML='<p class="section-help">Checking leave allowance…</p>';
+    const{data,error}=await supabase.rpc('get_leave_allowance',{p_start_date:start,p_end_date:end,p_leave_type:type});
+    if(request!==allowanceRequest||!box.isConnected)return;
+    if(error){box.innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';return;}
+    const periods=data?.periods||[];
+    box.innerHTML=periods.map(p=>`<div class="leave-allowance-item"><div><small>Salary month · ${escapeHtml(leaveDateLabel(p.period_start))} – ${escapeHtml(leaveDateLabel(p.period_end))}</small><strong>${Number(p.available_days)} ${Number(p.available_days)===1?'day':'days'} available</strong></div><span>${Number(p.used_days)} used · ${Number(p.pending_days)} pending</span></div>`).join('');
+    const exceeded=hasDate?periods.filter(p=>p.exceeds_allowance):[];
+    if(exceeded.length){warning.innerHTML=exceeded.map(p=>`<p><strong>${escapeHtml(leaveDateLabel(p.period_start))} – ${escapeHtml(leaveDateLabel(p.period_end))}: ${Number(p.projected_days_off)} days off</strong><br>This request exceeds the 3-day allowance. You will be paid only for days worked, at your basic salary ÷ 30 per day.</p>`).join('');warning.hidden=false;}
+  };
+  const syncLeaveDates=()=>{
+    if(!leaveType)return;
+    const half=leaveType.value==='HALF_DAY';
+    view.querySelector('#leaveEndWrap').hidden=half;
+    view.querySelector('#leaveStartLabel').textContent=half?'Date':'From';
+    leaveEnd.min=leaveStart.value;
+    if(half)leaveEnd.value=leaveStart.value;
+    updateLeaveAllowance();
+  };
+  leaveType?.addEventListener('change',syncLeaveDates);leaveStart?.addEventListener('change',syncLeaveDates);leaveEnd?.addEventListener('change',updateLeaveAllowance);
+  updateLeaveAllowance();
+  const submitLeave=view.querySelector('#submitLeave');if(submitLeave)submitLeave.onclick=async()=>{
+    const type=leaveType.value,start=leaveStart.value,end=type==='HALF_DAY'?start:(leaveEnd.value||start),reason=view.querySelector('#leaveReason').value.trim(),msg=view.querySelector('#leaveMessage');
+    if(!start||end<start){msg.textContent=!start?'Choose a leave date.':'End date cannot be before start date.';msg.className='purchase-message error';msg.hidden=false;return;}
+    submitLeave.disabled=true;
+    const{error}=await supabase.rpc('submit_leave_request',{p_start_date:start,p_end_date:end,p_leave_type:type,p_reason:reason||null});
+    submitLeave.disabled=false;
+    if(error){msg.textContent=error.message;msg.className='purchase-message error';msg.hidden=false;return;}
+    msg.textContent=(type==='HALF_DAY'?'Half-day':'Leave')+' request submitted.';msg.className='purchase-message success';msg.hidden=false;view.querySelector('#leaveReason').value='';await loadLeaveRequests();await updateLeaveAllowance();
+  };
   loadLeaveRequests();
   const dateRange=()=>{if(filter==='today')return[todayIST,todayIST];if(filter==='yesterday')return[yesterday,yesterday];const[y,m]=selectedMonth.split('-').map(Number),last=new Date(Date.UTC(y,m,0)).getUTCDate();return[selectedMonth+'-01',selectedMonth+'-'+String(last).padStart(2,'0')];};
   const prettyTime=t=>t?String(t).slice(0,5):'—';
   const prettyDate=d=>new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:filter==='month'?undefined:'numeric'});
-  const statusLabel=r=>r.status==='LATE'?('Late · '+r.late_mins+' min'):r.status==='HALF_DAY'?('Half-day · '+r.late_mins+' min late'):({PRESENT:'On time',LEAVE:'Leave',ABSENT:'Absent',WEEKLY_OFF:'Weekly off',UPCOMING:'Upcoming',NOT_CHECKED_IN:'Not checked in',NEEDS_REVIEW:'Needs review'})[r.status]||r.status;
-  const statusClass=x=>({PRESENT:'ok',LATE:'warn',HALF_DAY:'warn',LEAVE:'info',ABSENT:'bad',WEEKLY_OFF:'neutral',UPCOMING:'neutral',NOT_CHECKED_IN:'neutral',NEEDS_REVIEW:'bad'})[x]||'neutral';
+  const statusLabel=r=>r.status==='LATE'?('Late · '+r.late_mins+' min'):r.status==='HALF_DAY'?(Number(r.late_mins)>0?'Half-day · '+r.late_mins+' min late':'Half-day'):({PRESENT:'On time',LEAVE:'Leave',HALF_DAY_LEAVE:'Half-day leave · no check-in',ABSENT:'Absent',WEEKLY_OFF:'Weekly off',UPCOMING:'Upcoming',NOT_CHECKED_IN:'Not checked in',NEEDS_REVIEW:'Needs review'})[r.status]||r.status;
+  const statusClass=x=>({PRESENT:'ok',LATE:'warn',HALF_DAY:'warn',HALF_DAY_LEAVE:'info',LEAVE:'info',ABSENT:'bad',WEEKLY_OFF:'neutral',UPCOMING:'neutral',NOT_CHECKED_IN:'neutral',NEEDS_REVIEW:'bad'})[x]||'neutral';
   const loadStaff=async()=>{if(!isAdmin)return;const{data}=await supabase.rpc('get_staff_roster',{p_outlet_id:outletId});staffRows=data||[];staffSelect.innerHTML='<option value="">All staff</option>'+staffRows.map(x=>`<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('');if(staffId)staffSelect.value=String(staffId);};
   const showAttendanceMessage=(message,type='error')=>{const box=view.querySelector('#attendanceMessage');box.textContent=message;box.className='purchase-message '+(type==='success'?'success':'error');box.hidden=false;if(type==='success')setTimeout(()=>{if(box.isConnected)box.hidden=true;},2200);};
   const openPhoto=async path=>{if(!path)return;if(/^https?:/i.test(path)){window.open(path,'_blank','noopener,noreferrer');return;}const{data,error}=await supabase.storage.from('attendance-photos').createSignedUrl(path,60);if(error)return showAttendanceMessage(error.message);window.open(data.signedUrl,'_blank','noopener,noreferrer');};
@@ -1631,7 +1680,8 @@ async function renderAttendance(view, supabase, profile) {
     const[startDate,endDate]=dateRange();view.querySelector('#attendanceState').textContent='Loading…';
     const{data,error}=await supabase.rpc('get_attendance_calendar',{p_outlet_id:outletId,p_staff_id:staffId||null,p_start_date:startDate,p_end_date:endDate});
     if(error){view.querySelector('#attendanceList').innerHTML=`<p class="form-error">${escapeHtml(error.message)}</p>`;view.querySelector('#attendanceState').textContent='Error';return;}
-    const rows=data||[],counts={present:rows.filter(r=>['PRESENT','LATE','HALF_DAY','NEEDS_REVIEW'].includes(r.status)).length,late:rows.filter(r=>['LATE','HALF_DAY'].includes(r.status)&&Number(r.late_mins)>0).length,lateMins:rows.reduce((a,r)=>a+Number(r.late_mins||0),0),absent:rows.filter(r=>r.status==='ABSENT').length,leave:rows.filter(r=>r.status==='LEAVE').length,missing:rows.filter(r=>r.status==='NOT_CHECKED_IN').length,half:rows.filter(r=>r.status==='HALF_DAY').length};
+    let attendanceAvatars=new Map();try{attendanceAvatars=await loadStaffAvatars(supabase,[...new Set((data||[]).map(r=>Number(r.staff_id)))]);}catch(error){console.warn(error.message);}
+    const rows=data||[],counts={present:rows.filter(r=>['PRESENT','LATE','HALF_DAY','NEEDS_REVIEW'].includes(r.status)).length,late:rows.filter(r=>['LATE','HALF_DAY'].includes(r.status)&&Number(r.late_mins)>0).length,lateMins:rows.reduce((a,r)=>a+Number(r.late_mins||0),0),absent:rows.filter(r=>r.status==='ABSENT').length,leave:rows.filter(r=>r.status==='LEAVE').length,missing:rows.filter(r=>r.status==='NOT_CHECKED_IN').length,half:rows.filter(r=>['HALF_DAY','HALF_DAY_LEAVE'].includes(r.status)).length};
     view.querySelector('#attendanceStats').innerHTML=`<div class="attendance-stats"><div><strong>${counts.present}</strong><span>Present</span></div><div><strong>${counts.late}</strong><span>Late</span></div>${filter==='month'?`<div><strong>${counts.absent}</strong><span>Absent</span></div><div><strong>${counts.leave}</strong><span>Leave</span></div><div><strong>${counts.half}</strong><span>Half-day</span></div><div><strong>${counts.lateMins}</strong><span>Late min</span></div>`:`<div><strong>${counts.missing}</strong><span>Not in</span></div><div><strong>${counts.absent}</strong><span>Absent</span></div>`}</div>`;
     const outletName=isOwner?((outlets||[]).find(x=>Number(x.id)===Number(outletId))?.name||'Café'):(profile.outlets?.name||'Café');
     const dayLabel=new Date(todayIST+'T12:00:00').toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short'});
@@ -1641,9 +1691,10 @@ async function renderAttendance(view, supabase, profile) {
     view.querySelector('#attendanceActionContext').textContent=filter!=='today'?'Viewing attendance history':!isAdmin?'':reviewCount?reviewCount+' attendance '+(reviewCount===1?'record needs':'records need')+' review':notInCount?notInCount+' '+(notInCount===1?'person has':'people have')+' not checked in':'No attendance action pending';
     view.querySelector('#attendanceContext').textContent=filter==='today'?'Today’s attendance':filter==='yesterday'?'Yesterday’s attendance':new Date(selectedMonth+'-01T12:00:00').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
     view.querySelector('#attendanceState').textContent=rows.length+(filter==='month'?' calendar rows':' staff');view.querySelector('#attendanceListTitle').textContent=filter==='month'?'View daily attendance':'Attendance';const recordsDisclosure=view.querySelector('#attendanceRecordsDisclosure');if(recordsDisclosure)recordsDisclosure.open=filter!=='month';
-    const priority={NEEDS_REVIEW:0,ABSENT:1,NOT_CHECKED_IN:2,LATE:3,HALF_DAY:4,LEAVE:5,PRESENT:6,WEEKLY_OFF:7,UPCOMING:8};
+    const priority={NEEDS_REVIEW:0,ABSENT:1,NOT_CHECKED_IN:2,LATE:3,HALF_DAY:4,HALF_DAY_LEAVE:5,LEAVE:6,PRESENT:7,WEEKLY_OFF:8,UPCOMING:9};
     const ordered=[...rows].sort((a,b)=>filter==='month'?(b.attendance_date.localeCompare(a.attendance_date)||a.staff_name.localeCompare(b.staff_name)):((priority[a.status]??9)-(priority[b.status]??9)||a.staff_name.localeCompare(b.staff_name)));
-    view.querySelector('#attendanceList').innerHTML=ordered.length?ordered.map(r=>`<article class="attendance-row ${r.status==='NEEDS_REVIEW'?'attention':''}"><div class="attendance-main"><div class="attendance-name">${escapeHtml(r.staff_name)}</div><div class="attendance-meta">${prettyDate(r.attendance_date)} · Shift ${prettyTime(r.shift_start)}</div></div><div class="attendance-result"><div class="attendance-time">${r.punch_time?prettyTime(r.punch_time):'—'}</div><span class="attendance-badge ${statusClass(r.status)}">${escapeHtml(statusLabel(r))}</span></div><div class="attendance-actions">${r.photo_url?'<button type="button" class="text-action photo-btn">View photo</button>':''}${isAdmin&&r.punch_time?'<button type="button" class="text-action correct-btn">Correct</button>':''}</div></article>`).join(''):'<p class="section-help">No staff records for this period.</p>';
+    view.querySelector('#attendanceList').innerHTML=ordered.length?ordered.map(r=>`<article class="attendance-row ${r.status==='NEEDS_REVIEW'?'attention':''}"><div class="attendance-main">${staffAvatar({id:r.staff_id,name:r.staff_name},{...attendanceAvatars.get(Number(r.staff_id)),checked_in:!!r.punch_time&&!(['ABSENT','LEAVE'].includes(r.status)),business_date:r.attendance_date},'small')}<div><div class="attendance-name">${escapeHtml(r.staff_name)}</div><div class="attendance-meta">${prettyDate(r.attendance_date)} · Shift ${prettyTime(r.shift_start)}</div></div></div><div class="attendance-result"><div class="attendance-time">${r.punch_time?prettyTime(r.punch_time):'—'}</div><span class="attendance-badge ${statusClass(r.status)}">${escapeHtml(statusLabel(r))}</span></div><div class="attendance-actions">${r.photo_url?'<button type="button" class="text-action photo-btn">View photo</button>':''}${isAdmin&&r.punch_time?'<button type="button" class="text-action correct-btn">Correct</button>':''}</div></article>`).join(''):'<p class="section-help">No staff records for this period.</p>';
+    bindAvatarImages(view);
     [...view.querySelectorAll('.attendance-row')].forEach((el,i)=>{const r=ordered[i];el.querySelector('.photo-btn')?.addEventListener('click',()=>openPhoto(r.photo_url));el.querySelector('.correct-btn')?.addEventListener('click',()=>correctRow(r));});
     if(!isAdmin){const row=rows.find(r=>r.attendance_date===todayIST&&Number(r.staff_id)===Number(staffId)),btn=view.querySelector('#checkinBtn'),status=view.querySelector('#staffAttendanceStatus'),hint=view.querySelector('#staffAttendanceHint');if(btn){const checked=!!row?.punch_time;btn.disabled=checked;btn.textContent=checked?'Checked in · '+prettyTime(row.punch_time):'Take photo & check in';if(status)status.textContent=checked?'Checked in':'Not checked in';if(hint)hint.textContent=checked?'Today’s attendance is recorded.':'Take a photo to mark today’s attendance.';}}
   };
@@ -1652,6 +1703,6 @@ async function renderAttendance(view, supabase, profile) {
   if(isAdmin){await loadStaff();staffSelect.onchange=()=>{staffId=staffSelect.value?Number(staffSelect.value):null;refresh();};}
   view.querySelectorAll('.attendance-tabs button').forEach(btn=>btn.onclick=()=>{filter=btn.dataset.range;view.querySelectorAll('.attendance-tabs button').forEach(b=>b.classList.toggle('active',b===btn));view.querySelector('#monthPickerWrap').hidden=filter!=='month';refresh();});
   if(monthInput)monthInput.onchange=()=>{selectedMonth=monthInput.value||monthKey;refresh();};
-  if(!isAdmin){const photo=view.querySelector('#attendancePhoto'),btn=view.querySelector('#checkinBtn'),msg=view.querySelector('#checkinMsg');btn.onclick=()=>photo.click();photo.onchange=async()=>{const file=photo.files?.[0];if(!file)return;btn.disabled=true;btn.textContent='Checking in…';msg.hidden=true;const body=new FormData();body.append('photo',file);const{data,error}=await supabase.functions.invoke('chaitracker-attendance',{body});if(error||!data?.ok){msg.textContent=data?.error||error?.message||'Check-in failed';msg.className='summary-inline-status bad';msg.hidden=false;btn.disabled=false;btn.textContent='Take photo & check in';return;}msg.textContent='Attendance recorded';msg.className='summary-inline-status ok';msg.hidden=false;await refresh();};}
+  if(!isAdmin){const photo=view.querySelector('#attendancePhoto'),btn=view.querySelector('#checkinBtn'),msg=view.querySelector('#checkinMsg');btn.onclick=()=>photo.click();photo.onchange=async()=>{const file=photo.files?.[0];if(!file)return;btn.disabled=true;btn.textContent='Checking in…';msg.hidden=true;const body=new FormData();body.append('photo',file);const{data,error}=await supabase.functions.invoke('chaitracker-attendance',{body});if(error||!data?.ok){msg.textContent=data?.error||error?.message||'Check-in failed';msg.className='summary-inline-status bad';msg.hidden=false;btn.disabled=false;btn.textContent='Take photo & check in';return;}msg.textContent='Attendance recorded';msg.className='summary-inline-status ok';msg.hidden=false;await refresh();await refreshStaffAvatarElements(supabase,[staffId]);};}
   await refresh();
 }
