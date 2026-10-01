@@ -1,0 +1,255 @@
+-- B121: let the owner explicitly revise an overlapping unpaid payroll while retaining its record ID and audit history.
+create or replace function public.save_salary_payroll(
+  p_staff_id integer,
+  p_period_start date,
+  p_period_end date,
+  p_pay_date date,
+  p_details jsonb,
+  p_action text,
+  p_user_id uuid,
+  p_payment_method text default null,
+  p_payment_reference text default null
+) returns public.salary_records
+language plpgsql security definer set search_path = '' as $function$
+declare
+  v_actor public.users;
+  v_staff public.staff;
+  v_row public.salary_records;
+  v_replace public.salary_records;
+  v_replace_id varchar;
+  v_old_status text;
+  v_new_status text;
+  v_period_days integer;
+  v_basic numeric;
+  v_holiday numeric;
+  v_holiday_days numeric;
+  v_present numeric;
+  v_absent numeric;
+  v_absent_deduction numeric;
+  v_half_day_deduction numeric;
+  v_late_mins integer;
+  v_late_hours numeric;
+  v_late_penalty numeric;
+  v_late_waived boolean;
+  v_manual_advance numeric;
+  v_scheduled_advance numeric;
+  v_ot numeric;
+  v_loan_balance numeric;
+  v_loan_deduction numeric;
+  v_extra_earnings numeric;
+  v_extra_deductions numeric;
+  v_net_before_advance numeric;
+  v_left numeric;
+  v_due record;
+  v_take numeric;
+  v_schedule_posted numeric := 0;
+  v_net numeric;
+  v_late_final numeric;
+  v_id varchar;
+begin
+  select * into v_actor from public.users
+  where auth_user_id=auth.uid() and active=true and id=p_user_id;
+  if not found or coalesce(v_actor.access_class,'')<>'ADMIN' then
+    raise exception 'Owner access required';
+  end if;
+  select * into v_staff from public.staff where id=p_staff_id for update;
+  if not found then raise exception 'Staff not found'; end if;
+  if p_period_start is null or p_period_end is null or p_period_end<p_period_start then
+    raise exception 'Enter a valid pay period';
+  end if;
+  if p_pay_date is null then raise exception 'Pay date is required'; end if;
+  if p_action is null or p_action not in ('SAVE_DRAFT','FINALIZE','MARK_PAID') then raise exception 'Invalid payroll action'; end if;
+  if jsonb_typeof(coalesce(p_details,'{}'::jsonb))<>'object' then raise exception 'Payroll details must be an object'; end if;
+  if p_payment_method is not null and p_payment_method not in ('Cash','UPI','Bank','Other') then raise exception 'Invalid payment method'; end if;
+  if length(coalesce(p_payment_reference,''))>120 then raise exception 'Payment reference is too long'; end if;
+
+  v_period_days:=(p_period_end-p_period_start)+1;
+  v_basic:=coalesce((p_details->>'basic_salary')::numeric,0);
+  v_holiday:=coalesce((p_details->>'holiday_pay')::numeric,0);
+  v_holiday_days:=coalesce((p_details->>'holiday_days')::numeric,0);
+  v_present:=coalesce((p_details->>'present_days')::numeric,0);
+  v_absent:=coalesce((p_details->>'absent_days')::numeric,0);
+  v_absent_deduction:=coalesce((p_details->>'absent_deduction')::numeric,0);
+  v_half_day_deduction:=coalesce((p_details->>'half_day_deduction')::numeric,0);
+  v_late_mins:=greatest(0,coalesce((p_details->>'late_mins')::integer,0));
+  v_late_hours:=coalesce((p_details->>'late_hours')::numeric,0);
+  v_late_penalty:=coalesce((p_details->>'late_penalty')::numeric,0);
+  v_late_waived:=coalesce((p_details->>'late_penalty_waived')::boolean,false);
+  v_manual_advance:=coalesce((p_details->>'advance_deduction')::numeric,0);
+  v_scheduled_advance:=coalesce((p_details->>'advance_installment_deduction')::numeric,0);
+  v_ot:=coalesce((p_details->>'ot_credit')::numeric,0);
+  v_loan_balance:=coalesce((p_details->>'loan_prev_balance')::numeric,0);
+  v_loan_deduction:=coalesce((p_details->>'loan_deduct_this_month')::numeric,0);
+  if p_details ? 'extra_earnings' and jsonb_typeof(p_details->'extra_earnings')<>'array' then raise exception 'Extra earnings must be a list'; end if;
+  if p_details ? 'extra_deductions' and jsonb_typeof(p_details->'extra_deductions')<>'array' then raise exception 'Extra deductions must be a list'; end if;
+  if exists(select 1 from jsonb_array_elements(coalesce(p_details->'extra_earnings','[]'::jsonb)) x
+      where coalesce(x->>'label','')='' or coalesce((x->>'amount')::numeric,-1)<0)
+     or exists(select 1 from jsonb_array_elements(coalesce(p_details->'extra_deductions','[]'::jsonb)) x
+      where coalesce(x->>'label','')='' or coalesce((x->>'amount')::numeric,-1)<0) then
+    raise exception 'Each payroll adjustment needs a description and non-negative amount';
+  end if;
+  select coalesce(sum((x->>'amount')::numeric),0) into v_extra_earnings
+    from jsonb_array_elements(coalesce(p_details->'extra_earnings','[]'::jsonb)) x;
+  select coalesce(sum((x->>'amount')::numeric),0) into v_extra_deductions
+    from jsonb_array_elements(coalesce(p_details->'extra_deductions','[]'::jsonb)) x;
+  if v_basic<0 or v_holiday<0 or v_holiday_days<0 or v_present<0 or v_absent<0
+     or v_absent_deduction<0 or v_half_day_deduction<0 or v_late_hours<0 or v_late_penalty<0
+     or v_manual_advance<0 or v_scheduled_advance<0 or v_ot<0
+     or v_loan_balance<0 or v_loan_deduction<0 or v_extra_earnings<0 or v_extra_deductions<0 then
+    raise exception 'Payroll amounts cannot be negative';
+  end if;
+  if v_loan_deduction>v_loan_balance then raise exception 'Loan deduction exceeds the previous balance'; end if;
+
+  v_replace_id:=nullif(p_details->>'replace_record_id','');
+  if v_replace_id is not null then
+    if p_action='MARK_PAID' then raise exception 'Cannot change dates while recording a payment'; end if;
+    select * into v_replace from public.salary_records
+      where id=v_replace_id and outlet_id=v_staff.outlet_id and staff_id=p_staff_id for update;
+    if not found then raise exception 'Payroll to revise was not found'; end if;
+    if v_replace.payroll_status='PAID' or v_replace.payroll_details='{}'::jsonb then
+      raise exception 'Paid or legacy payroll cannot be revised';
+    end if;
+    if v_replace.period_start=p_period_start or
+       not (daterange(v_replace.period_start,v_replace.period_end,'[]') && daterange(p_period_start,p_period_end,'[]')) then
+      raise exception 'Select the overlapping payroll to revise';
+    end if;
+    if exists(select 1 from public.staff_advance_deductions where salary_record_id=v_replace.id)
+       or exists(select 1 from public.extra_time_payments where salary_record_id=v_replace.id) then
+      raise exception 'This payroll has posted advances or transfers; reconcile those before changing its period';
+    end if;
+    v_old_status:=v_replace.payroll_status;
+  else
+    select payroll_status into v_old_status from public.salary_records
+      where outlet_id=v_staff.outlet_id and staff_id=p_staff_id and period_start=p_period_start for update;
+  end if;
+  if v_old_status='PAID' and p_action<>'MARK_PAID' then raise exception 'Paid payroll is locked; use a separate adjustment'; end if;
+  if p_action='MARK_PAID' and v_old_status is distinct from 'FINALIZED' then raise exception 'Finalize payroll before marking it paid'; end if;
+  if p_action='MARK_PAID' and p_payment_method is null then raise exception 'Choose a payment method'; end if;
+  if p_action='SAVE_DRAFT' and v_old_status='FINALIZED' then raise exception 'This payroll is already finalized'; end if;
+  if exists(select 1 from public.salary_records r where r.staff_id=p_staff_id
+      and r.period_start<>p_period_start and (v_replace_id is null or r.id<>v_replace_id)
+      and daterange(r.period_start,r.period_end,'[]') && daterange(p_period_start,p_period_end,'[]')) then
+    raise exception 'This pay period overlaps another payroll period for this staff member';
+  end if;
+  v_new_status:=case p_action when 'SAVE_DRAFT' then 'DRAFT' when 'FINALIZE' then 'FINALIZED' else 'PAID' end;
+  if p_action='MARK_PAID' then
+    update public.salary_records set payroll_status='PAID',payment_method=p_payment_method,
+      payment_reference=nullif(btrim(coalesce(p_payment_reference,'')),''),paid_at=now(),
+      saved_by=v_actor.id,saved_by_name=v_actor.name,created_at=now()
+      where outlet_id=v_staff.outlet_id and staff_id=p_staff_id and period_start=p_period_start
+      returning * into v_row;
+    insert into public.salary_payroll_audit(salary_record_id,actor_user_id,action,prior_status,new_status,payroll_details)
+      values(v_row.id,v_actor.id,p_action,v_old_status,v_new_status,coalesce(v_row.payroll_details,'{}'::jsonb));
+    return v_row;
+  end if;
+
+  v_late_final:=case when v_late_waived then 0 else v_late_penalty end;
+  v_net_before_advance:=v_basic+v_holiday+v_ot+v_extra_earnings-v_absent_deduction-v_half_day_deduction-v_late_final
+    -v_manual_advance-v_loan_deduction-v_extra_deductions;
+  v_net:=v_net_before_advance;
+  if p_action='FINALIZE' then
+    if v_net_before_advance<0 then raise exception 'Deductions exceed earnings; adjust the payroll before finalizing'; end if;
+    if exists(select 1 from public.salary_records where staff_id=p_staff_id and period_start>p_period_start
+      and (v_replace_id is null or id<>v_replace_id) and payroll_status<>'DRAFT') then
+      raise exception 'A later payroll exists; reconcile it before finalizing this period';
+    end if;
+    delete from public.staff_advance_deductions d using public.staff_advance_requests a
+      where d.advance_id=a.id and a.staff_id=p_staff_id and d.period_start=p_period_start;
+    v_left:=least(v_scheduled_advance,greatest(0,v_net_before_advance));
+    for v_due in select * from private.advance_due(p_staff_id,p_period_start) where due>0 loop
+      v_take:=least(v_due.due,v_due.balance,v_left);
+      if v_take>0 then
+        v_schedule_posted:=v_schedule_posted+v_take;v_left:=v_left-v_take;
+      end if;
+    end loop;
+    if abs(v_schedule_posted-v_scheduled_advance)>0.01 then
+      raise exception 'Scheduled advance deduction exceeds the installment due or payable balance';
+    end if;
+  v_net:=round(v_net_before_advance-v_schedule_posted,0);
+  else
+    v_scheduled_advance:=0;
+    v_net:=round(v_net,0);
+  end if;
+  if v_replace_id is not null then
+    update public.salary_records set period_start=p_period_start where id=v_replace_id;
+  end if;
+  v_id:='SAL-'||v_staff.outlet_id||'-'||p_staff_id||'-'||to_char(p_period_start,'YYYYMMDD');
+  insert into public.salary_records(
+    id,outlet_id,staff_id,period_start,period_end,pay_date,period_days,basic_salary,
+    holiday_pay,holiday_days,present_days,absent_days,absent_deduction,late_mins,
+    late_hours_edited,late_penalty,late_penalty_waived,petty_advance,ot_credit,
+    loan_prev_balance,loan_deduct_this_month,loan_remaining,net_salary,saved_by,
+    saved_by_name,created_at,payroll_status,payroll_details,payment_method,payment_reference,paid_at
+  ) values (
+    v_id,v_staff.outlet_id,p_staff_id,p_period_start,p_period_end,p_pay_date,v_period_days,v_basic,
+    v_holiday,v_holiday_days,v_present,v_absent,v_absent_deduction,v_late_mins,
+    v_late_hours,v_late_final,v_late_waived,v_manual_advance+v_schedule_posted,v_ot,
+    v_loan_balance,v_loan_deduction,greatest(0,v_loan_balance-v_loan_deduction),v_net,v_actor.id,
+    v_actor.name,now(),v_new_status,coalesce(p_details,'{}'::jsonb),null,null,null
+  ) on conflict(outlet_id,staff_id,period_start) do update set
+    period_end=excluded.period_end,pay_date=excluded.pay_date,period_days=excluded.period_days,
+    basic_salary=excluded.basic_salary,holiday_pay=excluded.holiday_pay,holiday_days=excluded.holiday_days,
+    present_days=excluded.present_days,absent_days=excluded.absent_days,absent_deduction=excluded.absent_deduction,
+    late_mins=excluded.late_mins,late_hours_edited=excluded.late_hours_edited,late_penalty=excluded.late_penalty,
+    late_penalty_waived=excluded.late_penalty_waived,petty_advance=excluded.petty_advance,ot_credit=excluded.ot_credit,
+    loan_prev_balance=excluded.loan_prev_balance,loan_deduct_this_month=excluded.loan_deduct_this_month,
+    loan_remaining=excluded.loan_remaining,net_salary=excluded.net_salary,saved_by=excluded.saved_by,
+    saved_by_name=excluded.saved_by_name,created_at=now(),payroll_status=excluded.payroll_status,
+    payroll_details=excluded.payroll_details,payment_method=null,payment_reference=null,paid_at=null
+  returning * into v_row;
+  if p_action='FINALIZE' then
+    v_left:=v_schedule_posted;
+    for v_due in select * from private.advance_due(p_staff_id,p_period_start) where due>0 loop
+      v_take:=least(v_due.due,v_due.balance,v_left);
+      if v_take>0 then
+        insert into public.staff_advance_deductions(advance_id,period_start,amount,salary_record_id)
+          values(v_due.advance_id,p_period_start,v_take,v_row.id);
+        v_left:=v_left-v_take;
+      end if;
+    end loop;
+    if p_details ? 'included_transfer_ids' then
+      if jsonb_typeof(p_details->'included_transfer_ids')<>'array' then raise exception 'Transfer selection must be a list'; end if;
+      update public.extra_time_payments ep set status='PAID',salary_record_id=v_row.id
+      where ep.id in (select value::bigint from jsonb_array_elements_text(p_details->'included_transfer_ids'))
+        and ep.status='READY'
+        and exists (
+          select 1 from public.users u
+          join public.extra_time_dispatches d on d.prepared_by=u.id
+          join public.extra_time_requests r on r.id=d.request_id
+          where u.staff_id=p_staff_id and d.id=ep.dispatch_id
+            and (r.requested_at at time zone 'Asia/Kolkata')::date between p_period_start and p_period_end
+        );
+      if (select count(*) from jsonb_array_elements_text(p_details->'included_transfer_ids')) <>
+         (select count(*) from public.extra_time_payments ep where ep.salary_record_id=v_row.id and ep.id in
+           (select value::bigint from jsonb_array_elements_text(p_details->'included_transfer_ids'))) then
+        raise exception 'One or more transfer payments are unavailable or already included in another payroll';
+      end if;
+    end if;
+  end if;
+  insert into public.salary_payroll_audit(salary_record_id,actor_user_id,action,prior_status,new_status,payroll_details)
+    values(v_row.id,v_actor.id,p_action,v_old_status,v_new_status,coalesce(p_details,'{}'::jsonb));
+  return v_row;
+end $function$;
+
+create or replace function public.get_salary_payroll_context(p_staff_id integer,p_month_start date)
+returns jsonb language plpgsql security definer set search_path = '' as $function$
+declare v_actor public.users;v_current public.salary_records;v_prior public.salary_records;
+begin
+  select * into v_actor from public.users where auth_user_id=auth.uid() and active=true;
+  if not found then raise exception 'Authenticated CafeTracker user required';end if;
+  if coalesce(v_actor.access_class,'STAFF')<>'ADMIN' and coalesce(v_actor.staff_id,0)<>p_staff_id then
+    raise exception 'You can only view your own salary';
+  end if;
+  select * into v_current from public.salary_records r where r.staff_id=p_staff_id
+    and r.period_start<(date_trunc('month',p_month_start)+interval '1 month')::date
+    and r.period_end>=date_trunc('month',p_month_start)::date
+  order by r.period_start desc,r.created_at desc limit 1;
+  select * into v_prior from public.salary_records r where r.staff_id=p_staff_id
+    and r.period_end<date_trunc('month',p_month_start)::date and r.payroll_status in ('FINALIZED','PAID')
+  order by r.period_end desc,r.created_at desc limit 1;
+  return jsonb_build_object('current',case when v_current.id is null then null else to_jsonb(v_current) end,
+    'prior',case when v_prior.id is null then null else to_jsonb(v_prior) end);
+end $function$;
+
+revoke all on function public.save_salary_payroll(integer,date,date,date,jsonb,text,uuid,text,text) from public,anon;
+grant execute on function public.save_salary_payroll(integer,date,date,date,jsonb,text,uuid,text,text) to authenticated;
