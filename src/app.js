@@ -1,6 +1,6 @@
 import { renderExtraTime } from './extraTime.js';
 
-const APP_BUILD = 113;
+const APP_BUILD = 114;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -16,6 +16,16 @@ const modules = [
 
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function monthOptions(selected, count=24) {
+  const [year,month]=String(selected).split('-').map(Number);
+  return Array.from({length:count},(_,index)=>{
+    const date=new Date(Date.UTC(year,month-1-index,1));
+    const value=date.toISOString().slice(0,7);
+    const label=date.toLocaleDateString('en-IN',{month:'long',year:'numeric',timeZone:'UTC'});
+    return `<option value="${value}" ${value===selected?'selected':''}>${escapeHtml(label)}</option>`;
+  }).join('');
 }
 
 function icon(name, size=20) {
@@ -1225,20 +1235,30 @@ box.innerHTML=[...groups].map(([name,list])=>`<details class="order-category-gro
 
 }
 
-async function renderSalary(view, supabase, profile) {
+async function renderSalary(view, supabase, profile, initialView='salary') {
   const isAdmin=profile.access_class==='ADMIN', isManager=['Manager','Ops Manager'].includes(profile.role);
   const {data:userRow}=await supabase.from('users').select('staff_id,outlet_id').eq('id',profile.id).maybeSingle();
   let staff=[];
   if(isAdmin){let q=supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status').eq('active',true);if(profile.context_outlet_id)q=q.eq('outlet_id',profile.context_outlet_id);const{data}=await q.order('name');staff=data||[];}
   else {const{data}=await supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status').eq('id',userRow?.staff_id||0);staff=data||[];}
-  if(!staff.length){view.innerHTML='<span class="eyebrow">Salary</span><h2>Salary</h2><p class="section-help">No linked active staff record is available.</p><div id="advancePanel"></div>';await renderAdvancePanel(view,supabase,profile,userRow);return;}
+  if(!staff.length){view.innerHTML='<span class="eyebrow">Salary</span><h2>Salary</h2><p class="section-help">No linked active staff record is available.</p>';return;}
   const nowIST=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   const month=nowIST.slice(0,7);
   view.innerHTML=`<div class="salary-page">
+    <div class="salary-workspace-toggle"><button type="button" data-salary-view="salary">Salary</button><button type="button" data-salary-view="advances">Advances</button></div>
+    <div id="salaryPanel">
     <div class="summary-title-row"><div><span class="eyebrow">${isAdmin?'Payroll':'My pay'}</span><h2>Salary</h2><p>Current month · estimated from recorded attendance and payments</p></div><span class="summary-state">Estimated</span></div>
-    <section class="summary-section compact salary-filters"><label class="summary-label">Payroll month<input id="salaryMonth" type="month" max="${month}" value="${month}"></label>${staff.length>1?`<label class="summary-label">Staff<select id="salaryStaff">${staff.map(x=>`<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('')}</select></label>`:''}</section>
-    <div id="salaryEstimate"><p class="section-help">Loading salary…</p></div><div id="advancePanel"></div>
+    <section class="summary-section compact salary-filters"><label class="summary-label">Payroll month<select id="salaryMonth">${monthOptions(month,36)}</select></label>${staff.length>1?`<label class="summary-label">Staff<select id="salaryStaff">${staff.map(x=>`<option value="${x.id}">${escapeHtml(x.name)}</option>`).join('')}</select></label>`:''}</section>
+    <div id="salaryEstimate"><p class="section-help">Loading salary…</p></div></div>
+    <div id="advancesPanel" hidden><div class="summary-title-row"><div><span class="eyebrow">Staff support</span><h2>Advances</h2><p>Request, approve and record payouts separately.</p></div></div><div id="advancePanel"></div></div>
   </div>`;
+  const setWorkspace=name=>{
+    const advances=name==='advances';
+    view.querySelector('#salaryPanel').hidden=advances;view.querySelector('#advancesPanel').hidden=!advances;
+    view.querySelectorAll('[data-salary-view]').forEach(button=>button.classList.toggle('active',button.dataset.salaryView===name));
+  };
+  view.querySelectorAll('[data-salary-view]').forEach(button=>button.onclick=()=>setWorkspace(button.dataset.salaryView));
+  setWorkspace(initialView);
   const money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
   const render=async()=>{
     const chosen=view.querySelector('#salaryMonth')?.value||month;
@@ -1334,7 +1354,7 @@ async function renderAdvancePanel(view,supabase,profile,userRow){
     button.disabled=true;
     const args=operation==='pay'?{p_id:id,p_mode:panel.querySelector(`[data-mode="${id}"]`).value}:{p_id:id,p_approve:operation==='approve',p_note:''};
     const{error:err}=await supabase.rpc(operation==='pay'?'pay_staff_advance':'decide_staff_advance',args);
-    if(err){message(err.message,true);button.disabled=false;}else await renderSalary(view,supabase,profile);
+    if(err){message(err.message,true);button.disabled=false;}else await renderSalary(view,supabase,profile,'advances');
   });
 }
 
@@ -1360,7 +1380,7 @@ async function renderAttendance(view, supabase, profile) {
       ${!isAdmin?`<section class="attendance-checkin attendance-primary-action"><div><strong id="staffAttendanceStatus">Ready to check in</strong><span id="staffAttendanceHint">Take a photo to mark today’s attendance.</span></div><input id="attendancePhoto" type="file" accept="image/jpeg,image/png,image/webp" capture="user" hidden><button id="checkinBtn" class="primary" type="button">Take photo & check in</button><p id="checkinMsg" class="summary-inline-status" hidden></p></section>`:''}
       <div class="summary-title-row attendance-heading"><div><span class="eyebrow">${isAdmin?'Workforce':'History'}</span><h2>Attendance</h2><p id="attendanceContext">Today’s attendance</p></div><span class="summary-state" id="attendanceState">Loading…</span></div>
 
-      <section class="attendance-filter-bar"><div class="attendance-tabs"><button data-range="today" class="active">Today</button><button data-range="yesterday">Yesterday</button><button data-range="month">Month</button></div><label id="monthPickerWrap" class="summary-label attendance-month" hidden><span>Month</span><input id="attMonth" type="month" value="${selectedMonth}"></label></section>
+      <section class="attendance-filter-bar"><div class="attendance-tabs"><button data-range="today" class="active">Today</button><button data-range="yesterday">Yesterday</button><button data-range="month">Month</button></div><label id="monthPickerWrap" class="summary-label attendance-month" hidden><span>Month</span><select id="attMonth">${monthOptions(selectedMonth,24)}</select></label></section>
       ${isAdmin?`<section class="summary-section compact"><div class="summary-section-title"><span></span><h3>Filter by staff</h3></div><label class="summary-label">Staff<select id="attStaff"><option value="">All staff</option></select></label></section>`:''}
 
       <div id="attendanceMessage" class="purchase-message" hidden></div>
