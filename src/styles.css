@@ -666,6 +666,9 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .salary-net-panel strong{font-size:28px;font-weight:800;letter-spacing:-.04em}
 .salary-net-panel strong.negative{color:#ffe291}
 .payroll-actions{display:grid;grid-template-columns:1fr 1.4fr;gap:9px}
+.payroll-revision{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid #e4a6a9;border-radius:12px;background:#fff7f7;font-size:13px;line-height:1.5}
+.payroll-revision[hidden]{display:none}
+.payroll-revision input{flex:none;margin-top:3px}
 .payroll-audit .salary-line{padding:8px 0;font-size:12px}
 @media(max-width:560px){.salary-last-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.payroll-grid.three{grid-template-columns:repeat(2,minmax(0,1fr))}.payroll-adjustment{grid-template-columns:minmax(0,1fr) minmax(92px,.45fr) auto}.transfer-payroll-item{grid-template-columns:20px minmax(0,1fr) 90px}.transfer-payroll-item strong{grid-column:2/-1;text-align:right}.salary-net-panel strong{font-size:24px}}
 .payroll-period-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(105px,.5fr) minmax(0,1fr) minmax(0,1fr);gap:10px}
