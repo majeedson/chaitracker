@@ -1339,7 +1339,7 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
   view.querySelectorAll('[data-salary-view]').forEach(b=>b.onclick=()=>setWorkspace(b.dataset.salaryView));setWorkspace('salary');
   const monthEl=view.querySelector('#salaryMonth'),staffEl=view.querySelector('#salaryStaff'),panel=view.querySelector('#salaryProcessor');
   const num=(form,name)=>Number(form.elements[name]?.value||0);
-  const absenceDeduction=(basic,daysOff,allowance,divisor)=>daysOff<=allowance?0:Math.round(basic-Math.min(basic,basic*Math.max(0,divisor-daysOff)/divisor));
+  const absenceDeduction=(basic,daysOff,allowance,divisor,periodDays)=>daysOff<=allowance?0:Math.round(basic-Math.min(basic,basic*Math.max(0,periodDays-daysOff)/divisor));
   const load=async()=>{
     const sid=Number(staffEl.value),person=staff.find(s=>Number(s.id)===sid),selected=monthEl.value||month;
     const startDefault=selected+'-01',daysInMonth=new Date(Number(selected.slice(0,4)),Number(selected.slice(5,7)),0).getDate();
@@ -1367,7 +1367,7 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
       paidOffEntitlement=Number(saved.paid_off_entitlement??3),
       priorLoan=Number(saved.loan_prev_balance??current?.loan_prev_balance??(current?0:(prior?.loan_remaining??0))),
       loanRemaining=Number(saved.loan_remaining??current?.loan_remaining??Math.max(0,priorLoan-Number(saved.loan_deduct_this_month??current?.loan_deduct_this_month??estimate.loan_deduction??0))),
-      baseAbsenceDed=Number(saved.absent_deduction??current?.absent_deduction??absenceDeduction(basic,absent,paidOffEntitlement,dayDivisor)),
+      baseAbsenceDed=Number(saved.absent_deduction??current?.absent_deduction??absenceDeduction(basic,absent,paidOffEntitlement,dayDivisor,(new Date(edate+'T12:00:00')-new Date(sdate+'T12:00:00'))/86400000+1)),
       halfDayDed=Number(saved.half_day_deduction??(legacyRecord?0:estimate.half_day_deduction??0)),
       baseLateDed=Number(saved.late_penalty??current?.late_penalty??Math.round(lateHours*basic/(dayDivisor*12))),
       autoAbsenceDed=saved.absence_deduction_manual===true?'false':'true',
@@ -1418,8 +1418,9 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
     const addAdjustment=type=>{const container=panel.querySelector(type==='earning'?'#earningRows':'#deductionRows'),row=document.createElement('div');row.className='payroll-adjustment';row.dataset.adjustment=type;row.innerHTML=`<input type="text" aria-label="${type} description" placeholder="Description"><input type="number" min="0" step="0.01" aria-label="${type} amount" placeholder="Amount ₹"><button type="button" class="text-action" data-remove-adjustment="${type}">Remove</button>`;container.append(row);row.querySelector('input').focus();recalc();};
     panel.querySelectorAll('[data-add-adjustment]').forEach(b=>b.onclick=()=>addAdjustment(b.dataset.addAdjustment));
     panel.addEventListener('click',e=>{const b=e.target.closest('[data-remove-adjustment]');if(b){b.closest('.payroll-adjustment').remove();recalc();}});
-    form.addEventListener('input',e=>{const el=e.target;if(el.name==='absent_deduction')el.dataset.auto='false';if(el.name==='late_penalty')el.dataset.auto='false';if(el.name==='loan_remaining')el.dataset.auto='false';if(['basic_salary','absent_days','paid_off_entitlement','day_divisor'].includes(el.name)&&form.elements.absent_deduction.dataset.auto!=='false')form.elements.absent_deduction.value=absenceDeduction(num(form,'basic_salary'),num(form,'absent_days'),num(form,'paid_off_entitlement'),Math.max(1,num(form,'day_divisor')));if(['basic_salary','late_hours','day_divisor'].includes(el.name)&&form.elements.late_penalty.dataset.auto!=='false')form.elements.late_penalty.value=Math.round(num(form,'late_hours')*num(form,'basic_salary')/(Math.max(1,num(form,'day_divisor'))*12));if(['loan_prev_balance','loan_deduct_this_month'].includes(el.name)&&form.elements.loan_remaining.dataset.auto!=='false')form.elements.loan_remaining.value=Math.max(0,num(form,'loan_prev_balance')-num(form,'loan_deduct_this_month')).toFixed(2);recalc();});form.addEventListener('change',recalc);
-    const updatePeriodDays=()=>{const a=form.elements.period_start.value,b=form.elements.period_end.value;if(a&&b&&b>=a)form.elements.period_days.value=(new Date(b+'T12:00:00')-new Date(a+'T12:00:00'))/86400000+1;};
+    const updateAutoAbsence=()=>{if(form.elements.absent_deduction.dataset.auto!=='false')form.elements.absent_deduction.value=absenceDeduction(num(form,'basic_salary'),num(form,'absent_days'),num(form,'paid_off_entitlement'),Math.max(1,num(form,'day_divisor')),num(form,'period_days'));};
+    form.addEventListener('input',e=>{const el=e.target;if(el.name==='absent_deduction')el.dataset.auto='false';if(el.name==='late_penalty')el.dataset.auto='false';if(el.name==='loan_remaining')el.dataset.auto='false';if(['basic_salary','absent_days','paid_off_entitlement','day_divisor'].includes(el.name))updateAutoAbsence();if(['basic_salary','late_hours','day_divisor'].includes(el.name)&&form.elements.late_penalty.dataset.auto!=='false')form.elements.late_penalty.value=Math.round(num(form,'late_hours')*num(form,'basic_salary')/(Math.max(1,num(form,'day_divisor'))*12));if(['loan_prev_balance','loan_deduct_this_month'].includes(el.name)&&form.elements.loan_remaining.dataset.auto!=='false')form.elements.loan_remaining.value=Math.max(0,num(form,'loan_prev_balance')-num(form,'loan_deduct_this_month')).toFixed(2);recalc();});form.addEventListener('change',recalc);
+    const updatePeriodDays=()=>{const a=form.elements.period_start.value,b=form.elements.period_end.value;if(a&&b&&b>=a){form.elements.period_days.value=(new Date(b+'T12:00:00')-new Date(a+'T12:00:00'))/86400000+1;updateAutoAbsence();recalc();}};
     form.elements.period_start.addEventListener('change',updatePeriodDays);form.elements.period_end.addEventListener('change',updatePeriodDays);recalc();
     const payload=()=>{
       const included=transfers().filter(t=>t.include&&(t.status==='READY'||t.salary_record_id===current?.id));
@@ -1446,7 +1447,7 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
       estimate=fetched;
       for(const [field,value] of Object.entries({basic_salary:fetched.basic_salary,present_days:fetched.present_equivalent_days,absent_days:fetched.absent_days,half_days:fetched.half_days,late_mins:fetched.late_mins,late_hours:fetched.deductible_late_hours,holiday_days:fetched.holiday_duty_days,holiday_pay:fetched.holiday_duty_allowance,half_day_deduction:fetched.half_day_deduction,advance_deduction:fetched.advance_deduction,advance_installment_deduction:fetched.advance_installment_deduction,loan_deduct_this_month:fetched.loan_deduction}))if(form.elements[field]&&value!==undefined)form.elements[field].value=value;
       form.elements.absent_deduction.dataset.auto='true';form.elements.late_penalty.dataset.auto='true';
-      form.elements.absent_deduction.value=absenceDeduction(num(form,'basic_salary'),num(form,'absent_days'),num(form,'paid_off_entitlement'),Math.max(1,num(form,'day_divisor')));
+      updateAutoAbsence();
       form.elements.late_penalty.value=Math.round(num(form,'late_hours')*num(form,'basic_salary')/(Math.max(1,num(form,'day_divisor'))*12));
       if(transferStaffUserIds.length){
         const checked=new Set(transfers().filter(t=>t.include).map(t=>String(t.id))),oldAmounts=new Map(transfers().map(t=>[String(t.id),t.amount]));
