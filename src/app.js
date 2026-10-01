@@ -1,15 +1,15 @@
 import { renderExtraTime } from './extraTime.js';
 
-const APP_BUILD = 111;
+const APP_BUILD = 112;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
   ['salary', 'Salary'],
   ['stock', 'Stock'],
-  ['purchase', 'Purchase'],
+  ['orders', 'Orders'],
+  ['purchase', 'Purchases'],
   ['extra-time', 'Transfers'],
   ['summary', 'Daily Summary'],
-  ['po', 'Purchase Order'],
   ['delta', 'Delta'],
   ['people', 'People']
 ];
@@ -25,7 +25,7 @@ function icon(name, size=20) {
     stock:'<path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
     purchase:'<path d="M6 7h15l-2 8H8L6 3H3"/><circle cx="9" cy="19" r="1"/><circle cx="18" cy="19" r="1"/>',
     'extra-time':'<path d="M13 2 5 14h6l-1 8 9-13h-6z"/>',
-    po:'<path d="M6 3h12v18H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>',
+    orders:'<path d="M6 3h12v18H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>',
     summary:'<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>',
     delta:'<path d="m7 7 5-4 5 4M12 3v8"/><path d="m17 17-5 4-5-4M12 21v-8"/>',
     salary:'<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 9H5v6h2M17 9h2v6h-2"/>',
@@ -226,10 +226,10 @@ function renderWorkspace(root, supabase, profile) {
   const isAdmin = profile.access_class === 'ADMIN';
   const isManager = ['Manager','Ops Manager'].includes(profile.role);
   const allowedIds = isAdmin
-    ? ['dashboard','attendance','salary','stock','purchase','extra-time','summary','po','delta','people']
+    ? ['dashboard','attendance','salary','stock','orders','purchase','extra-time','summary','delta','people']
     : isManager
-      ? ['attendance','salary','stock','purchase','extra-time','summary']
-      : ['attendance','salary','stock','purchase','extra-time'];
+      ? ['attendance','salary','stock','orders','purchase','extra-time','summary']
+      : ['attendance','salary','stock','orders','purchase','extra-time'];
   const visibleModules = modules.filter(([id]) => allowedIds.includes(id));
   const landing = isAdmin ? 'dashboard' : 'attendance';
 
@@ -282,17 +282,16 @@ async function loadModule(view, supabase, profile, module) {
   if (module === 'attendance') { await renderAttendance(view, supabase, profile); return; }
   if (module === 'summary') { await renderDailySummary(view, supabase, profile); return; }
   if (module === 'salary') { await renderSalary(view, supabase, profile); return; }
-  if (module === 'purchase') { await renderPurchases(view, supabase, profile); return; }
+  if (module === 'orders') { await renderPurchases(view, supabase, profile, 'orders'); return; }
+  if (module === 'purchase') { await renderPurchases(view, supabase, profile, 'purchase'); return; }
   if (module === 'extra-time') { await renderExtraTime(view, supabase, profile, {escapeHtml,icon}); return; }
   if (module === 'stock') { await renderStock(view, supabase, profile); return; }
-  if (module === 'po') { await renderPurchaseOrders(view, supabase, profile); return; }
   if (module === 'delta') { await renderDelta(view, supabase, profile); return; }
   if (module === 'people') { await renderPeople(view, supabase, profile); return; }
 
   const labels = {
     stock: ['Stock', 'Inventory workflow is the next operations module.'],
     purchase: ['Purchases', 'Purchase entry will connect to vendors, items and business dates.'],
-    po: ['Purchase Order', 'Purchase orders will be generated from stock intelligence.'],
     summary: ['Daily Summary', 'Sales, expenses, vendor payments and cash closing will live here.'],
     delta: ['Delta', 'Owner stock delta review will compare business days.'],
     salary: ['Salary', 'Payroll will use attendance, leave and approved adjustments.'],
@@ -831,42 +830,6 @@ async function renderPeople(view, supabase, profile) {
   };
 }
 
-async function renderPurchaseOrders(view,supabase,profile){
-  if(profile.access_class!=='ADMIN'){view.innerHTML='<span class="eyebrow">Purchase Order</span><h2>Admin access required</h2>';return;}
-  if(!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to review and generate purchase orders.</p>';return;}
-  const outletId=Number(profile.context_outlet_id);
-  const [{data:stock,error:stockError},{data:items,error:itemError},{data:outletItems,error:outletItemError},{data:vendors,error:vendorError},{data:orders,error:orderError}]=await Promise.all([
-    supabase.from('current_stock').select('item_id,item_name,count_now,minimum_stock,reorder_qty').eq('outlet_id',outletId),
-    supabase.from('items').select('id,name,unit,vendor_id').eq('active',true).order('name'),
-    supabase.from('outlet_items').select('item_id,preferred_vendor_id').eq('outlet_id',outletId).eq('active',true),
-    supabase.from('vendors').select('id,name').order('name'),
-    supabase.from('purchase_orders').select('id,business_date,vendor_id,status,order_method,created_at,purchase_order_items(item_id,order_qty,items(name,unit))').eq('outlet_id',outletId).order('created_at',{ascending:false}).limit(20)
-  ]);
-  const error=stockError||itemError||outletItemError||vendorError||orderError;
-  if(error){view.innerHTML='<span class="eyebrow">Purchase Order</span><h2>Unavailable</h2><p class="form-error">'+escapeHtml(error.message)+'</p>';return;}
-  const itemMap=new Map((items||[]).map(x=>[x.id,x])),vendorMap=new Map((vendors||[]).map(x=>[Number(x.id),x.name])),groups=new Map();
-  const available=(outletItems||[]).map(x=>({...itemMap.get(x.item_id),vendor_id:Number(x.preferred_vendor_id||itemMap.get(x.item_id)?.vendor_id||0)})).filter(x=>x.id&&x.vendor_id&&vendorMap.has(x.vendor_id));
-  const stockMap=new Map((stock||[]).map(x=>[x.item_id,x]));
-  (stock||[]).filter(x=>Number(x.minimum_stock||0)>0&&Number(x.count_now||0)<Number(x.minimum_stock)).forEach(x=>{const vid=Number(itemMap.get(x.item_id)?.vendor_id||0);if(!vid)return;if(!groups.has(vid))groups.set(vid,[]);groups.get(vid).push(x);});
-  view.innerHTML=`<div class="section-heading"><div><span class="eyebrow">Inventory</span><h2>Purchase Orders</h2><p>Suggested drafts and manual orders</p></div><span class="soft-badge">${groups.size} vendor${groups.size===1?'':'s'} suggested</span></div><div id="poMessage" class="purchase-message" hidden></div>
-  <section class="summary-section"><div class="summary-section-title"><span></span><h3>Needs ordering</h3></div>${groups.size?[...groups].map(([vid,rows])=>`<div class="po-vendor"><div><strong>${escapeHtml(vendorMap.get(vid)||'Vendor')}</strong><small>${rows.length} item${rows.length===1?'':'s'} below minimum</small></div><button class="secondary create-po" data-vendor="${vid}">Create draft</button></div>`).join(''):'<div class="notice">No vendor-linked items are currently below minimum stock.</div>'}</section>
-  <section class="summary-section"><div class="summary-section-title"><span></span><h3>Manual draft</h3></div><p class="section-help">Order any active item for this café, even when it is not below minimum stock.</p>
-    <div class="field-row"><label>Vendor<select id="manualPoVendor"><option value="">Select vendor</option>${[...new Set(available.map(x=>x.vendor_id))].map(id=>`<option value="${id}">${escapeHtml(vendorMap.get(id))}</option>`).join('')}</select></label></div>
-    <div class="po-manual-picker"><label>Item<select id="manualPoItem"><option value="">Select an item</option></select></label><label>Quantity<input id="manualPoQty" type="number" min="0.001" step="any" inputmode="decimal" placeholder="0"></label><button type="button" class="secondary" id="manualPoAdd">Add item</button></div>
-    <div id="manualPoLines" class="po-manual-lines"></div><div class="action-row"><button type="button" id="manualPoCreate" disabled>Create manual draft</button></div>
-  </section>
-  <section class="summary-section"><div class="summary-section-title"><span></span><h3>Recent orders</h3></div>${(orders||[]).length?'<div class="table-wrap"><table><thead><tr><th>PO and items</th><th>Date</th><th>Vendor</th><th>Status</th></tr></thead><tbody>'+orders.map(o=>`<tr><td><details><summary>${escapeHtml(o.id)}${o.order_method==='MANUAL'?' · Manual':''}</summary><div class="po-order-lines">${(o.purchase_order_items||[]).map(line=>`<div>${escapeHtml(line.items?.name||line.item_id)} — ${escapeHtml(line.order_qty)} ${escapeHtml(line.items?.unit||'')}</div>`).join('')||'No items'}</div></details></td><td>${escapeHtml(o.business_date||'')}</td><td>${escapeHtml(vendorMap.get(Number(o.vendor_id))||'—')}</td><td>${escapeHtml(o.status||'DRAFT')}</td></tr>`).join('')+'</tbody></table></div>':'<div class="notice">No purchase orders yet.</div>'}</section>`;
-  const show=(m,t='error')=>{const b=view.querySelector('#poMessage');b.textContent=m;b.className='purchase-message '+(t==='success'?'success':'error');b.hidden=false;};
-  view.querySelectorAll('.create-po').forEach(btn=>btn.onclick=async()=>{btn.disabled=true;btn.textContent='Creating…';const{data,error}=await supabase.rpc('create_low_stock_purchase_order',{p_outlet_id:outletId,p_vendor_id:Number(btn.dataset.vendor),p_user_id:profile.id});if(error){show(error.message);btn.disabled=false;btn.textContent='Create draft';return;}await renderPurchaseOrders(view,supabase,profile);const b=view.querySelector('#poMessage');b.textContent='Draft '+data+' created.';b.className='purchase-message success';b.hidden=false;});
-  const vendorSelect=view.querySelector('#manualPoVendor'),itemSelect=view.querySelector('#manualPoItem'),qtyInput=view.querySelector('#manualPoQty'),linesPane=view.querySelector('#manualPoLines'),createBtn=view.querySelector('#manualPoCreate');
-  const selected=new Map();
-  const refreshItems=()=>{const vid=Number(vendorSelect.value);itemSelect.innerHTML='<option value="">Select an item</option>'+available.filter(x=>x.vendor_id===vid&&!selected.has(x.id)).map(x=>`<option value="${escapeHtml(x.id)}">${escapeHtml(x.name)} · ${escapeHtml(x.unit)}</option>`).join('');};
-  const renderLines=()=>{linesPane.innerHTML=[...selected].map(([id,qty])=>{const item=itemMap.get(id);return `<div class="po-manual-line"><span>${escapeHtml(item?.name||id)} <small>${escapeHtml(qty)} ${escapeHtml(item?.unit||'')}</small></span><button type="button" class="secondary" data-remove-item="${escapeHtml(id)}">Remove</button></div>`;}).join('');createBtn.disabled=!selected.size;linesPane.querySelectorAll('[data-remove-item]').forEach(btn=>btn.onclick=()=>{selected.delete(btn.dataset.removeItem);renderLines();refreshItems();});};
-  vendorSelect.onchange=()=>{selected.clear();renderLines();refreshItems();};
-  view.querySelector('#manualPoAdd').onclick=()=>{const id=itemSelect.value,qty=Number(qtyInput.value);if(!id||!Number.isFinite(qty)||qty<=0||qty>1000000){show('Select an item and enter a positive quantity.');return;}selected.set(id,qty);qtyInput.value='';renderLines();refreshItems();};
-  createBtn.onclick=async()=>{if(!selected.size||!vendorSelect.value)return;createBtn.disabled=true;createBtn.textContent='Creating…';const{data,error}=await supabase.rpc('create_manual_purchase_order',{p_outlet_id:outletId,p_vendor_id:Number(vendorSelect.value),p_user_id:profile.id,p_lines:[...selected].map(([item_id,qty])=>({item_id,qty}))});if(error){show(error.message);createBtn.disabled=false;createBtn.textContent='Create manual draft';return;}await renderPurchaseOrders(view,supabase,profile);const b=view.querySelector('#poMessage');b.textContent='Manual draft '+data+' created.';b.className='purchase-message success';b.hidden=false;};
-}
-
 async function renderDelta(view,supabase,profile){
   if(profile.access_class!=='ADMIN'){view.innerHTML='<span class="eyebrow">Delta</span><h2>Admin access required</h2>';return;}
   if(!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to compare stock counts.</p>';return;}
@@ -940,11 +903,12 @@ async function renderStock(view,supabase,profile){
   
   orderPane.hidden=true;
 }
-async function renderPurchases(view, supabase, profile) {
+async function renderPurchases(view, supabase, profile, workspace='purchase') {
+  const ordersOnly=workspace==='orders';
   if(profile.access_class==='ADMIN'&&!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to use this operational screen.</p>';return;}
   const isOwner = profile.access_class === 'ADMIN';
   const { data: categories } = await supabase.from('categories').select('id,name').order('name');
-  const { data: items } = await supabase.from('items').select('id,name,category_id,unit,pack_size').eq('active', true).order('name');
+  const { data: items } = await supabase.from('items').select('id,name,category_id,unit,pack_size,vendor_id').eq('active', true).order('name');
   const { data: outlets } = isOwner ? await supabase.from('outlets').select('id,name').order('id') : { data: [] };
   let outletId = (isOwner&&profile.context_outlet_id) || profile.outlet_id || outlets?.[0]?.id;
   const outletName = isOwner ? (outlets||[]).find(o=>Number(o.id)===Number(outletId))?.name : profile.outlets?.name;
@@ -953,27 +917,29 @@ async function renderPurchases(view, supabase, profile) {
     p_timestamp: new Date().toISOString()
   });
   if (dateError) {
-    view.innerHTML = '<span class="eyebrow">Purchases</span><h2>Purchase entry unavailable</h2><p class="form-error">' + escapeHtml(dateError.message) + '</p>';
+    view.innerHTML = '<span class="eyebrow">'+(ordersOnly?'Orders':'Purchases')+'</span><h2>Unavailable</h2><p class="form-error">' + escapeHtml(dateError.message) + '</p>';
     return;
   }
 
   const businessDate = bizDate;
   view.innerHTML = `
     <div class="section-heading">
-      <div><span class="eyebrow">Operations</span><h2>Purchases</h2></div>
+      <div><span class="eyebrow">Operations</span><h2>${ordersOnly?'Orders':'Purchases'}</h2></div>
       <span class="soft-badge">${escapeHtml(String(businessDate))}</span>
     </div>
 
 
-    <div class="purchase-workspace-toggle"><button type="button" class="active" data-purchase-workspace="order">To Order</button><button type="button" data-purchase-workspace="purchase">Purchases</button></div>
-    <section id="purchaseOrderWorkspace">
-      <div class="section-heading compact-heading"><div><span class="eyebrow">Stock intelligence</span><h3>To Order</h3><p class="section-help">Suggested from the latest stock count. Adjust before sending.</p></div></div>
+    <section id="purchaseOrderWorkspace" ${ordersOnly?'':'hidden'}>
+      <div class="section-heading compact-heading"><div><span class="eyebrow">Stock intelligence</span><h3>To order</h3><p class="section-help">Check suggestions, add other items, then prepare each vendor order.</p></div></div>
       <div id="orderQuickSummary" class="order-quick-summary">Loading suggestions…</div>
+      <div id="orderSaveMessage" class="purchase-message" hidden></div>
       <div id="tomorrowOrderRows"></div>
       <div class="summary-actions"><button id="finishOrders" class="primary" type="button">Mark Orders Done ✓</button></div>
+      <p class="hint">This marks today's checklist on this device. Saving a draft does not send it to the vendor.</p>
       <div id="stockUndoToast" class="stock-undo-toast" hidden><span>Item removed</span><button type="button">Undo</button></div>
+      ${isOwner?'<section class="summary-section"><div class="summary-section-title"><span></span><h3>Recent drafts</h3></div><div id="recentOrderDrafts">Loading…</div></section>':''}
     </section>
-    <section id="purchaseEntryWorkspace" hidden>
+    <section id="purchaseEntryWorkspace" ${ordersOnly?'hidden':''}>
     <div class="purchase-tabs">
       <button class="purchase-tab active" data-purchase-mode="item">Item-wise</button>
       <button class="purchase-tab" data-purchase-mode="invoice">Invoice total</button>
@@ -1017,22 +983,38 @@ async function renderPurchases(view, supabase, profile) {
   `;
 
   let mode = 'item';
-  const orderPane=view.querySelector('#purchaseOrderWorkspace'),purchasePane=view.querySelector('#purchaseEntryWorkspace');
-  view.querySelectorAll('[data-purchase-workspace]').forEach(btn=>btn.onclick=()=>{const m=btn.dataset.purchaseWorkspace;view.querySelectorAll('[data-purchase-workspace]').forEach(b=>b.classList.toggle('active',b===btn));orderPane.hidden=m!=='order';purchasePane.hidden=m!=='purchase';});
+  const loadRecentDrafts=async()=>{
+    if(!isOwner)return;
+    const target=view.querySelector('#recentOrderDrafts');
+    const {data,error}=await supabase.from('purchase_orders')
+      .select('id,business_date,vendor_id,status,created_at,vendors(name),purchase_order_items(item_id,order_qty,items(name,unit))')
+      .eq('outlet_id',outletId).order('created_at',{ascending:false}).limit(20);
+    if(!target)return;
+    if(error){target.innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';return;}
+    target.innerHTML=(data||[]).length?(data||[]).map(order=>`<details class="order-category-group"><summary><span><strong>${escapeHtml(order.vendors?.name||'Vendor')} · ${escapeHtml(order.id)}</strong><small>${escapeHtml(order.business_date)} · ${escapeHtml(order.status)}</small></span></summary><div class="order-category-body">${(order.purchase_order_items||[]).map(line=>{const gram=String(line.items?.unit||'').toLowerCase()==='g';const qty=gram?Number(line.order_qty)/1000:line.order_qty;return `<div>${escapeHtml(line.items?.name||line.item_id)} — ${escapeHtml(qty)} ${gram?'kg':escapeHtml(line.items?.unit||'')}</div>`;}).join('')||'No items'}</div></details>`).join(''):'<div class="notice">No saved drafts yet.</div>';
+  };
   const loadOrders=async()=>{
-    const [{data,error},{data:catalog}]=await Promise.all([supabase.rpc('get_tomorrows_order',{p_outlet_id:outletId,p_business_date:businessDate}),supabase.from('items').select('id,name,unit,category_id,categories(name)').eq('active',true).order('name')]);if(error)return;
+    const [{data,error},{data:outletItems,error:outletItemsError}]=await Promise.all([
+      supabase.rpc('get_tomorrows_order',{p_outlet_id:outletId,p_business_date:businessDate}),
+      isOwner?supabase.from('outlet_items').select('item_id,preferred_vendor_id').eq('outlet_id',outletId).eq('active',true):Promise.resolve({data:[]})
+    ]);
+    if(error||outletItemsError){view.querySelector('#orderQuickSummary').textContent=error?.message||outletItemsError.message;return;}
+    const catalog=data||[],itemMap=new Map((items||[]).map(item=>[String(item.id),item]));
+    const vendorIds=new Map((outletItems||[]).map(item=>[String(item.item_id),Number(item.preferred_vendor_id||itemMap.get(String(item.item_id))?.vendor_id||0)]));
+    const stockUnits=new Map(catalog.map(item=>[String(item.item_id),String(item.order_unit||'').trim().toLowerCase()]));
     const rows=(data||[]).filter(x=>!['VENDOR_MANAGED','CONTROLLED'].includes(x.order_strategy)).map(x=>{const gram=String(x.order_unit||'').trim().toLowerCase()==='g';return gram?{...x,current_stock:Number(x.current_stock||0)/1000,suggested_qty:Math.ceil(Number(x.suggested_qty||0)/1000),order_unit:'kg'}:x;});
     const manualIds=new Set();
     const section=view.querySelector('#purchaseOrderWorkspace'),box=view.querySelector('#tomorrowOrderRows');if(!section||!box)return;
     let groupMode='vendor';
     const state=new Map(rows.map(x=>[String(x.item_id),{checked:Number(x.suggested_qty||0)>0,qty:Number(x.suggested_qty||0)>0?Number(x.suggested_qty):'',removed:false}]));
-    const copiedGroups=new Set();let undoTimer=null,lastRemoved=null;
+    const copiedGroups=new Set(),savedGroups=new Map();let undoTimer=null,lastRemoved=null;
     const updateOrderSummary=()=>{const active=rows.filter(x=>!state.get(String(x.item_id))?.removed&&state.get(String(x.item_id))?.checked&&Number(state.get(String(x.item_id))?.qty||0)>0);const vendors=new Set(active.map(x=>x.vendor_name||'Unassigned'));const el=view.querySelector('#orderQuickSummary');if(el)el.textContent=active.length+' selected · '+vendors.size+' vendor'+(vendors.size===1?'':'s');};
     box.insertAdjacentHTML('beforebegin','<div class="order-group-toggle"><button type="button" data-mode="vendor" class="active">Vendor</button><button type="button" data-mode="category">Category</button></div>');
     const renderGroups=()=>{
       box.querySelectorAll('.order-suggestion-row').forEach(r=>{const prev=state.get(String(r.dataset.id))||{};state.set(String(r.dataset.id),{...prev,checked:r.querySelector('.order-include').checked,qty:r.querySelector('.order-qty').value});});
+      const expanded=new Set([...box.querySelectorAll('.order-category-group[open]')].map(g=>g.dataset.category));
       const groups=new Map();rows.filter(x=>!state.get(String(x.item_id))?.removed).forEach(x=>{const k=groupMode==='vendor'?(x.vendor_name||'Unassigned'):(x.category_name||'Other');if(!groups.has(k))groups.set(k,[]);groups.get(k).push(x);});
-      box.innerHTML=[...groups].map(([name,list])=>`<details class="order-category-group" data-category="${escapeHtml(name)}"><summary><span><strong>${escapeHtml(name)}</strong><small>${list.filter(x=>state.get(String(x.item_id))?.checked&&Number(state.get(String(x.item_id))?.qty||0)>0).length} selected</small></span><button type="button" class="order-add-item" aria-label="Add item">+</button></summary><div class="order-category-body"><label class="order-select-all"><input type="checkbox" class="order-select-all-check" ${list.length&&list.every(x=>state.get(String(x.item_id))?.checked)?'checked':''}><span>Select all</span></label>${list.map(x=>{const st=state.get(String(x.item_id))||{checked:false,qty:''};return `<div class="order-suggestion-row" data-id="${x.item_id}" data-vendor="${escapeHtml(x.vendor_name||'Unassigned')}" data-name="${escapeHtml(x.item_name)}" data-unit="${escapeHtml(x.order_unit||'')}"><input class="order-include" type="checkbox" ${st.checked?'checked':''}><span><strong>${escapeHtml(x.item_name)}</strong><small>${manualIds.has(String(x.item_id))?'Added manually':'Stock '+Number(x.current_stock||0)}</small></span><input class="order-qty" type="number" min="0" step="0.01" value="${st.qty}" placeholder="0"><em>${escapeHtml(x.order_unit||'')}</em><button type="button" class="order-remove-item" aria-label="Remove ${escapeHtml(x.item_name)}" title="Remove">×</button></div>`;}).join('')}<div class="order-category-actions"><button type="button" class="summary-add category-message">${copiedGroups.has(name)?'Message copied ✓':'Generate message'}</button></div><div class="category-add-panel" hidden><label>Find item<input class="category-add-search" type="search" placeholder="Search all items…"></label><div class="category-add-results"></div></div><div class="category-order-preview" hidden><textarea readonly></textarea><button type="button" class="summary-add copy-category-message">Copy</button></div></div></details>`).join('');
+box.innerHTML=[...groups].map(([name,list])=>`<details class="order-category-group" data-category="${escapeHtml(name)}" ${expanded.has(name)?'open':''}><summary><span><strong>${escapeHtml(name)}</strong><small>${list.filter(x=>state.get(String(x.item_id))?.checked&&Number(state.get(String(x.item_id))?.qty||0)>0).length} selected</small></span><button type="button" class="order-add-item" aria-label="Add item">+</button></summary><div class="order-category-body"><label class="order-select-all"><input type="checkbox" class="order-select-all-check" ${list.length&&list.every(x=>state.get(String(x.item_id))?.checked)?'checked':''}><span>Select all</span></label>${list.map(x=>{const st=state.get(String(x.item_id))||{checked:false,qty:''};return `<div class="order-suggestion-row" data-id="${x.item_id}" data-vendor="${escapeHtml(x.vendor_name||'Unassigned')}" data-name="${escapeHtml(x.item_name)}" data-unit="${escapeHtml(x.order_unit||'')}"><input class="order-include" type="checkbox" ${st.checked?'checked':''}><span><strong>${escapeHtml(x.item_name)}</strong><small>${manualIds.has(String(x.item_id))?'Added manually':'Stock '+Number(x.current_stock||0)}</small></span><input class="order-qty" type="number" min="0" step="0.01" value="${st.qty}" placeholder="0"><em>${escapeHtml(x.order_unit||'')}</em><button type="button" class="order-remove-item" aria-label="Remove ${escapeHtml(x.item_name)}" title="Remove">×</button></div>`;}).join('')}<div class="order-category-actions"><button type="button" class="summary-add category-message">${copiedGroups.has(name)?'Message copied ✓':'Generate message'}</button>${isOwner&&groupMode==='vendor'?'<button type="button" class="summary-add save-vendor-draft">Save draft</button>':''}</div><div class="category-add-panel" hidden><label>Find item<input class="category-add-search" type="search" placeholder="Search all items…"></label><div class="category-add-results"></div></div><div class="category-order-preview" hidden><textarea readonly></textarea><button type="button" class="summary-add copy-category-message">Copy</button></div></div></details>`).join('');
       bindGroups();updateOrderSummary();
     };
     section.dataset.loaded='1';
@@ -1043,9 +1025,41 @@ async function renderPurchases(view, supabase, profile) {
       const add=g.querySelector('.order-add-item');add.onclick=e=>{e.preventDefault();e.stopPropagation();g.open=true;const p=g.querySelector('.category-add-panel');p.hidden=!p.hidden;if(!p.hidden)p.querySelector('input').focus();};
       g.querySelectorAll('.order-suggestion-row').forEach(r=>{const q=r.querySelector('.order-qty'),ck=r.querySelector('.order-include');q.oninput=()=>{ck.checked=Number(q.value||0)>0;const prev=state.get(String(r.dataset.id))||{};state.set(String(r.dataset.id),{...prev,qty:q.value,checked:ck.checked,removed:false});updateOrderSummary();};ck.onchange=()=>{const prev=state.get(String(r.dataset.id))||{};state.set(String(r.dataset.id),{...prev,checked:ck.checked,qty:q.value,removed:false});const all=g.querySelector('.order-select-all-check');if(all){const checks=[...g.querySelectorAll('.order-include')];all.checked=checks.length>0&&checks.every(x=>x.checked);all.indeterminate=checks.some(x=>x.checked)&&!all.checked;all.nextElementSibling.textContent=all.checked?'Unselect all':'Select all';}updateOrderSummary();};});
       const search=g.querySelector('.category-add-search'),results=g.querySelector('.category-add-results');
-      search.oninput=()=>{const q=search.value.trim().toLowerCase();if(q.length<1){results.innerHTML='';return;}const existing=new Set([...box.querySelectorAll('.order-suggestion-row')].map(r=>String(r.dataset.id)));const found=(catalog||[]).filter(i=>!existing.has(String(i.id))&&i.name.toLowerCase().includes(q)).slice(0,8);results.innerHTML=found.map(i=>`<button type="button" class="category-add-result" data-id="${i.id}" data-name="${escapeHtml(i.name)}" data-unit="${escapeHtml(String(i.unit||'').trim().toLowerCase()==='g'?'kg':(i.unit||''))}"><span>${escapeHtml(i.name)}</span><small>${escapeHtml(i.categories?.name||'Other')}</small></button>`).join('')||'<small>No matching item.</small>';results.querySelectorAll('.category-add-result').forEach(btn=>btn.onclick=()=>{const id=String(btn.dataset.id);const item=(catalog||[]).find(i=>String(i.id)===id);const added={item_id:item?.id??btn.dataset.id,item_name:btn.dataset.name,order_unit:btn.dataset.unit,current_stock:0,suggested_qty:0,category_name:item?.categories?.name||'Other',vendor_name:groupMode==='vendor'?g.dataset.category:'Unassigned',order_strategy:'MANUAL'};if(groupMode==='category')added.category_name=g.dataset.category;if(!rows.some(x=>String(x.item_id)===id))rows.push(added);manualIds.add(id);state.set(id,{checked:true,qty:'',removed:false});search.value='';results.innerHTML='';renderGroups();const addedRow=box.querySelector('.order-suggestion-row[data-id="'+CSS.escape(id)+'"]');if(addedRow){const qty=addedRow.querySelector('.order-qty');qty?.focus();} });};
+      search.oninput=()=>{
+        const q=search.value.trim().toLowerCase();
+        if(!q){results.innerHTML='';return;}
+        const existing=new Set([...box.querySelectorAll('.order-suggestion-row')].map(r=>String(r.dataset.id)));
+        const found=catalog.filter(item=>!existing.has(String(item.item_id))&&item.item_name.toLowerCase().includes(q)).slice(0,8);
+        results.innerHTML=found.map(item=>`<button type="button" class="category-add-result" data-id="${escapeHtml(item.item_id)}"><span>${escapeHtml(item.item_name)}</span><small>${escapeHtml(item.category_name||'Other')} · ${escapeHtml(item.vendor_name||'Unassigned')}</small></button>`).join('')||'<small>No matching item at this café.</small>';
+        results.querySelectorAll('.category-add-result').forEach(btn=>btn.onclick=()=>{
+          const id=String(btn.dataset.id),item=catalog.find(x=>String(x.item_id)===id);
+          if(!item)return;
+          const gram=String(item.order_unit||'').trim().toLowerCase()==='g';
+          const added={...item,order_unit:gram?'kg':item.order_unit,current_stock:0,suggested_qty:0,order_strategy:'MANUAL'};
+          rows.push(added);manualIds.add(id);state.set(id,{checked:true,qty:'',removed:false});
+          search.value='';results.innerHTML='';renderGroups();
+          box.querySelector('.order-suggestion-row[data-id="'+CSS.escape(id)+'"] .order-qty')?.focus();
+        });
+      };
       g.querySelector('.category-message').onclick=()=>{const p=g.querySelector('.category-order-preview'),ta=p.querySelector('textarea');ta.value=buildMessage(g,g.dataset.category+' order');p.hidden=false;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,300)+'px';};
       g.querySelector('.copy-category-message').onclick=async()=>{const ta=g.querySelector('textarea');try{await navigator.clipboard.writeText(ta.value);}catch{ta.select();}copiedGroups.add(g.dataset.category);g.querySelector('.category-message').textContent='Message copied ✓';};
+      const draftBtn=g.querySelector('.save-vendor-draft');
+      if(draftBtn)draftBtn.onclick=async()=>{
+        const selected=[...g.querySelectorAll('.order-suggestion-row')].filter(r=>r.querySelector('.order-include').checked).map(r=>({item_id:String(r.dataset.id),qty:Number(r.querySelector('.order-qty').value)}));
+        const notify=(message,type='error')=>{const el=view.querySelector('#orderSaveMessage');el.textContent=message;el.className='purchase-message '+type;el.hidden=false;};
+        if(!selected.length||selected.some(line=>!Number.isFinite(line.qty)||line.qty<=0||line.qty>1000000)){notify('Select items and enter positive quantities first.');return;}
+        const ids=new Set(selected.map(line=>vendorIds.get(line.item_id)));
+        if(ids.size!==1||!Number([...ids][0])){notify('All selected items must belong to one vendor at this café.');return;}
+        const signature=JSON.stringify(selected);
+        if(savedGroups.get(g.dataset.category)===signature){notify('This draft is already saved.','success');return;}
+        const lines=selected.map(line=>({...line,qty:stockUnits.get(line.item_id)==='g'?line.qty*1000:line.qty}));
+        draftBtn.disabled=true;draftBtn.textContent='Saving…';
+        const {data:poId,error}=await supabase.rpc('create_manual_purchase_order',{p_outlet_id:outletId,p_vendor_id:[...ids][0],p_user_id:profile.id,p_lines:lines});
+        if(error){notify(error.message);draftBtn.disabled=false;draftBtn.textContent='Save draft';return;}
+        savedGroups.set(g.dataset.category,signature);draftBtn.textContent='Draft saved ✓';
+        notify('Draft '+poId+' saved. Copy the message when ready to contact the vendor.','success');
+        await loadRecentDrafts();
+      };
     });
     section.querySelectorAll('.order-group-toggle button').forEach(btn=>btn.onclick=()=>{section.querySelectorAll('.order-group-toggle button').forEach(b=>b.classList.toggle('active',b===btn));groupMode=btn.dataset.mode;renderGroups();});
     renderGroups();
@@ -1053,7 +1067,7 @@ async function renderPurchases(view, supabase, profile) {
     const finish=view.querySelector('#finishOrders');if(finish)finish.onclick=()=>{try{localStorage.setItem('cafetracker-orders-finished:'+outletId+':'+businessDate,'1');}catch{}finish.textContent='Orders Done ✓';finish.disabled=true;};
   };
 
-  await loadOrders();
+  if(ordersOnly){await loadOrders();await loadRecentDrafts();return;}
 
   const categoryName = () => {
     const id = Number(view.querySelector('#purCategory').value);
