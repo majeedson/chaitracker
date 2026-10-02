@@ -1,8 +1,9 @@
 import { loadStaffAvatars,staffAvatar,bindAvatarImages,refreshStaffAvatarElements,editProfilePhoto } from './staffAvatars.js';
 import { renderExtraTime } from './extraTime.js';
+import { APP_DOMAINS,roleModuleAccess,effectiveModuleAccess,hasModuleAccess } from './moduleAccess.js';
 import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,chargeableLateHours,holidayDutyDays,balanceAttendance,payrollAbsenceDeduction,latePenalty } from './payrollRules.js';
 
-const APP_BUILD = 126;
+const APP_BUILD = 127;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -87,7 +88,7 @@ export async function renderApp(root, supabase) {
   const authId = authUser?.user?.id;
   const { data: profile } = await supabase
     .from('users')
-    .select('id,name,role,outlet_id,staff_id,can_switch_outlet,active,access_class,is_super_user,outlets(name,theme_key,theme_color)')
+    .select('id,name,role,outlet_id,staff_id,permissions,can_switch_outlet,active,access_class,is_super_user,outlets(name,theme_key,theme_color)')
     .eq('auth_user_id', authId)
     .maybeSingle();
 
@@ -112,7 +113,7 @@ async function renderLogin(root, supabase) {
     <main class="login-shell">
       <section class="login-card">
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=127" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -237,14 +238,8 @@ function renderWorkspace(root, supabase, profile) {
   const outletContextKey='cafetracker.adminOutlet';
   if(profile.access_class==='ADMIN'){const saved=localStorage.getItem(outletContextKey);profile.context_outlet_id=saved&&saved!=='all'?Number(saved):null;}
   const isAdmin = profile.access_class === 'ADMIN';
-  const isManager = ['Manager','Ops Manager'].includes(profile.role);
-  const allowedIds = isAdmin
-    ? ['dashboard','attendance','salary','stock','orders','purchase','extra-time','summary','delta','people']
-    : isManager
-      ? ['attendance','salary','stock','orders','purchase','extra-time','summary']
-      : ['attendance','salary','stock','orders','purchase','extra-time'];
-  const visibleModules = modules.filter(([id]) => allowedIds.includes(id));
-  const landing = isAdmin ? 'dashboard' : 'attendance';
+  const visibleModules = modules.filter(([id]) => hasModuleAccess(profile,id));
+  const landing = visibleModules.find(([id])=>id===(isAdmin?'dashboard':'attendance'))?.[0]||visibleModules[0]?.[0];
 
   root.innerHTML = `
     <div class="app-shell">
@@ -266,7 +261,7 @@ function renderWorkspace(root, supabase, profile) {
       <div id="drawer-scrim" class="drawer-scrim" hidden></div>
       <aside id="app-drawer" class="app-drawer" aria-hidden="true">
         <div class="drawer-head"><div><div class="drawer-brand">CafeTracker</div><div class="drawer-caption">${isAdmin?'Administration':'Your workspace'}</div></div><button id="drawer-close" class="nav-icon-button" aria-label="Close menu">${icon('close',22)}</button></div>
-        <nav class="drawer-nav">${visibleModules.map(([id,label])=>`<button class="drawer-item" data-module="${id}"><span class="drawer-item-icon">${icon(id,21)}</span><span>${label}</span><span class="drawer-chevron">›</span></button>`).join('')}</nav>
+        <nav class="drawer-nav">${modules.map(([id,label])=>`<button class="drawer-item" data-module="${id}" ${hasModuleAccess(profile,id)?'':'hidden'}><span class="drawer-item-icon">${icon(id,21)}</span><span>${label}</span><span class="drawer-chevron">›</span></button>`).join('')}</nav>
         <div class="drawer-footer"><span class="outlet-dot"></span><div><strong>${escapeHtml(profile.outlets?.name || (isAdmin?'All cafés':'CafeTracker'))}</strong><small>${escapeHtml(profile.name)}</small></div></div>
       </aside>
       <main class="content app-content"><section id="module-view" class="card module-view"></section></main>
@@ -278,6 +273,12 @@ function renderWorkspace(root, supabase, profile) {
   const openDrawer=()=>{drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');scrim.hidden=false;requestAnimationFrame(()=>scrim.classList.add('show'));};
   const closeDrawer=()=>{drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');scrim.classList.remove('show');setTimeout(()=>{scrim.hidden=true;},180);};
   const openModule=async module=>{
+    const {data:current,error}=await supabase.from('users').select('permissions,active,role,access_class').eq('id',profile.id).maybeSingle();
+    if(error){view.innerHTML='<p class="form-error">Unable to check access. Please try again.</p>';return;}
+    if(!current?.active){await supabase.auth.signOut();await renderApp(root,supabase);return;}
+    Object.assign(profile,current);
+    root.querySelectorAll('.drawer-item').forEach(b=>b.hidden=!hasModuleAccess(profile,b.dataset.module));
+    if(!module||!hasModuleAccess(profile,module)){closeDrawer();view.innerHTML='<h2>No access</h2><p class="section-help">Ask an administrator to enable this module in your Access tab.</p>';return;}
     currentModule=module;
     root.querySelectorAll('.drawer-item').forEach(b=>b.classList.toggle('active',b.dataset.module===module));
     closeDrawer();window.scrollTo({top:0,behavior:'instant'});await loadModule(view,supabase,profile,module);if(profile.staff_id)refreshStaffAvatarElements(supabase,[Number(profile.staff_id)]).catch(console.warn);view.scrollIntoView({block:'start',behavior:'instant'});
@@ -291,6 +292,7 @@ function renderWorkspace(root, supabase, profile) {
   openModule(landing);
 }
 async function loadModule(view, supabase, profile, module) {
+  if(!hasModuleAccess(profile,module)){view.innerHTML='<h2>Access unavailable</h2>';return;}
   view.innerHTML = '<div class="loading">Loading…</div>';
 
   if (module === 'dashboard') { await renderDashboard(view, supabase, profile); return; }
@@ -375,7 +377,7 @@ async function renderDashboard(view, supabase, profile) {
 async function renderDailySummary(view, supabase, profile) {
   if(profile.access_class==='ADMIN'&&!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to use this operational screen.</p>';return;}
   const isOwner=profile.access_class==='ADMIN';
-  const canManageSummary=isOwner||['Manager','Ops Manager'].includes(profile.role);
+  const canManageSummary=hasModuleAccess(profile,'summary');
   if(!canManageSummary){view.innerHTML='<span class="eyebrow">Daily Summary</span><h2>Manager access required</h2><p class="section-help">Daily Summary is available to Managers and Admins only.</p>';return;}
   let outletId=Number(profile.outlet_id||1);
   let outlets=[];
@@ -645,6 +647,12 @@ function openStaffWelcomeWhatsApp(name) {
   window.open('https://wa.me/?text='+encodeURIComponent(staffWelcomeMessage(name)),'_blank','noopener,noreferrer');
 }
 
+function accessDomainFields(access,prefix){
+  return APP_DOMAINS.map(([id,label,description])=>`<label class="access-domain"><span class="access-domain-icon">${icon(id,20)}</span><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(description)}</small></span><input type="checkbox" data-access-prefix="${prefix}" data-access-domain="${id}" ${access[id]?'checked':''}></label>`).join('');
+}
+function readAccessDomains(view,prefix){
+  return Object.fromEntries([...view.querySelectorAll(`[data-access-prefix="${prefix}"]`)].map(input=>[input.dataset.accessDomain,input.checked]));
+}
 async function renderPeople(view, supabase, profile) {
   if (profile.access_class !== 'ADMIN') {
     view.innerHTML = '<span class="eyebrow">People</span><h2>Admin access required</h2>';
@@ -676,12 +684,7 @@ async function renderPeople(view, supabase, profile) {
         <label>Joining date<input id="staffJoining" type="date" value="${new Date().toISOString().slice(0,10)}"></label>
         <label>Agreed basic salary<input id="staffSalary" type="number" min="0" step="0.01" placeholder="0.00"></label>
       </div>
-      <div class="permissions-box"><div class="card-label">Access permissions</div><div class="permission-grid">
-        <label><input type="checkbox" id="permAttendance" checked> Attendance</label>
-        <label><input type="checkbox" id="permPurchase" checked> Purchases</label>
-        <label><input type="checkbox" id="permSummary" checked> Daily Summary</label>
-        <label><input type="checkbox" id="permStock" checked> Stock</label>
-      </div></div>
+      <div class="access-domain-list" id="newStaffAccess">${accessDomainFields(roleModuleAccess('Staff'),'new')}</div>
       <button id="addStaffBtn" class="primary">Add staff member</button><div id="staffFormMsg"></div>
     </div>
     <div id="peopleAdmins" class="subsection" hidden>
@@ -699,6 +702,7 @@ async function renderPeople(view, supabase, profile) {
     list.querySelectorAll('.admin-active-toggle').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,next=btn.dataset.active!=='true';if(!confirm((next?'Reactivate':'Deactivate')+' this Admin account?'))return;btn.disabled=true;const {error}=await supabase.rpc('superuser_set_admin_active',{p_user_id:id,p_active:next});if(error){showAdminMessage(error.message);btn.disabled=false;return;}({outlets,staffRows,adminRows,avatarRows}=await loadData());renderAdmins();});
   };
   renderAdmins();
+  view.querySelector('#staffRole').onchange=()=>{const defaults=roleModuleAccess(view.querySelector('#staffRole').value);view.querySelectorAll('[data-access-prefix="new"]').forEach(input=>input.checked=defaults[input.dataset.accessDomain]);};
 
   let peopleOutlet = profile.access_class==='ADMIN' ? (profile.context_outlet_id?String(profile.context_outlet_id):'all') : (profile.outlet_id ? String(profile.outlet_id) : 'all');
   let peopleStatus = 'ALL';
@@ -753,7 +757,7 @@ async function renderPeople(view, supabase, profile) {
   const openEditor = async (staffId) => {
     const s=staffRows.find(x=>Number(x.id)===staffId); if(!s)return;
     const u=Array.isArray(s.users)?s.users[0]:s.users;
-    const perms=u?.permissions||{};
+    const perms=u?.permissions||{},access=effectiveModuleAccess(u||{role:'Staff'});
     const outletName=outlets.find(o=>Number(o.id)===Number(s.outlet_id))?.name||'—', currentStatus=s.employment_status||(s.active?'ACTIVE':'INACTIVE');
     const {data:statusHistory}=await supabase.rpc('get_staff_status_history',{p_staff_id:staffId});
     const {data:documentMeta}=await supabase.rpc('get_employee_document_metadata',{p_staff_id:staffId});
@@ -766,33 +770,33 @@ async function renderPeople(view, supabase, profile) {
         <div class="form-grid">
           <label>Display name<input id="editName" value="${escapeHtml(s.name)}"></label>
           <label>Outlet<select id="editOutlet">${outlets.map(o=>`<option value="${o.id}" ${Number(o.id)===Number(s.outlet_id)?'selected':''}>${escapeHtml(o.name)}</option>`).join('')}</select></label>
-          <label>Role<select id="editRole">${['Staff','Manager','Ops Manager'].map(r=>`<option ${r===(u?.role||'Staff')?'selected':''}>${r}</option>`).join('')}</select></label>
           <label>Joining date<input id="editJoining" type="date" value="${escapeHtml(s.joining_date||'')}"></label>
-          <label>Basic salary<input id="editSalary" type="number" min="0" step="0.01" value="${Number(s.basic_salary||0)}"></label>
         </div>
         <label>Notes<textarea id="editNotes" rows="3" placeholder="Optional employment notes">${escapeHtml(s.notes||'')}</textarea></div>
-        <div class="card staff-editor profile-panel" data-profile-panel="access" hidden><div class="section-heading"><div><span class="eyebrow">Access</span><h3>Role & permissions</h3></div></div>
-        <div class="permissions-box"><div class="card-label">Access permissions</div><div class="permission-grid">
-          <label><input type="checkbox" id="editAttendance" ${perms.attendance!==false?'checked':''}> Attendance</label>
-          <label><input type="checkbox" id="editPurchase" ${perms.purchase!==false?'checked':''}> Purchases</label>
-          <label><input type="checkbox" id="editSummary" ${perms.summary!==false?'checked':''}> Daily Summary</label>
-          <label><input type="checkbox" id="editStock" ${perms.stock!==false?'checked':''}> Stock</label>
-        </div></div></div>
+        <div class="card staff-editor profile-panel" data-profile-panel="access" hidden><div class="section-heading"><div><span class="eyebrow">Access</span><h3>Access control</h3></div><span id="accessSelectedCount" class="soft-badge"></span></div>
+        <div class="form-grid"><label>Role<select id="editRole">${['Staff','Manager','Ops Manager'].map(r=>`<option ${r===(u?.role||'Staff')?'selected':''}>${r}</option>`).join('')}</select></label></div>
+        <div class="access-domain-list" id="editStaffAccess">${accessDomainFields(access,'edit')}</div>
+        <button type="button" id="resetRoleAccess" class="secondary">Reset to role defaults</button></div>
         <div class="card staff-editor profile-panel" data-profile-panel="employment" hidden><div class="section-heading"><div><span class="eyebrow">Employment</span><h3>Status</h3></div></div><div class="form-grid"><label>Employment status<select id="editEmploymentStatus">${[['ACTIVE','Active'],['VACATION','Vacation'],['LEAVE','On leave'],['INACTIVE','Inactive'],['LEFT','Left employment']].map(([v,l])=>`<option value="${v}" ${v===(s.employment_status||(s.active?'ACTIVE':'INACTIVE'))?'selected':''}>${l}</option>`).join('')}</select></label><label>Status effective from<input id="editStatusDate" type="date" value="${escapeHtml(s.status_effective_from||new Date().toISOString().slice(0,10))}"></label></div><label>Status note<textarea id="editStatusNote" rows="2" placeholder="Optional — e.g. annual vacation">${escapeHtml(s.status_note||'')}</textarea></label>
         <div class="employment-history"><h4>Status history</h4>${(Array.isArray(statusHistory)?statusHistory:[]).map(h=>`<div><strong>${escapeHtml(statusText(h.status))}</strong><span>${escapeHtml(h.effective_from||'')}${h.note?' · '+escapeHtml(h.note):''}</span></div>`).join('')||'<p class="section-help">No status history recorded.</p>'}</div></div>
         <div class="card profile-panel" data-profile-panel="attendance" hidden><span class="eyebrow">Attendance</span><h3>Attendance history</h3><p class="section-help">Use the Attendance workspace for the full calendar, corrections and daily status.</p><button type="button" class="secondary profile-open-module" data-module="attendance">Open Attendance</button></div>
-        <div class="card profile-panel" data-profile-panel="salary" hidden><span class="eyebrow">Salary</span><h3>Payroll</h3><p class="section-help">Salary is calculated from recorded attendance, paid off-days and staff payments.</p><button type="button" class="secondary profile-open-module" data-module="salary">Open Salary</button></div>
+        <div class="card profile-panel" data-profile-panel="salary" hidden><span class="eyebrow">Salary</span><h3>Payroll</h3><div class="form-grid"><label>Basic salary ₹<input id="editSalary" type="number" min="0.01" step="0.01" value="${Number(s.basic_salary||0)}"></label></div><button type="button" class="secondary profile-open-module" data-module="salary">Open Salary</button></div>
         <div class="card profile-panel" data-profile-panel="documents" hidden><span class="eyebrow">Documents</span><h3>Employee documents</h3><div class="document-meta"><div><span>Onboarding</span><strong>${escapeHtml(documentMeta?.onboarding_status||'invited')}</strong></div><div><span>Identity type</span><strong>${escapeHtml(documentMeta?.identity_type||'—')}</strong></div><div><span>Identity document</span><strong>${documentMeta?.identity_document_on_file?'On file':'Not uploaded'}</strong></div><div><span>Profile photo</span><strong id="profilePhotoOnFile">${documentMeta?.profile_photo_on_file?'On file':'Not uploaded'}</strong></div></div><p class="section-help">Files remain private. This profile shows document status without exposing identity numbers.</p></div>
         <div id="editMsg"></div><div class="profile-actions"><button id="saveStaff" class="primary">Save changes</button>${profile.is_super_user?'<button id="resetPin" class="secondary">Reset login</button>':''}</div>
       </div>`;
     view.querySelector('#cancelEdit').onclick=renderList;
+    const updateAccessCount=()=>{view.querySelector('#accessSelectedCount').textContent=Object.values(readAccessDomains(view,'edit')).filter(Boolean).length+' / '+APP_DOMAINS.length+' modules';};
+    const resetAccess=()=>{const defaults=roleModuleAccess(view.querySelector('#editRole').value);view.querySelectorAll('[data-access-prefix="edit"]').forEach(input=>input.checked=defaults[input.dataset.accessDomain]);updateAccessCount();};
+    view.querySelector('#resetRoleAccess').onclick=resetAccess;view.querySelector('#editRole').onchange=resetAccess;
+    view.querySelectorAll('[data-access-prefix="edit"]').forEach(input=>input.onchange=updateAccessCount);updateAccessCount();
+
     bindAvatarImages(view);
     view.querySelector('#editStaffPhoto').onclick=async()=>{try{if(await editProfilePhoto(supabase,s)){avatarRows=await loadStaffAvatars(supabase);view.querySelector('#profilePhotoOnFile').textContent='On file';}}catch(error){view.querySelector('#editMsg').innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';}};
     view.querySelectorAll('[data-profile-tab]').forEach(tab=>tab.onclick=()=>{view.querySelectorAll('[data-profile-tab]').forEach(x=>x.classList.toggle('active',x===tab));view.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==tab.dataset.profileTab);});
     view.querySelectorAll('.profile-open-module').forEach(btn=>btn.onclick=()=>{const nav=document.querySelector('[data-module="'+btn.dataset.module+'"]');if(nav)nav.click();});
     view.querySelector('#saveStaff').onclick=async()=>{
       const msg=view.querySelector('#editMsg'),btn=view.querySelector('#saveStaff');
-      const permissions={attendance:view.querySelector('#editAttendance').checked,purchase:view.querySelector('#editPurchase').checked,summary:view.querySelector('#editSummary').checked,stock:view.querySelector('#editStock').checked,salary:false};
+      const permissions={...perms,module_access:readAccessDomains(view,'edit')};
       btn.disabled=true;btn.textContent='Saving…';
       try{
         const {error}=await supabase.rpc('owner_update_staff',{p_staff_id:staffId,p_name:view.querySelector('#editName').value.trim(),p_outlet_id:Number(view.querySelector('#editOutlet').value),p_role:view.querySelector('#editRole').value,p_basic_salary:Number(view.querySelector('#editSalary').value||0),p_joining_date:view.querySelector('#editJoining').value,p_active:!['INACTIVE','LEFT'].includes(view.querySelector('#editEmploymentStatus').value),p_permissions:permissions,p_notes:view.querySelector('#editNotes').value});
@@ -843,7 +847,7 @@ async function renderPeople(view, supabase, profile) {
   view.querySelector('#addStaffBtn').onclick=async()=>{
     const btn=view.querySelector('#addStaffBtn'),msg=view.querySelector('#staffFormMsg');
     const name=view.querySelector('#staffName').value.trim(),outletId=Number(view.querySelector('#staffOutlet').value),role=view.querySelector('#staffRole').value,joining=view.querySelector('#staffJoining').value,salary=Number(view.querySelector('#staffSalary').value||0);
-    const permissions={attendance:view.querySelector('#permAttendance').checked,purchase:view.querySelector('#permPurchase').checked,summary:view.querySelector('#permSummary').checked,stock:view.querySelector('#permStock').checked,salary:false};
+    const permissions={module_access:readAccessDomains(view,'new')};
     if(!name||!joining||salary<=0){msg.innerHTML='<p class="form-error">Name, joining date and agreed salary are required.</p>';return;}
     btn.disabled=true;btn.textContent='Adding…';msg.innerHTML='';
     try{
@@ -860,9 +864,9 @@ async function renderPeople(view, supabase, profile) {
 }
 
 async function renderDelta(view,supabase,profile){
-  if(profile.access_class!=='ADMIN'){view.innerHTML='<span class="eyebrow">Delta</span><h2>Admin access required</h2>';return;}
-  if(!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to compare stock counts.</p>';return;}
-  const outletId=Number(profile.context_outlet_id);const{data,error}=await supabase.from('inventory_entries').select('business_date,item_id,count_now,unit,created_at').eq('outlet_id',outletId).order('business_date',{ascending:false}).order('created_at',{ascending:false}).limit(2000);
+  if(!hasModuleAccess(profile,'delta')){view.innerHTML='<span class="eyebrow">Delta</span><h2>Access unavailable</h2>';return;}
+  if(profile.access_class==='ADMIN'&&!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to compare stock counts.</p>';return;}
+  const outletId=Number(profile.access_class==='ADMIN'?profile.context_outlet_id:profile.outlet_id);const{data,error}=await supabase.from('inventory_entries').select('business_date,item_id,count_now,unit,created_at').eq('outlet_id',outletId).order('business_date',{ascending:false}).order('created_at',{ascending:false}).limit(2000);
   if(error){view.innerHTML='<span class="eyebrow">Delta</span><h2>Unavailable</h2><p class="form-error">'+escapeHtml(error.message)+'</p>';return;}
   const dates=[...new Set((data||[]).map(x=>x.business_date))].slice(0,2);if(dates.length<2){view.innerHTML='<span class="eyebrow">Stock review</span><h2>Delta</h2><div class="notice">Two stock dates are needed before a delta can be calculated.</div>';return;}
   const latestFor=d=>{const m=new Map();(data||[]).filter(x=>x.business_date===d).forEach(x=>{if(!m.has(x.item_id))m.set(x.item_id,x);});return m;},a=latestFor(dates[0]),b=latestFor(dates[1]);const ids=[...new Set([...a.keys(),...b.keys()])];const{data:items}=await supabase.from('items').select('id,name').in('id',ids);const names=new Map((items||[]).map(x=>[x.id,x.name]));const rows=ids.map(id=>({id,name:names.get(id)||id,now:Number(a.get(id)?.count_now||0),before:Number(b.get(id)?.count_now||0),unit:a.get(id)?.unit||b.get(id)?.unit||''})).map(x=>({...x,delta:x.now-x.before})).sort((x,y)=>Math.abs(y.delta)-Math.abs(x.delta));
@@ -881,7 +885,7 @@ async function renderStock(view,supabase,profile){
     supabase.rpc('get_monthly_stock',{p_outlet_id:outletId,p_business_date:businessDate}),
     supabase.from('stocktakes').select('id,status,submitted_at').eq('outlet_id',outletId).eq('business_date',businessDate).eq('stocktake_type','DAILY').eq('status','SUBMITTED').order('submitted_at',{ascending:false}).limit(1).maybeSingle(),
     supabase.from('stocktakes').select('id,status,submitted_at,business_date').eq('outlet_id',outletId).eq('stocktake_type','MONTHLY').eq('status','SUBMITTED').gte('business_date',monthStart).lte('business_date',businessDate).order('submitted_at',{ascending:false}).limit(1).maybeSingle(),
-    supabase.from('purchases').select('item_id,business_date,qty,unit').eq('outlet_id',outletId).not('item_id','is',null).lte('business_date',businessDate).order('business_date',{ascending:false}).limit(500)
+    supabase.rpc('get_stock_purchase_quantities',{p_outlet_id:outletId,p_business_date:businessDate})
   ]);
   if(itemError||monthlyError){view.innerHTML='<span class="eyebrow">Stock</span><h2>Stock unavailable</h2><p class="form-error">'+escapeHtml((itemError||monthlyError).message)+'</p>';return;}
   applyTheme(outlet);

@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {APP_DOMAINS,roleModuleAccess,effectiveModuleAccess,hasModuleAccess} from '../src/moduleAccess.js';
+test('only the requested five domains are configurable',()=>{
+ assert.deepEqual(APP_DOMAINS.map(x=>x[0]),['orders','purchase','extra-time','summary','delta']);
+});
+test('existing roles retain their actual access despite unused legacy flags',()=>{
+ for(const role of ['Staff','Manager','Ops Manager']){
+  const access=effectiveModuleAccess({role,permissions:{salary:false,summary:true,purchase:false}});
+  assert.equal(access.salary,true);assert.equal(access.purchase,true);
+  assert.equal(access.summary,role!=='Staff');assert.equal(access.delta,false);assert.equal(access.people,false);
+ }
+});
+test('module overrides apply independently and leave role-only domains intact',()=>{
+ const profile={role:'Staff',permissions:{module_access:{orders:false,purchase:true,'extra-time':false,summary:true,delta:true,people:true,salary:false}}};
+ const access=effectiveModuleAccess(profile);
+ assert.equal(access.orders,false);assert.equal(access.purchase,true);assert.equal(access['extra-time'],false);
+ assert.equal(access.summary,true);assert.equal(access.delta,true);assert.equal(access.people,false);
+ assert.equal(access.salary,true);assert.equal(access.attendance,true);assert.equal(access.stock,true);
+ assert.equal(hasModuleAccess(profile,'unknown'),false);
+});
+test('admins retain administrative access and resetting uses role defaults',()=>{
+ const access=effectiveModuleAccess({access_class:'ADMIN',role:'Owner',permissions:{module_access:{summary:false,delta:false}}});
+ assert.ok(Object.values(access).every(Boolean));
+ assert.equal(roleModuleAccess('Staff').summary,false);assert.equal(roleModuleAccess('Manager').summary,true);
+});

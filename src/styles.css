@@ -773,3 +773,16 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .login-card .brand-mark img{display:block;width:100%;height:100%}
 .login-card .login-subtitle{margin-bottom:0;font-size:12px}
 @media(max-width:600px){.login-shell{padding:0;background:#fff}.login-art{height:clamp(108px,27vw,155px);margin:-26px -20px 24px}.login-card{padding-top:calc(26px + env(safe-area-inset-top))}.login-art{margin-top:calc(-26px - env(safe-area-inset-top));height:calc(clamp(108px,27vw,155px) + env(safe-area-inset-top))}}
+
+/* Staff access control. */
+.drawer-item[hidden]{display:none}
+.access-domain-list{display:grid;gap:8px;margin:16px 0}
+.access-domain{display:grid!important;grid-template-columns:38px minmax(0,1fr) 24px;gap:12px;align-items:center;min-height:70px;padding:12px;border:1px solid var(--line);border-radius:14px;background:#fff;cursor:pointer}
+.access-domain:has(input:checked){border-color:var(--accent);background:var(--accent-faint,#fff8f8)}
+.access-domain-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:var(--accent-soft);color:var(--accent)}
+.access-domain strong{display:block;font-size:14px;color:var(--ink);font-weight:650}
+.access-domain small{display:block;font-size:11px;font-weight:400;color:var(--muted);line-height:1.4;margin-top:4px}
+.access-domain input[type=checkbox]{width:22px!important;height:22px;min-height:0;margin:0;accent-color:var(--accent);cursor:pointer}
+#resetRoleAccess{width:100%}
+.profile-panel .form-grid{min-width:0}
+.profile-panel .form-grid label,.profile-panel .form-grid input{min-width:0;max-width:100%}
