@@ -3,6 +3,7 @@ name: Deploy ChaiTracker staging
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -11,7 +12,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -22,18 +23,29 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
+      - run: npm ci
+      - run: npm test
+      - run: npm run check:release
+      - name: Require matching database before publishing
+        if: github.event_name != 'pull_request'
+        run: npm run check:database
+        env:
+          VITE_SUPABASE_URL: https://vfplweiufinrcasuntgn.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_5j3rxmlGUbsllKoSInzkGQ_qQ41k-Ba
       - run: npm run build
         env:
           VITE_SUPABASE_URL: https://vfplweiufinrcasuntgn.supabase.co
           VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_5j3rxmlGUbsllKoSInzkGQ_qQ41k-Ba
       - uses: actions/configure-pages@v5
+        if: github.event_name != 'pull_request'
         with:
           enablement: true
       - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
         with:
           path: dist
   deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

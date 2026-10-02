@@ -9,6 +9,19 @@ export function salaryStartForMonth(month,joiningDate) {
   return `${month}-${String(Math.min(day,last)).padStart(2,'0')}`;
 }
 
+export function salaryPeriodEnd(start,joiningDate) {
+  const [year,month,day]=start.split('-').map(Number);
+  const anchor=joiningDate&&start===salaryStartForMonth(start.slice(0,7),joiningDate)?joiningDate:`2000-01-${String(day).padStart(2,'0')}`;
+  const nextMonth=new Date(Date.UTC(year,month,1)).toISOString().slice(0,7);
+  const next=new Date(salaryStartForMonth(nextMonth,anchor)+'T00:00:00Z');
+  next.setUTCDate(next.getUTCDate()-1);
+  return next.toISOString().slice(0,10);
+}
+
+export function latePenaltyFromHours(basic,hours) {
+  return Math.round(Math.max(0,Number(hours)||0)*Math.max(0,Number(basic)||0)/(SALARY_DAY_DIVISOR*SHIFT_HOURS));
+}
+
 export function chargeableLateHours(minutes) {
   const late=Math.max(0,Number(minutes)||0);
   if(late<=15)return 0;
@@ -35,5 +48,5 @@ export function payrollAbsenceDeduction(basic,daysOff,periodDays) {
 }
 
 export function latePenalty(basic,minutes) {
-  return Math.round(chargeableLateHours(minutes)*Math.max(0,Number(basic)||0)/(SALARY_DAY_DIVISOR*SHIFT_HOURS));
+  return latePenaltyFromHours(basic,chargeableLateHours(minutes));
 }
