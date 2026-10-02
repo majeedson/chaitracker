@@ -24,3 +24,5 @@ ChaiTracker is the operational web/PWA application for Teapot and ChaiCafe.
 4. Start with `npm run dev`.
 
 Staging deployment refresh: latest login flow.
+
+Payroll Build 128 fixes, verification and release instructions: [docs/payroll-b128.md](docs/payroll-b128.md).

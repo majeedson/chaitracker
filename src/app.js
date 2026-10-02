@@ -1,9 +1,11 @@
 import { loadStaffAvatars,staffAvatar,bindAvatarImages,refreshStaffAvatarElements,editProfilePhoto } from './staffAvatars.js';
 import { renderExtraTime } from './extraTime.js';
 import { APP_DOMAINS,roleModuleAccess,effectiveModuleAccess,hasModuleAccess } from './moduleAccess.js';
-import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,chargeableLateHours,holidayDutyDays,balanceAttendance,payrollAbsenceDeduction,latePenalty } from './payrollRules.js';
+import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,latePenaltyFromHours,holidayDutyDays,balanceAttendance,payrollAbsenceDeduction } from './payrollRules.js';
 
-const APP_BUILD = 127;
+import { loadSalaryTransfers } from './payrollData.js';
+
+const APP_BUILD = 128;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -113,7 +115,7 @@ async function renderLogin(root, supabase) {
     <main class="login-shell">
       <section class="login-card">
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=127" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=128" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -272,8 +274,8 @@ function renderWorkspace(root, supabase, profile) {
   if(isAdmin){const desktopSel=root.querySelector('#global-outlet'),mobileSel=root.querySelector('#mobile-global-outlet');supabase.from('outlets').select('id,name,theme_key,theme_color').order('id').then(({data})=>{for(const sel of [desktopSel,mobileSel]){(data||[]).forEach(o=>sel.insertAdjacentHTML('beforeend',`<option value="${o.id}">${escapeHtml(o.name)}</option>`));sel.value=profile.context_outlet_id?String(profile.context_outlet_id):'all';}if(profile.context_outlet_id){const o=(data||[]).find(x=>Number(x.id)===profile.context_outlet_id);if(o)applyTheme(o);}const change=sel=>{localStorage.setItem(outletContextKey,sel.value);profile.context_outlet_id=sel.value==='all'?null:Number(sel.value);desktopSel.value=sel.value;mobileSel.value=sel.value;const o=(data||[]).find(x=>Number(x.id)===profile.context_outlet_id);applyTheme(o||null);openModule(currentModule);};desktopSel.onchange=()=>change(desktopSel);mobileSel.onchange=()=>change(mobileSel);});}
   const openDrawer=()=>{drawer.classList.add('open');drawer.setAttribute('aria-hidden','false');scrim.hidden=false;requestAnimationFrame(()=>scrim.classList.add('show'));};
   const closeDrawer=()=>{drawer.classList.remove('open');drawer.setAttribute('aria-hidden','true');scrim.classList.remove('show');setTimeout(()=>{scrim.hidden=true;},180);};
-  const openModule=async module=>{
-    const {data:current,error}=await supabase.from('users').select('permissions,active,role,access_class').eq('id',profile.id).maybeSingle();
+  const openModule=async (module,options={})=>{
+    const {data:current,error}=await supabase.from('users').select('permissions,active,role,access_class,outlet_id,staff_id').eq('id',profile.id).maybeSingle();
     if(error){view.innerHTML='<p class="form-error">Unable to check access. Please try again.</p>';return;}
     if(!current?.active){await supabase.auth.signOut();await renderApp(root,supabase);return;}
     Object.assign(profile,current);
@@ -281,8 +283,9 @@ function renderWorkspace(root, supabase, profile) {
     if(!module||!hasModuleAccess(profile,module)){closeDrawer();view.innerHTML='<h2>No access</h2><p class="section-help">Ask an administrator to enable this module in your Access tab.</p>';return;}
     currentModule=module;
     root.querySelectorAll('.drawer-item').forEach(b=>b.classList.toggle('active',b.dataset.module===module));
-    closeDrawer();window.scrollTo({top:0,behavior:'instant'});await loadModule(view,supabase,profile,module);if(profile.staff_id)refreshStaffAvatarElements(supabase,[Number(profile.staff_id)]).catch(console.warn);view.scrollIntoView({block:'start',behavior:'instant'});
+    closeDrawer();window.scrollTo({top:0,behavior:'instant'});await loadModule(view,supabase,profile,module,options);if(profile.staff_id)refreshStaffAvatarElements(supabase,[Number(profile.staff_id)]).catch(console.warn);view.scrollIntoView({block:'start',behavior:'instant'});
   };
+  root.addEventListener('app:navigate',event=>{openModule(event.detail.module,{staffId:event.detail.staffId});});
   root.querySelector('#drawer-open').onclick=openDrawer;root.querySelector('#drawer-close').onclick=closeDrawer;scrim.onclick=closeDrawer;
   root.querySelector('#brand-home').onclick=()=>openModule(landing);
   root.querySelector('#myProfilePicture')?.addEventListener('click',async()=>{try{await editProfilePhoto(supabase,profile);}catch(error){alert(error.message);}});
@@ -291,14 +294,15 @@ function renderWorkspace(root, supabase, profile) {
   document.onkeydown=e=>{if(e.key==='Escape')closeDrawer();};
   openModule(landing);
 }
-async function loadModule(view, supabase, profile, module) {
+async function loadModule(view, supabase, profile, module, options={}) {
   if(!hasModuleAccess(profile,module)){view.innerHTML='<h2>Access unavailable</h2>';return;}
   view.innerHTML = '<div class="loading">Loading…</div>';
+  if(['salary','people','summary'].includes(module)){const {data,error}=await supabase.rpc('get_app_release');if(error||Number(data?.schema_build||0)<APP_BUILD){view.innerHTML='<h2>Update required</h2><p class="section-help">The payroll database update is not ready yet. Please try again shortly.</p>';return;}}
 
   if (module === 'dashboard') { await renderDashboard(view, supabase, profile); return; }
-  if (module === 'attendance') { await renderAttendance(view, supabase, profile); return; }
+  if (module === 'attendance') { await renderAttendance(view, supabase, profile,options.staffId); return; }
   if (module === 'summary') { await renderDailySummary(view, supabase, profile); return; }
-  if (module === 'salary') { await renderSalary(view, supabase, profile); return; }
+  if (module === 'salary') { await renderSalary(view, supabase, profile,'salary',options.staffId); return; }
   if (module === 'orders') { await renderPurchases(view, supabase, profile, 'orders'); return; }
   if (module === 'purchase') { await renderPurchases(view, supabase, profile, 'purchase'); return; }
   if (module === 'extra-time') { await renderExtraTime(view, supabase, profile, {escapeHtml,icon}); return; }
@@ -385,15 +389,16 @@ async function renderDailySummary(view, supabase, profile) {
   const {data:businessDay,error:businessDayError}=await supabase.rpc('get_effective_business_day',{p_outlet_id:outletId,p_timestamp:new Date().toISOString()});
   if(businessDayError||!businessDay){view.innerHTML='<span class="eyebrow">Daily Summary</span><h2>Business day unavailable</h2><p class="form-error">'+escapeHtml(businessDayError?.message||'Could not determine the café business day.')+'</p>';return;}
   const businessDate=String(businessDay);
-  const [{data:vendors},{data:staff},{data:existing},{data:previous},{data:outlet},{data:stocktake},{data:advances}]=await Promise.all([
+  const [{data:vendors},{data:staff},{data:existing},{data:previous},{data:outlet},{data:stocktake},{data:advances,error:advanceError}]=await Promise.all([
     supabase.from('vendors').select('id,name').order('name'),
     supabase.rpc('get_staff_roster',{p_outlet_id:outletId}),
     supabase.from('daily_summaries').select('*').eq('outlet_id',outletId).eq('business_date',businessDate).maybeSingle(),
     supabase.from('daily_summaries').select('business_date,physical_cash').eq('outlet_id',outletId).lt('business_date',businessDate).order('business_date',{ascending:false}).limit(1).maybeSingle(),
     supabase.from('outlets').select('name,swiggy_payout_rate,zomato_payout_rate,theme_key,theme_color').eq('id',outletId).maybeSingle(),
     supabase.from('stocktakes').select('id,status').eq('outlet_id',outletId).eq('business_date',businessDate).eq('status','SUBMITTED').limit(1).maybeSingle(),
-    supabase.from('staff_advance_requests').select('id,staff_id,amount,mode,status,business_date').eq('outlet_id',outletId).in('status',['PAID','APPROVED'])
+    supabase.rpc('get_summary_advances',{p_outlet_id:outletId,p_business_date:businessDate})
   ]);
+  if(advanceError){view.innerHTML='<h2>Daily Summary unavailable</h2><p class="form-error">'+escapeHtml(advanceError.message||'Could not reconcile advance payouts. Please retry.')+'</p>';return;}
   const paidAdvances=(advances||[]).filter(a=>a.status==='PAID'&&a.business_date===businessDate);
   const pendingAdvances=(advances||[]).filter(a=>a.status==='APPROVED');
   const advanceName=id=>(staff||[]).find(s=>Number(s.id)===Number(id))?.name||'Staff #'+id;
@@ -507,7 +512,7 @@ async function renderDailySummary(view, supabase, profile) {
     const salesStatus=view.querySelector('#closeSalesStatus');if(salesStatus){salesStatus.className=salesReady?'done':'pending';salesStatus.querySelector('b').textContent=salesReady?'✓':'○';}
     const expenseStatus=view.querySelector('#closeExpenseStatus');if(expenseStatus){expenseStatus.className='done';expenseStatus.querySelector('b').textContent='✓';}
     const closeBtn=view.querySelector('#closeSummary');if(closeBtn&&!existing?.is_closed){closeBtn.classList.toggle('close-ready',salesReady&&!!stocktake);}
-  
+
   }
 
   const addRow=(container,type,data={})=>{
@@ -517,6 +522,7 @@ async function renderDailySummary(view, supabase, profile) {
     if(type==='vendor')row.innerHTML=`<select class="row-name v-name"><option value="">Select vendor</option>${(vendors||[]).map(v=>`<option value="${escapeHtml(v.name)}" ${v.name===(data.vendor_name||'')?'selected':''}>${escapeHtml(v.name)}</option>`).join('')}</select><input class="row-amount v-amt" type="number" inputmode="decimal" placeholder="₹0" value="${data.amount||''}">${mode(data.mode)}<button class="remove-row" type="button" aria-label="Remove">×</button>`;
     if(type==='staff')row.innerHTML=`<div class="staff-payment-grid"><select class="p-name"><option value="">Select staff</option>${(staff||[]).map(p=>`<option value="${p.id}" ${Number(p.id)===Number(data.staff_id)?'selected':''}>${escapeHtml(p.name)}${staff.filter(x=>x.name.trim().toLowerCase()===p.name.trim().toLowerCase()).length>1?' · Staff ID '+p.id:''}</option>`).join('')}</select><select class="p-type"><option ${data.payout_type==='Salary'?'selected':''}>Salary</option>${data.payout_type==='Advance'?'<option selected>Advance</option>':''}<option ${data.payout_type==='Reimbursement'?'selected':''}>Reimbursement</option><option ${data.payout_type==='Other'?'selected':''}>Other</option></select><input class="p-amt" type="number" inputmode="decimal" placeholder="₹ Amount" value="${data.amount||''}">${mode(data.mode)}</div><button class="remove-row" type="button" aria-label="Remove">×</button>`;
     row.querySelector('.remove-row').onclick=()=>{row.remove();calc();};
+    if(type==='staff'&&data.payout_type==='Advance'){row.querySelectorAll('input,select,button').forEach(el=>el.disabled=true);row.title='Legacy advance preserved. Use Advances for new requests and payouts.';}
     row.querySelectorAll('input,select').forEach(el=>el.addEventListener('input',calc));
     container.appendChild(row);
   };
@@ -777,7 +783,7 @@ async function renderPeople(view, supabase, profile) {
         <div class="form-grid"><label>Role<select id="editRole">${['Staff','Manager','Ops Manager'].map(r=>`<option ${r===(u?.role||'Staff')?'selected':''}>${r}</option>`).join('')}</select></label></div>
         <div class="access-domain-list" id="editStaffAccess">${accessDomainFields(access,'edit')}</div>
         <button type="button" id="resetRoleAccess" class="secondary">Reset to role defaults</button></div>
-        <div class="card staff-editor profile-panel" data-profile-panel="employment" hidden><div class="section-heading"><div><span class="eyebrow">Employment</span><h3>Status</h3></div></div><div class="form-grid"><label>Employment status<select id="editEmploymentStatus">${[['ACTIVE','Active'],['VACATION','Vacation'],['LEAVE','On leave'],['INACTIVE','Inactive'],['LEFT','Left employment']].map(([v,l])=>`<option value="${v}" ${v===(s.employment_status||(s.active?'ACTIVE':'INACTIVE'))?'selected':''}>${l}</option>`).join('')}</select></label><label>Status effective from<input id="editStatusDate" type="date" value="${escapeHtml(s.status_effective_from||new Date().toISOString().slice(0,10))}"></label></div><label>Status note<textarea id="editStatusNote" rows="2" placeholder="Optional — e.g. annual vacation">${escapeHtml(s.status_note||'')}</textarea></label>
+        <div class="card staff-editor profile-panel" data-profile-panel="employment" hidden><div class="section-heading"><div><span class="eyebrow">Employment</span><h3>Status</h3></div></div><div class="form-grid"><label>Employment status<select id="editEmploymentStatus">${[['ACTIVE','Active'],['VACATION','Vacation'],['LEAVE','On leave'],['INACTIVE','Inactive'],['LEFT','Left employment']].map(([v,l])=>`<option value="${v}" ${v===(s.employment_status||(s.active?'ACTIVE':'INACTIVE'))?'selected':''}>${l}</option>`).join('')}</select></label><label>Status effective from<input id="editStatusDate" type="date" value="${escapeHtml(s.status_effective_from||'')}"></label></div><label>Status note<textarea id="editStatusNote" rows="2" placeholder="Optional — e.g. annual vacation">${escapeHtml(s.status_note||'')}</textarea></label>
         <div class="employment-history"><h4>Status history</h4>${(Array.isArray(statusHistory)?statusHistory:[]).map(h=>`<div><strong>${escapeHtml(statusText(h.status))}</strong><span>${escapeHtml(h.effective_from||'')}${h.note?' · '+escapeHtml(h.note):''}</span></div>`).join('')||'<p class="section-help">No status history recorded.</p>'}</div></div>
         <div class="card profile-panel" data-profile-panel="attendance" hidden><span class="eyebrow">Attendance</span><h3>Attendance history</h3><p class="section-help">Use the Attendance workspace for the full calendar, corrections and daily status.</p><button type="button" class="secondary profile-open-module" data-module="attendance">Open Attendance</button></div>
         <div class="card profile-panel" data-profile-panel="salary" hidden><span class="eyebrow">Salary</span><h3>Payroll</h3><div class="form-grid"><label>Basic salary ₹<input id="editSalary" type="number" min="0.01" step="0.01" value="${Number(s.basic_salary||0)}"></label></div><button type="button" class="secondary profile-open-module" data-module="salary">Open Salary</button></div>
@@ -793,21 +799,21 @@ async function renderPeople(view, supabase, profile) {
     bindAvatarImages(view);
     view.querySelector('#editStaffPhoto').onclick=async()=>{try{if(await editProfilePhoto(supabase,s)){avatarRows=await loadStaffAvatars(supabase);view.querySelector('#profilePhotoOnFile').textContent='On file';}}catch(error){view.querySelector('#editMsg').innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';}};
     view.querySelectorAll('[data-profile-tab]').forEach(tab=>tab.onclick=()=>{view.querySelectorAll('[data-profile-tab]').forEach(x=>x.classList.toggle('active',x===tab));view.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==tab.dataset.profileTab);});
-    view.querySelectorAll('.profile-open-module').forEach(btn=>btn.onclick=()=>{const nav=document.querySelector('[data-module="'+btn.dataset.module+'"]');if(nav)nav.click();});
-    view.querySelector('#saveStaff').onclick=async()=>{
+    view.querySelectorAll('.profile-open-module').forEach(btn=>{btn.textContent=btn.dataset.module==='salary'?'Save & open Salary':'Save & open Attendance';btn.onclick=async()=>{if(JSON.stringify(readChanges())!==initialEditor&&!await saveProfile(false))return;view.dispatchEvent(new CustomEvent('app:navigate',{bubbles:true,detail:{module:btn.dataset.module,staffId}}));};});
+    const expected={name:s.name,outlet_id:Number(s.outlet_id),basic_salary:Number(s.basic_salary),joining_date:s.joining_date,notes:s.notes??null,role:u?.role||'Staff',permissions:perms,employment_status:s.employment_status,status_effective_from:s.status_effective_from??null,status_note:s.status_note??null};
+    const readChanges=()=>({name:view.querySelector('#editName').value.trim(),outlet_id:Number(view.querySelector('#editOutlet').value),role:view.querySelector('#editRole').value,basic_salary:Number(view.querySelector('#editSalary').value||0),joining_date:view.querySelector('#editJoining').value,permissions:{...perms,module_access:readAccessDomains(view,'edit')},notes:view.querySelector('#editNotes').value,employment_status:view.querySelector('#editEmploymentStatus').value,status_effective_from:view.querySelector('#editStatusDate').value||null,status_note:view.querySelector('#editStatusNote').value.trim()||null});
+    const initialEditor=JSON.stringify(readChanges());
+    const saveProfile=async(closeEditor=true)=>{
       const msg=view.querySelector('#editMsg'),btn=view.querySelector('#saveStaff');
-      const permissions={...perms,module_access:readAccessDomains(view,'edit')};
       btn.disabled=true;btn.textContent='Saving…';
       try{
-        const {error}=await supabase.rpc('owner_update_staff',{p_staff_id:staffId,p_name:view.querySelector('#editName').value.trim(),p_outlet_id:Number(view.querySelector('#editOutlet').value),p_role:view.querySelector('#editRole').value,p_basic_salary:Number(view.querySelector('#editSalary').value||0),p_joining_date:view.querySelector('#editJoining').value,p_active:!['INACTIVE','LEFT'].includes(view.querySelector('#editEmploymentStatus').value),p_permissions:permissions,p_notes:view.querySelector('#editNotes').value});
+        const {error}=await supabase.rpc('owner_save_staff_profile',{p_staff_id:staffId,p_expected:expected,p_changes:readChanges()});
         if(error)throw error;
-        const {error:statusError}=await supabase.rpc('owner_set_staff_status',{p_staff_id:staffId,p_status:view.querySelector('#editEmploymentStatus').value,p_effective_from:view.querySelector('#editStatusDate').value,p_note:view.querySelector('#editStatusNote').value.trim()||null});
-        if(statusError)throw statusError;
-        if(error)throw error;
-        ({outlets,staffRows,adminRows,avatarRows}=await loadData()); view.querySelector('#staffList').innerHTML='<div class="notice">Staff profile updated.</div>'; renderList();
-      }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to save changes.')+'</p>';}
+        ({outlets,staffRows,adminRows,avatarRows}=await loadData());if(closeEditor)renderList();return true;
+      }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to save changes.')+'</p>';return false;}
       finally{btn.disabled=false;btn.textContent='Save changes';}
     };
+    view.querySelector('#saveStaff').onclick=()=>saveProfile();
     const resetPinBtn=view.querySelector('#resetPin');if(resetPinBtn)resetPinBtn.onclick=async()=>{
       const msg=view.querySelector('#editMsg'),btn=view.querySelector('#resetPin');
       btn.disabled=true;btn.textContent='Resetting…';
@@ -933,7 +939,7 @@ async function renderStock(view,supabase,profile){
     if(error){show(error.message);save.disabled=false;save.textContent=stockMode==='monthly'?'Save monthly stock':"Save tonight's stock";return;}
     try{localStorage.removeItem(draftKey);}catch{}show(stockMode==='monthly'?'Monthly stock saved.':'Tonight’s stock saved.','success');save.textContent='Saved ✓';
   };
-  
+
   orderPane.hidden=true;
 }
 async function renderPurchases(view, supabase, profile, workspace='purchase') {
@@ -1248,16 +1254,18 @@ box.innerHTML=[...groups].map(([name,list])=>`<details class="order-category-gro
 
 }
 
-async function renderSalary(view, supabase, profile, initialView='salary') {
+async function renderSalary(view, supabase, profile, initialView='salary',selectedStaffId=null) {
   const isAdmin=profile.access_class==='ADMIN', isManager=['Manager','Ops Manager'].includes(profile.role);
   const {data:userRow}=await supabase.from('users').select('staff_id,outlet_id').eq('id',profile.id).maybeSingle();
   let staff=[];
   if(isAdmin){let q=supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status').eq('active',true);if(profile.context_outlet_id)q=q.eq('outlet_id',profile.context_outlet_id);const{data}=await q.order('name');staff=data||[];}
   else {const{data}=await supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status').eq('id',userRow?.staff_id||0);staff=data||[];}
+  if(isAdmin&&selectedStaffId&&!staff.some(s=>Number(s.id)===Number(selectedStaffId))){const {data:person}=await supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status').eq('id',selectedStaffId).maybeSingle();if(person)staff.push(person);}
   if(!staff.length){view.innerHTML='<span class="eyebrow">Salary</span><h2>Salary</h2><p class="section-help">No linked active staff record is available.</p>';return;}
-  if(isAdmin){await renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff);return;}
+  if(isAdmin){await renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff,selectedStaffId,initialView);return;}
   const nowIST=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
-  const month=nowIST.slice(0,7);
+  const currentStart=salaryStartForMonth(nowIST.slice(0,7),staff[0].joining_date);
+  const month=nowIST<currentStart?new Date(Date.UTC(Number(nowIST.slice(0,4)),Number(nowIST.slice(5,7))-2,1)).toISOString().slice(0,7):nowIST.slice(0,7);
   view.innerHTML=`<div class="salary-page">
     <div class="salary-workspace-toggle"><button type="button" data-salary-view="salary">Salary</button><button type="button" data-salary-view="advances">Advances</button></div>
     <div id="salaryPanel">
@@ -1276,10 +1284,9 @@ async function renderSalary(view, supabase, profile, initialView='salary') {
   const money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
   const render=async()=>{
     const chosen=view.querySelector('#salaryMonth')?.value||month;
-    const start=chosen+'-01',lastDay=new Date(Number(chosen.slice(0,4)),Number(chosen.slice(5,7)),0).getDate();
-    const monthEnd=chosen+'-'+String(lastDay).padStart(2,'0'),end=monthEnd<nowIST?monthEnd:nowIST;
-    const periodComplete=monthEnd<nowIST;
-    const sid=Number(view.querySelector('#salaryStaff')?.value||staff[0].id), person=staff.find(x=>Number(x.id)===sid);
+    const sid=Number(view.querySelector('#salaryStaff')?.value||staff[0].id),person=staff.find(x=>Number(x.id)===sid);
+    const start=salaryStartForMonth(chosen,person?.joining_date),monthEnd=salaryPeriodEnd(start,person?.joining_date),end=monthEnd;
+    if(nowIST<start){view.querySelector('#salaryEstimate').innerHTML='<p class="section-help">This salary period has not started yet.</p>';return;}
     const [{data:est,error},{data:payrollContext,error:finalError}]=await Promise.all([
       supabase.rpc('get_salary_estimate_v2',{p_staff_id:sid,p_start:start,p_end:end}),
       supabase.rpc('get_salary_payroll_context',{p_staff_id:sid,p_month_start:start})
@@ -1294,28 +1301,9 @@ async function renderSalary(view, supabase, profile, initialView='salary') {
       view.querySelector('#salaryEstimate').innerHTML=`<section class="salary-hero"><span>${escapeHtml(person?.name||'Salary')}</span><strong>${money(final.net_salary)}</strong><small>${escapeHtml(final.payroll_status)} · ${escapeHtml(final.period_start)} – ${escapeHtml(final.period_end)}</small></section><section class="summary-section compact"><div class="summary-section-title"><span></span><h3>Final salary statement</h3></div><div class="salary-breakdown"><div class="salary-line"><span>Basic salary</span><strong>${money(final.basic_salary)}</strong></div><div class="salary-line positive"><span>Holiday pay</span><strong>+${money(final.holiday_pay)}</strong></div><div class="salary-line"><span>Absence deduction · ${Number(final.absent_days||0)} days</span><strong>−${money(final.absent_deduction)}</strong></div>${Number(d.half_day_deduction)?`<div class="salary-line"><span>Half-day deduction · ${Number(d.half_days||0)}</span><strong>−${money(d.half_day_deduction)}</strong></div>`:''}<div class="salary-line"><span>Late penalty${final.late_penalty_waived?' · waived':''}</span><strong>−${money(late)}</strong></div>${petty?`<div class="salary-line"><span>Earlier petty advances</span><strong>−${money(petty)}</strong></div>`:''}${advanceEmi?`<div class="salary-line"><span>Approved advance EMI</span><strong>−${money(advanceEmi)}</strong></div>`:''}${Number(final.loan_deduct_this_month)>0?`<div class="salary-line"><span>Loan deduction</span><strong>−${money(final.loan_deduct_this_month)}</strong></div>`:''}${loanApplies?`<div class="salary-line"><span>Loan balance remaining</span><strong>${money(final.loan_remaining)}</strong></div>`:''}<div class="salary-line positive"><span>OT / other credit</span><strong>+${money(final.ot_credit)}</strong></div>${earnings.map(x=>`<div class="salary-line positive"><span>${escapeHtml(x.label||'Additional earning')}</span><strong>+${money(x.amount)}</strong></div>`).join('')}${deductions.map(x=>`<div class="salary-line"><span>${escapeHtml(x.label||'Additional deduction')}</span><strong>−${money(x.amount)}</strong></div>`).join('')}</div><p class="section-help">Pay date ${escapeHtml(final.pay_date||'—')} · ${final.payment_method?'Paid by '+escapeHtml(final.payment_method):'Payment not yet recorded'}${final.payment_reference?' · Ref '+escapeHtml(final.payment_reference):''}</p></section>`;
       return;
     }
-    let transferReview='';
-    if(isAdmin){
-      const {data:staffUsers,error:userError}=await supabase.from('users').select('id').eq('staff_id',sid);
-      if(userError){transferReview='<p class="form-error">Transfers review unavailable: '+escapeHtml(userError.message)+'</p>';}
-      else if(staffUsers?.length){
-        const {data:payments,error:paymentError}=await supabase.from('extra_time_payments').select('id,category,basis_qty,basis_unit,rate,amount,status,extra_time_dispatches!inner(dispatched_at,extra_time_requests!inner(request_group,requested_at))').in('staff_user_id',staffUsers.map(u=>u.id)).order('created_at',{ascending:false}).limit(300);
-        if(paymentError)transferReview='<p class="form-error">Transfers review unavailable: '+escapeHtml(paymentError.message)+'</p>';
-        else {
-          const current=(payments||[]).filter(p=>{const day=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(p.extra_time_dispatches.extra_time_requests.requested_at));return day>=start&&day<=end&&p.status!=='VOID';}).sort((a,b)=>new Date(a.extra_time_dispatches.extra_time_requests.requested_at)-new Date(b.extra_time_dispatches.extra_time_requests.requested_at));
-          const groups=[...new Set(current.map(p=>p.extra_time_dispatches.extra_time_requests.request_group))];
-          const {data:items,error:itemsError}=groups.length?await supabase.from('extra_time_requests').select('request_group,category,item_name').in('request_group',groups):{data:[]};
-          if(itemsError){transferReview='<p class="form-error">Transfers review unavailable: '+escapeHtml(itemsError.message)+'</p>';}
-          else {
-            const names=p=>(items||[]).filter(x=>x.request_group===p.extra_time_dispatches.extra_time_requests.request_group&&x.category===p.category).map(x=>x.item_name).join(', ');
-            transferReview=`<section class="summary-section compact transfer-salary-review"><span class="eyebrow">Transfers to review · by order sent date</span><h3>${money(current.reduce((sum,p)=>sum+Number(p.amount||0),0))}</h3>${current.length?current.map(p=>`<div class="salary-line"><span>${escapeHtml(new Date(p.extra_time_dispatches.extra_time_requests.requested_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'}))} · ${escapeHtml(names(p))} · ${Number(p.basis_qty)} ${escapeHtml(p.basis_unit)} × ${money(p.rate)} · ${escapeHtml(p.status)}</span><strong>${money(p.amount)}</strong></div>`).join(''):'<p class="section-help">No preparation payments for this period.</p>'}<p class="section-help">Review only. This amount is not included in the salary estimate or finalized payroll.</p></section>`;
-          }
-        }
-      }
-    }
-    const hasOperationalData=Number(est.present_equivalent_days||0)>0||Number(est.late_mins||0)>0||Number(est.advance_deduction||0)>0||Number(est.advance_installment_due||0)>0||Number(est.loan_deduction||0)>0;
+    const hasOperationalData=Number(est.present_equivalent_days||0)>0||Number(est.absent_days||0)>0||Number(est.leave_days||0)>0||Number(est.half_days||0)>0||Number(est.late_mins||0)>0||Number(est.advance_deduction||0)>0||Number(est.advance_installment_due||0)>0||Number(est.loan_deduction||0)>0;
     if(!hasOperationalData&&!final){
-      view.querySelector('#salaryEstimate').innerHTML=`<div class="salary-empty-note">${icon('attendance',21)}<div><strong>Not enough records to estimate salary yet</strong><span>No attendance or staff-payment activity is recorded for this period. CafeTracker will not treat missing records as absences.</span></div></div><section class="salary-hero"><span>${escapeHtml(person?.name||'Salary')}</span><strong>${money(est.basic_salary)}</strong><small>Basic salary · estimate pending attendance data</small></section><div class="salary-meta"><span>Daily rate <strong>${money(est.daily_rate)}</strong></span><span>Hourly rate <strong>${money(est.hourly_rate)}</strong></span><span>Paid off entitlement <strong>3 days/month</strong></span></div>${transferReview}`;return;
+      view.querySelector('#salaryEstimate').innerHTML=`<div class="salary-empty-note">${icon('attendance',21)}<div><strong>Not enough records to estimate salary yet</strong><span>No attendance or staff-payment activity is recorded for this period. CafeTracker will not treat missing records as absences.</span></div></div><section class="salary-hero"><span>${escapeHtml(person?.name||'Salary')}</span><strong>${money(est.basic_salary)}</strong><small>Basic salary · estimate pending attendance data</small></section><div class="salary-meta"><span>Daily rate <strong>${money(est.daily_rate)}</strong></span><span>Hourly rate <strong>${money(est.hourly_rate)}</strong></span><span>Paid off entitlement <strong>3 days/month</strong></span></div>`;return;
     }
     const incomplete=est.data_complete===false||Number(est.unrecorded_days||0)>0;
     view.querySelector('#salaryEstimate').innerHTML=`
@@ -1324,26 +1312,25 @@ async function renderSalary(view, supabase, profile, initialView='salary') {
       <div class="salary-breakdown">
         <div class="salary-line"><span>Basic salary</span><strong>${money(est.basic_salary)}</strong></div>
         <div class="salary-line positive"><span>Holiday Duty · ${Number(est.holiday_duty_days||0)} day(s)</span><strong>+${money(est.holiday_duty_allowance)}</strong></div>
-        <div class="salary-line"><span>Absent · ${Number(est.absent_days||0)} day(s)</span><strong>−${money(est.absent_deduction)}</strong></div>
+        <div class="salary-line"><span>Days off · ${Number(est.absent_days||0)+Number(est.leave_days||0)} day(s)</span><strong>−${money(est.absent_deduction)}</strong></div>
         <div class="salary-line"><span>Half-day · ${Number(est.half_days||0)}</span><strong>−${money(est.half_day_deduction)}</strong></div>
-        <div class="salary-line"><span>Late · ${Number(est.deductible_late_hours||0)} full hour(s)</span><strong>−${money(est.late_deduction)}</strong></div>
+        <div class="salary-line"><span>Late · ${Number(est.deductible_late_hours||0)} chargeable hour(s)</span><strong>−${money(est.late_deduction)}</strong></div>
         <div class="salary-line"><span>Earlier manual advances recorded</span><strong>−${money(est.advance_deduction)}</strong></div>
         <div class="salary-line"><span>Advance installment due${Number(est.advance_installment_due)>Number(est.advance_installment_deduction)?' · limited by net pay':''}</span><strong>−${money(est.advance_installment_deduction)}</strong></div>
         <div class="salary-line"><span>Loan deductions recorded</span><strong>−${money(est.loan_deduction)}</strong></div>
       </div>
       <div class="salary-meta"><span>Daily rate <strong>${money(est.daily_rate)}</strong></span><span>Hourly rate <strong>${money(est.hourly_rate)}</strong></span><span>Advance balance before payroll <strong>${money(est.advance_balance_before_payroll)}</strong></span><span>Paid off entitlement <strong>3 days/month</strong></span></div>
-      ${transferReview}
-      ${isAdmin?`<div id="salaryFinalizeMessage" class="purchase-message" hidden></div><button id="finalizeSalary" class="primary" type="button" ${incomplete||!periodComplete?'disabled':''}>${final?'Re-finalize payroll':'Finalize payroll'}</button><p class="section-help">${periodComplete?'Finalization posts this month’s advance repayment once. Incomplete attendance must be reconciled first.':'Current month is a preview. Select a completed month to finalize payroll.'}</p>`:''}`;
-    const finalize=view.querySelector('#finalizeSalary');if(finalize)finalize.onclick=async()=>{if(!confirm('Finalize this payroll period and post the advance installment?'))return;finalize.disabled=true;finalize.textContent='Finalizing…';const{error}=await supabase.rpc('finalize_salary_record_v2',{p_staff_id:sid,p_period_start:start,p_period_end:end,p_pay_date:end,p_user_id:profile.id});if(error){const b=view.querySelector('#salaryFinalizeMessage');b.textContent=error.message;b.className='purchase-message error';b.hidden=false;finalize.disabled=false;finalize.textContent=final?'Re-finalize payroll':'Finalize payroll';return;}await render();await renderAdvancePanel(view,supabase,profile,userRow);};
+
+      `;
   };
   view.querySelector('#salaryStaff')?.addEventListener('change',render);view.querySelector('#salaryMonth')?.addEventListener('change',render);await render();await renderAdvancePanel(view,supabase,profile,userRow);
 }
 
-async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
+async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff,selectedStaffId=null,initialView='salary'){
   const money=n=>'₹'+Math.round(Number(n||0)).toLocaleString('en-IN');
-  const periodEndFor=date=>{const [year,month,day]=date.split('-').map(Number);const nextMonthDays=new Date(Date.UTC(year,month+1,0)).getUTCDate();const end=new Date(Date.UTC(year,month,Math.min(day,nextMonthDays)));end.setUTCDate(end.getUTCDate()-1);return end.toISOString().slice(0,10);};
+  const periodEndFor=(date,joining)=>salaryPeriodEnd(date,joining);
   const payDateAfter=end=>{const pay=new Date(end+'T00:00:00Z');pay.setUTCDate(pay.getUTCDate()+10);return pay.toISOString().slice(0,10);};
-  const payDateFor=date=>payDateAfter(periodEndFor(date));
+  const payDateFor=(date,joining)=>payDateAfter(periodEndFor(date,joining));
   const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   const month=today.slice(0,7);
   view.innerHTML=`<div class="salary-page salary-owner-page">
@@ -1354,13 +1341,14 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
     <div id="advancesPanel" hidden><div class="summary-title-row"><div><span class="eyebrow">Staff support</span><h2>Advances</h2><p>Request, approve and record payouts separately.</p></div></div><div id="advancePanel"></div></div>
   </div>`;
   const setWorkspace=name=>{const a=name==='advances';view.querySelector('#salaryPanel').hidden=a;view.querySelector('#advancesPanel').hidden=!a;view.querySelectorAll('[data-salary-view]').forEach(b=>b.classList.toggle('active',b.dataset.salaryView===name));};
-  view.querySelectorAll('[data-salary-view]').forEach(b=>b.onclick=()=>setWorkspace(b.dataset.salaryView));setWorkspace('salary');
+  view.querySelectorAll('[data-salary-view]').forEach(b=>b.onclick=()=>setWorkspace(b.dataset.salaryView));setWorkspace(initialView);
   const monthEl=view.querySelector('#salaryMonth'),staffEl=view.querySelector('#salaryStaff'),panel=view.querySelector('#salaryProcessor');
+  if(selectedStaffId)staffEl.value=String(selectedStaffId);
   const num=(form,name)=>Number(form.elements[name]?.value||0);
   const load=async()=>{
     const sid=Number(staffEl.value),person=staff.find(s=>Number(s.id)===sid),selected=monthEl.value||month;
     const startDefault=salaryStartForMonth(selected,person?.joining_date);
-    const endDefault=periodEndFor(startDefault);
+    const endDefault=periodEndFor(startDefault,person?.joining_date);
     panel.innerHTML='<p class="section-help">Fetching attendance and payroll records…</p>';
     const [estimateResult,contextResult]=await Promise.all([
       supabase.rpc('get_salary_estimate_v2',{p_staff_id:sid,p_start:startDefault,p_end:endDefault}),
@@ -1373,7 +1361,7 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
       locked=current?.payroll_status==='PAID'||legacyRecord,
       prev=current||prior,prevRecord=prev?`<section class="summary-section salary-last-record"><div class="summary-section-title"><span></span><h3>${current?'This period’s saved record':'Last paid record'}</h3></div><div class="salary-last-grid"><div><small>Period</small><strong>${escapeHtml(prev.period_start)} → ${escapeHtml(prev.period_end)}</strong></div><div><small>Net salary</small><strong class="positive">${money(prev.net_salary)}</strong></div><div><small>Absence · late</small><strong>${Number(prev.absent_days||0)} days · ${Number(prev.late_hours_edited||0)} hrs</strong></div><div><small>Loan remaining</small><strong>${money(prev.loan_remaining)}</strong></div></div><p class="section-help">${escapeHtml(prev.payroll_status||'FINALIZED')}${prev.saved_by_name?' · Saved by '+escapeHtml(prev.saved_by_name):''}${prev.created_at?' · '+escapeHtml(new Date(prev.created_at).toLocaleDateString('en-IN')):''}</p></section>`:'';
     const sdate=saved.period_start||current?.period_start||startDefault,edate=saved.period_end||current?.period_end||endDefault,
-      paydate=saved.pay_date||current?.pay_date||payDateFor(sdate);
+      paydate=saved.pay_date||current?.pay_date||payDateFor(sdate,person?.joining_date);
     const periodDays=(new Date(edate+'T12:00:00')-new Date(sdate+'T12:00:00'))/86400000+1;
     const basic=Number(saved.basic_salary??current?.basic_salary??estimate.basic_salary??person?.basic_salary??0),
       absent=Number(saved.absent_days??current?.absent_days??(Number(estimate.absent_days||0)+Number(estimate.leave_days||0))),
@@ -1382,26 +1370,19 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
       holidayDays=Number(saved.holiday_days??current?.holiday_days??(estimate.data_complete===false?estimate.holiday_duty_days:holidayDutyDays(absent))??0),
       holiday=Number(saved.holiday_pay??current?.holiday_pay??Math.round(holidayDays*basic/SALARY_DAY_DIVISOR)),
       lateMins=Number(saved.late_mins??current?.late_mins??estimate.late_mins??0),
-      lateHours=Number(saved.late_hours??current?.late_hours_edited??chargeableLateHours(lateMins)),
+      lateHours=Number(saved.late_hours??current?.late_hours_edited??Number(estimate.deductible_late_hours||0)),
       dayDivisor=SALARY_DAY_DIVISOR,paidOffEntitlement=PAID_DAYS_OFF,
       priorLoan=Number(saved.loan_prev_balance??current?.loan_prev_balance??(current?0:(prior?.loan_remaining??0))),
       loanRemaining=Number(saved.loan_remaining??current?.loan_remaining??Math.max(0,priorLoan-Number(saved.loan_deduct_this_month??current?.loan_deduct_this_month??estimate.loan_deduction??0))),
       baseAbsenceDed=Number(saved.absent_deduction??current?.absent_deduction??payrollAbsenceDeduction(basic,absent,periodDays)),
       halfDayDed=Number(saved.half_day_deduction??(legacyRecord?0:estimate.half_day_deduction??0)),
-      baseLateDed=Number(saved.late_penalty??current?.late_penalty??latePenalty(basic,lateMins)),
+      baseLateDed=Number(saved.late_penalty??current?.late_penalty??latePenaltyFromHours(basic,lateHours)),
       autoAbsenceDed=saved.absence_deduction_manual===true?'false':'true',
       autoLateDed=saved.late_penalty_manual===true?'false':'true',
       extraEarnings=Array.isArray(saved.extra_earnings)?saved.extra_earnings:[],
       extraDeductions=Array.isArray(saved.extra_deductions)?saved.extra_deductions:[];
-    let transferRows=[], transferError='',transferStaffUserIds=[];
-    const {data:staffUsers,error:userErr}=await supabase.from('users').select('id').eq('staff_id',sid);
-    if(userErr)transferError=userErr.message;
-    else if(staffUsers?.length){
-      transferStaffUserIds=staffUsers.map(u=>u.id);
-      const{data:payments,error:payErr}=await supabase.from('extra_time_payments').select('id,category,basis_qty,basis_unit,rate,amount,status,salary_record_id,extra_time_dispatches!inner(extra_time_requests!inner(request_group,requested_at))').in('staff_user_id',staffUsers.map(u=>u.id)).in('status',['READY','PAID']).order('created_at',{ascending:true}).limit(300);
-      if(payErr)transferError=payErr.message;
-      else transferRows=(payments||[]).filter(p=>{const date=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(p.extra_time_dispatches.extra_time_requests.requested_at));return date>=sdate&&date<=edate;});
-    }
+    let transferRows=[],transferError='';
+    try{transferRows=await loadSalaryTransfers(supabase,sid,sdate,edate);}catch(error){transferError=error.message;}
     const existingTransferIds=new Set((saved.included_transfer_ids||[]).map(String)),savedTransferAmounts=new Map((saved.extra_earnings||[]).filter(x=>x.transfer_id).map(x=>[String(x.transfer_id),Number(x.amount||0)]));
     let transferData=transferRows.map(p=>({id:Number(p.id),salary_record_id:p.salary_record_id,label:`Transfer · ${p.category} · ${new Date(p.extra_time_dispatches.extra_time_requests.requested_at).toLocaleDateString('en-IN')}`,amount:savedTransferAmounts.get(String(p.id))??Number(p.amount||0),include:p.status==='READY'?(saved.included_transfer_ids?existingTransferIds.has(String(p.id)):!legacyRecord&&!current):p.salary_record_id===current?.id&&existingTransferIds.has(String(p.id)),status:p.status}));
     const transferMarkup=()=>transferError?`<p class="form-error">${escapeHtml(transferError)}</p>`:transferData.length?transferData.map(t=>`<div class="transfer-payroll-item"><input type="checkbox" aria-label="Include ${escapeHtml(t.label)}" data-transfer-include="${t.id}" ${t.include?'checked':''} ${locked||t.status!=='READY'?'disabled':''}><span>${escapeHtml(t.label)}${t.status==='PAID'?' · paid':''}</span><input type="number" min="0" step="0.01" aria-label="Transfer amount for ${escapeHtml(t.label)}" data-transfer-amount="${t.id}" value="${t.amount.toFixed(2)}" ${locked||t.status!=='READY'?'disabled':''}></div>`).join(''):'<p class="section-help">No transfers</p>';
@@ -1412,7 +1393,7 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
         <section class="summary-section payroll-period-section"><div class="summary-section-title"><span></span><h3>Pay period</h3></div>
           <div class="payroll-period-grid"><label class="payroll-start-date">Salary start date<input name="period_start" type="date" value="${escapeHtml(sdate)}" required ${locked?'disabled':''}></label><label>Period days<input name="period_days" type="number" value="${periodDays}" disabled></label><label>Period end<input name="period_end" type="date" value="${escapeHtml(edate)}" required ${locked?'disabled':''}></label><label>Pay date<input name="pay_date" type="date" value="${escapeHtml(paydate)}" required ${locked?'disabled':''}></label></div>
           <div class="payroll-fetch-row"><button id="refreshPayroll" type="button" class="secondary" ${locked?'disabled':''}>↻ Fetch attendance data</button><span id="payrollAttendanceStatus" class="payroll-attendance-status">${Number(estimate.unrecorded_days||0)?Number(estimate.unrecorded_days)+' unrecorded':'Attendance fetched'}</span></div></section>
-        <section class="summary-section"><div class="summary-section-title"><span></span><h3>Attendance summary</h3></div><div class="payroll-grid two"><label>Present days<input name="present_days" type="number" min="0" step="0.5" value="${present}" ${locked?'disabled':''}></label><label>Absent / days off<input name="absent_days" type="number" min="0" step="0.5" value="${absent}" ${locked?'disabled':''}></label><label>Half days<input name="half_days" type="number" min="0" step="0.5" value="${halfDays}" ${locked?'disabled':''}></label><label>Late minutes<input name="late_mins" type="number" min="0" step="1" value="${lateMins}" ${locked?'disabled':''}></label><label>Holiday duty days<input name="holiday_days" data-auto="${saved.holiday_days_manual===true?'false':'true'}" type="number" min="0" step="0.5" value="${holidayDays}" ${locked?'disabled':''}></label><input name="late_hours" type="hidden" value="${lateHours}"></div></section>
+        <section class="summary-section"><div class="summary-section-title"><span></span><h3>Attendance summary</h3></div><div class="payroll-grid two"><label>Present days<input name="present_days" type="number" min="0" step="0.5" value="${present}" ${locked?'disabled':''}></label><label>Absent / days off<input name="absent_days" type="number" min="0" step="0.5" value="${absent}" ${locked?'disabled':''}></label><label>Half days<input name="half_days" type="number" min="0" step="0.5" value="${halfDays}" ${locked?'disabled':''}></label><label>Recorded late minutes<input name="late_mins" type="number" value="${lateMins}" readonly><small>Edit chargeable hours to override the penalty.</small></label><label>Holiday duty days<input name="holiday_days" data-auto="${saved.holiday_days_manual===true?'false':'true'}" type="number" min="0" step="0.5" value="${holidayDays}" ${locked?'disabled':''}></label><label>Chargeable late hours<input name="late_hours" type="number" min="0" step="0.5" data-auto="${saved.late_hours_manual===true?'false':'true'}" value="${lateHours}" ${locked?'disabled':''}><small>Sum of daily tiers. Edit hours to override.</small></label></div></section>
         <section class="summary-section"><div class="summary-section-title"><span></span><h3>Salary calculation</h3></div><div class="payroll-grid two"><label>Basic salary ₹<input name="basic_salary" type="number" min="0" step="0.01" value="${basic}" ${locked?'disabled':''}></label><label>Holiday pay ₹<input name="holiday_pay" data-auto="${saved.holiday_pay_manual===true?'false':'true'}" type="number" min="0" step="0.01" value="${holiday}" ${locked?'disabled':''}></label><input name="paid_off_entitlement" type="hidden" value="${paidOffEntitlement}"><input name="day_divisor" type="hidden" value="${dayDivisor}"><label>Absence deduction ₹<input name="absent_deduction" data-auto="${autoAbsenceDed}" type="number" min="0" step="0.01" value="${baseAbsenceDed}" ${locked?'disabled':''}></label><label>Half-day deduction ₹<input name="half_day_deduction" data-auto="${saved.half_day_deduction_manual===true?'false':'true'}" type="number" min="0" step="0.01" value="${halfDayDed}" ${locked?'disabled':''}></label><label>Late penalty ₹<input name="late_penalty" data-auto="${autoLateDed}" type="number" min="0" step="0.01" value="${baseLateDed}" ${locked?'disabled':''}></label><label class="payroll-check"><input name="late_penalty_waived" type="checkbox" ${(saved.late_penalty_waived??current?.late_penalty_waived)?'checked':''} ${locked?'disabled':''}> Waive late penalty</label></div></section>
         <section class="summary-section"><div class="summary-section-title"><span></span><h3>Advances and loan</h3></div><div class="payroll-grid two"><label>Earlier petty advances ₹<input name="advance_deduction" type="number" min="0" step="0.01" value="${Number(saved.advance_deduction??(legacyRecord?current.petty_advance:estimate.advance_deduction)??0)}" ${locked?'disabled':''}></label><label>Approved advance EMI this month ₹<input name="advance_installment_deduction" type="number" min="0" step="0.01" value="${Number(saved.advance_installment_deduction??(legacyRecord?0:estimate.advance_installment_deduction)??0)}" ${locked?'disabled':''}><small>Outstanding balance: ${money(estimate.advance_balance_before_payroll||0)}</small></label><label>Previous loan balance ₹<input name="loan_prev_balance" type="number" min="0" step="0.01" value="${priorLoan}" ${locked?'disabled':''}></label><label>Loan deduction this month ₹<input name="loan_deduct_this_month" type="number" min="0" step="0.01" value="${Number(saved.loan_deduct_this_month??current?.loan_deduct_this_month??estimate.loan_deduction??0)}" ${locked?'disabled':''}></label><label>Loan remaining ₹<input name="loan_remaining" data-auto="${saved.loan_remaining_manual===true?'false':'true'}" type="number" min="0" step="0.01" value="${loanRemaining}" ${locked?'disabled':''}></label><label>Overtime / other credit ₹<input name="ot_credit" type="number" min="0" step="0.01" value="${Number(saved.ot_credit??current?.ot_credit??0)}" ${locked?'disabled':''}></label></div></section>
         <details class="payroll-compact-section" id="transferPayrollSection"><summary><span>Transfer payments</span><span id="transferPayrollTotal">${money(transferData.filter(t=>t.include).reduce((sum,t)=>sum+t.amount,0))}</span><b aria-hidden="true">+</b></summary><div id="transferPayrollRows">${transferMarkup()}</div></details>
@@ -1426,6 +1407,7 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
       </form>
       ${current?.id?`<section class="summary-section payroll-audit"><div class="summary-section-title"><span></span><h3>Payroll activity</h3></div><div id="payrollAuditRows"><p class="section-help">Loading audit history…</p></div></section>`:''}`;
     const form=panel.querySelector('#payrollForm');
+    form.dataset.attendanceBalanced=String(saved.attendance_source?.manual_adjusted===true||estimate.data_complete!==false);
     const revision=panel.querySelector('#payrollPeriodRevision');
     const updateRevision=()=>{
       const start=form.elements.period_start.value,end=form.elements.period_end.value;
@@ -1456,7 +1438,7 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
     const updateAutoHolidayPay=()=>{if(form.elements.holiday_pay.dataset.auto!=='false')form.elements.holiday_pay.value=Math.round(num(form,'holiday_days')*num(form,'basic_salary')/SALARY_DAY_DIVISOR);};
     const updateAutoHoliday=()=>{if(form.elements.holiday_days.dataset.auto!=='false')form.elements.holiday_days.value=holidayDutyDays(num(form,'absent_days'));updateAutoHolidayPay();};
     const updateAutoHalfDay=()=>{if(form.elements.half_day_deduction.dataset.auto!=='false')form.elements.half_day_deduction.value=Math.round(num(form,'half_days')*num(form,'basic_salary')/(SALARY_DAY_DIVISOR*2));};
-    const updateAutoLate=()=>{form.elements.late_hours.value=chargeableLateHours(num(form,'late_mins'));if(form.elements.late_penalty.dataset.auto!=='false')form.elements.late_penalty.value=latePenalty(num(form,'basic_salary'),num(form,'late_mins'));};
+    const updateAutoLate=()=>{if(form.elements.late_penalty.dataset.auto!=='false')form.elements.late_penalty.value=latePenaltyFromHours(num(form,'basic_salary'),num(form,'late_hours'));};
     const balanceAttendanceFields=changed=>{
       const balanced=balanceAttendance(num(form,'period_days'),changed,num(form,changed));
       form.elements.present_days.value=balanced.present;form.elements.absent_days.value=balanced.absent;
@@ -1471,16 +1453,16 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
       if(el.name==='loan_remaining')el.dataset.auto='false';
       if(el.name==='basic_salary'){updateAutoAbsence();updateAutoHolidayPay();updateAutoHalfDay();updateAutoLate();}
       if(el.name==='half_days')updateAutoHalfDay();
-      if(el.name==='late_mins')updateAutoLate();
+      if(el.name==='late_hours'){el.dataset.auto='false';updateAutoLate();}
       if(['loan_prev_balance','loan_deduct_this_month'].includes(el.name)&&form.elements.loan_remaining.dataset.auto!=='false')form.elements.loan_remaining.value=Math.max(0,num(form,'loan_prev_balance')-num(form,'loan_deduct_this_month')).toFixed(2);
       recalc();
     });form.addEventListener('change',()=>{updateRevision();recalc();});
     const updatePeriodDays=()=>{const a=form.elements.period_start.value,b=form.elements.period_end.value;if(a&&b&&b>=a){form.elements.period_days.value=(new Date(b+'T12:00:00')-new Date(a+'T12:00:00'))/86400000+1;if(form.dataset.attendanceBalanced==='true')form.elements.present_days.value=Math.max(0,num(form,'period_days')-num(form,'absent_days'));updateAutoAbsence();updateRevision();recalc();}};
-    form.elements.period_start.addEventListener('change',()=>{const start=form.elements.period_start.value;if(start){form.elements.period_end.value=periodEndFor(start);form.elements.pay_date.value=payDateFor(start);}updatePeriodDays();panel.querySelector('#refreshPayroll')?.click();});form.elements.period_end.addEventListener('change',()=>{updatePeriodDays();if(form.elements.period_end.value)form.elements.pay_date.value=payDateAfter(form.elements.period_end.value);});recalc();
+    form.elements.period_start.addEventListener('change',()=>{const start=form.elements.period_start.value;if(start){form.elements.period_end.value=periodEndFor(start,person?.joining_date);form.elements.pay_date.value=payDateFor(start,person?.joining_date);}updatePeriodDays();panel.querySelector('#refreshPayroll')?.click();});form.elements.period_end.addEventListener('change',()=>{updatePeriodDays();if(form.elements.period_end.value)form.elements.pay_date.value=payDateAfter(form.elements.period_end.value);});recalc();
     const payload=()=>{
       const included=transfers().filter(t=>t.include&&(t.status==='READY'||t.salary_record_id===current?.id));
       const extraEarn=adjustmentValues('earning').concat(included.map(t=>({label:t.label,amount:t.amount,transfer_id:t.id})));
-      return {period_start:form.elements.period_start.value,period_end:form.elements.period_end.value,pay_date:form.elements.pay_date.value,replace_record_id:updateRevision()&&form.elements.revise_period.checked?current.id:null,calculated_net_salary:Math.round(Number(form.dataset.net||0)),basic_salary:num(form,'basic_salary'),holiday_pay:num(form,'holiday_pay'),holiday_days:num(form,'holiday_days'),holiday_days_manual:form.elements.holiday_days.dataset.auto==='false',holiday_pay_manual:form.elements.holiday_pay.dataset.auto==='false',present_days:num(form,'present_days'),absent_days:num(form,'absent_days'),half_days:num(form,'half_days'),paid_off_entitlement:num(form,'paid_off_entitlement'),day_divisor:num(form,'day_divisor'),absent_deduction:num(form,'absent_deduction'),absence_deduction_manual:form.elements.absent_deduction.dataset.auto==='false',half_day_deduction:num(form,'half_day_deduction'),half_day_deduction_manual:form.elements.half_day_deduction.dataset.auto==='false',late_mins:num(form,'late_mins'),late_hours:num(form,'late_hours'),late_penalty:num(form,'late_penalty'),late_penalty_manual:form.elements.late_penalty.dataset.auto==='false',late_penalty_waived:form.elements.late_penalty_waived.checked,advance_deduction:num(form,'advance_deduction'),advance_installment_deduction:num(form,'advance_installment_deduction'),ot_credit:num(form,'ot_credit'),loan_prev_balance:num(form,'loan_prev_balance'),loan_deduct_this_month:num(form,'loan_deduct_this_month'),loan_remaining:num(form,'loan_remaining'),loan_remaining_manual:form.elements.loan_remaining.dataset.auto==='false',extra_earnings:extraEarn,extra_deductions:adjustmentValues('deduction'),included_transfer_ids:transfers().filter(t=>t.include&&(t.status==='READY'||t.salary_record_id===current?.id)).map(t=>t.id),attendance_source:{data_complete:estimate.data_complete!==false,unrecorded_days:Number(estimate.unrecorded_days||0),manual_adjusted:form.dataset.attendanceBalanced==='true'}};
+      return {period_start:form.elements.period_start.value,period_end:form.elements.period_end.value,pay_date:form.elements.pay_date.value,replace_record_id:updateRevision()&&form.elements.revise_period.checked?current.id:null,calculated_net_salary:Math.round(Number(form.dataset.net||0)),basic_salary:num(form,'basic_salary'),holiday_pay:num(form,'holiday_pay'),holiday_days:num(form,'holiday_days'),holiday_days_manual:form.elements.holiday_days.dataset.auto==='false',holiday_pay_manual:form.elements.holiday_pay.dataset.auto==='false',present_days:num(form,'present_days'),absent_days:num(form,'absent_days'),half_days:num(form,'half_days'),paid_off_entitlement:num(form,'paid_off_entitlement'),day_divisor:num(form,'day_divisor'),absent_deduction:num(form,'absent_deduction'),absence_deduction_manual:form.elements.absent_deduction.dataset.auto==='false',half_day_deduction:num(form,'half_day_deduction'),half_day_deduction_manual:form.elements.half_day_deduction.dataset.auto==='false',late_mins:num(form,'late_mins'),late_hours:num(form,'late_hours'),late_hours_manual:form.elements.late_hours.dataset.auto==='false',late_penalty:num(form,'late_penalty'),late_penalty_manual:form.elements.late_penalty.dataset.auto==='false',late_penalty_waived:form.elements.late_penalty_waived.checked,advance_deduction:num(form,'advance_deduction'),advance_installment_deduction:num(form,'advance_installment_deduction'),ot_credit:num(form,'ot_credit'),loan_prev_balance:num(form,'loan_prev_balance'),loan_deduct_this_month:num(form,'loan_deduct_this_month'),loan_remaining:num(form,'loan_remaining'),loan_remaining_manual:form.elements.loan_remaining.dataset.auto==='false',extra_earnings:extraEarn,extra_deductions:adjustmentValues('deduction'),included_transfer_ids:transfers().filter(t=>t.include&&(t.status==='READY'||t.salary_record_id===current?.id)).map(t=>t.id),attendance_source:{data_complete:estimate.data_complete!==false,unrecorded_days:Number(estimate.unrecorded_days||0),manual_adjusted:form.dataset.attendanceBalanced==='true'}};
     };
     const action=async(which)=>{
       const msg=panel.querySelector('#payrollMessage'),btn=which==='SAVE_DRAFT'?panel.querySelector('#savePayrollDraft'):panel.querySelector('#finalizePayroll');
@@ -1505,22 +1487,19 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff){
       estimate=fetched;
       const fetchedAbsent=Number(fetched.absent_days||0)+Number(fetched.leave_days||0),fetchedHalf=Number(fetched.half_days||0);
       const complete=fetched.data_complete!==false&&Number(fetched.period_days||0)===num(form,'period_days');
-      for(const [field,value] of Object.entries({basic_salary:fetched.basic_salary,present_days:Number(fetched.present_equivalent_days||0)+fetchedHalf/2,absent_days:fetchedAbsent,half_days:fetchedHalf,late_mins:fetched.late_mins,holiday_days:complete?holidayDutyDays(fetchedAbsent):fetched.holiday_duty_days,advance_deduction:fetched.advance_deduction,advance_installment_deduction:fetched.advance_installment_deduction,loan_deduct_this_month:fetched.loan_deduction}))if(form.elements[field]&&value!==undefined)form.elements[field].value=value;
+      for(const [field,value] of Object.entries({basic_salary:fetched.basic_salary,present_days:Number(fetched.present_equivalent_days||0)+fetchedHalf/2,absent_days:fetchedAbsent,half_days:fetchedHalf,late_mins:fetched.late_mins,holiday_days:complete?holidayDutyDays(fetchedAbsent):fetched.holiday_duty_days,advance_deduction:fetched.advance_deduction,advance_installment_deduction:fetched.advance_installment_deduction,loan_deduct_this_month:fetched.loan_deduction,late_hours:fetched.deductible_late_hours}))if(form.elements[field]&&value!==undefined)form.elements[field].value=value;
       form.dataset.attendanceBalanced=complete?'true':'false';
-      for(const field of ['absent_deduction','late_penalty','half_day_deduction','holiday_days','holiday_pay'])form.elements[field].dataset.auto='true';
+      for(const field of ['absent_deduction','late_penalty','late_hours','half_day_deduction','holiday_days','holiday_pay'])form.elements[field].dataset.auto='true';
       updateAutoAbsence();updateAutoHolidayPay();updateAutoHalfDay();updateAutoLate();
       panel.querySelector('#payrollAttendanceStatus').textContent=Number(fetched.unrecorded_days||0)?Number(fetched.unrecorded_days)+' unrecorded':'Attendance fetched';
-      if(transferStaffUserIds.length){
-        const checked=new Set(transfers().filter(t=>t.include).map(t=>String(t.id))),oldAmounts=new Map(transfers().map(t=>[String(t.id),t.amount]));
-        const{data:payments,error:transferLoadError}=await supabase.from('extra_time_payments').select('id,category,amount,status,salary_record_id,extra_time_dispatches!inner(extra_time_requests!inner(requested_at))').in('staff_user_id',transferStaffUserIds).in('status',['READY','PAID']).order('created_at',{ascending:true}).limit(300);
-        if(transferLoadError)transferError=transferLoadError.message;
-        else{transferError='';transferRows=(payments||[]).filter(p=>{const date=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(p.extra_time_dispatches.extra_time_requests.requested_at));return date>=periodStart&&date<=periodEnd;});transferData=transferRows.map(p=>({id:Number(p.id),salary_record_id:p.salary_record_id,label:`Transfer · ${p.category} · ${new Date(p.extra_time_dispatches.extra_time_requests.requested_at).toLocaleDateString('en-IN')}`,amount:oldAmounts.get(String(p.id))??savedTransferAmounts.get(String(p.id))??Number(p.amount||0),include:p.status==='READY'?checked.has(String(p.id)):p.salary_record_id===current?.id&&existingTransferIds.has(String(p.id)),status:p.status}));}
-        panel.querySelector('#transferPayrollRows').innerHTML=transferMarkup();
-      }
+      const checked=new Set(transfers().filter(t=>t.include).map(t=>String(t.id))),oldAmounts=new Map(transfers().map(t=>[String(t.id),t.amount]));
+      try{transferRows=await loadSalaryTransfers(supabase,sid,periodStart,periodEnd);transferError='';transferData=transferRows.map(p=>({id:Number(p.id),salary_record_id:p.salary_record_id,label:`Transfer · ${p.category} · ${new Date(p.extra_time_dispatches.extra_time_requests.requested_at).toLocaleDateString('en-IN')}`,amount:oldAmounts.get(String(p.id))??savedTransferAmounts.get(String(p.id))??Number(p.amount||0),include:p.status==='READY'?(oldAmounts.has(String(p.id))?checked.has(String(p.id)):true):p.salary_record_id===current?.id&&existingTransferIds.has(String(p.id)),status:p.status}));}catch(error){transferError=error.message;}
+      panel.querySelector('#transferPayrollRows').innerHTML=transferMarkup();
       recalc();msg.textContent='Attendance refreshed.';msg.className='purchase-message';msg.hidden=false;btn.disabled=false;btn.textContent='↻ Fetch attendance data';
     });
     panel.querySelector('#markPayrollPaid')?.addEventListener('click',async()=>{
       const msg=panel.querySelector('#payrollMessage'),method=form.elements.payment_method.value,reference=form.elements.payment_reference.value.trim();
+      if(JSON.stringify(payload())!==initialSummary){msg.textContent='Update finalized payroll before recording payment.';msg.className='purchase-message error';msg.hidden=false;return;}
       if(!confirm('Confirm that '+money(current.net_salary)+' was paid to '+person.name+'?'))return;
       const btn=panel.querySelector('#markPayrollPaid');btn.disabled=true;btn.textContent='Recording payment…';
       const{error:err}=await supabase.rpc('save_salary_payroll',{p_staff_id:sid,p_period_start:form.elements.period_start.value,p_period_end:form.elements.period_end.value,p_pay_date:form.elements.pay_date.value,p_details:current.payroll_details||{},p_action:'MARK_PAID',p_user_id:profile.id,p_payment_method:method,p_payment_reference:reference});
@@ -1565,7 +1544,7 @@ async function renderAdvancePanel(view,supabase,profile,userRow){
   };
   panel.innerHTML=`<section class="summary-section advance-panel"><div class="summary-section-title"><span></span><h3>Staff advances</h3></div>
     ${userRow?.staff_id?`<form id="requestAdvance" class="advance-request-form"><label class="summary-label">Amount ₹<input name="amount" type="number" min="1" step="0.01" required></label><label class="summary-label">Repay over<select name="installments"><option value="1">Next payroll · full amount</option>${Array.from({length:11},(_,i)=>i+2).map(n=>`<option value="${n}">${n} monthly installments</option>`).join('')}</select></label><label class="summary-label advance-note">Reason (optional)<input name="note" maxlength="500"></label><button class="primary" type="submit">Request advance</button></form>`:''}
-    <p class="section-help">Manager approves up to ₹500; above ₹500 needs the owner. Approval does not move cash. Repayment starts in the payout month and any unpaid installment carries forward.</p>
+    <p class="section-help">Manager approves up to ₹500; above ₹500 needs the owner. Approval does not move cash. Repayment starts in the salary period containing the payout and any unpaid installment carries forward.</p>
     <div id="advanceMessage" class="purchase-message" hidden></div>
     ${display.length?display.map(x=>`<div class="advance-item"><div><strong>${escapeHtml(names.get(x.staff_id)||(x.staff_id===userRow?.staff_id?profile.name:'Staff #'+x.staff_id))} · ${money(x.amount)}</strong><span>${escapeHtml(x.status)} · ${x.installments} ${x.installments===1?'payroll':'installments'} · ${escapeHtml(new Date(x.requested_at).toLocaleDateString('en-IN'))}${x.mode?' · '+escapeHtml(x.mode):''}</span>${x.note?`<small>${escapeHtml(x.note)}</small>`:''}</div><div class="advance-actions">${action(x)}</div></div>`).join(''):'<p class="section-help">No advance requests yet.</p>'}
   </section>`;
@@ -1581,14 +1560,15 @@ async function renderAdvancePanel(view,supabase,profile,userRow){
   });
 }
 
-async function renderAttendance(view, supabase, profile) {
+async function renderAttendance(view, supabase, profile,selectedStaffId=null) {
+  if(profile.access_class==='ADMIN'&&selectedStaffId){const{data:person}=await supabase.from('staff').select('outlet_id').eq('id',selectedStaffId).maybeSingle();if(person)profile={...profile,context_outlet_id:person.outlet_id};}
   if(profile.access_class==='ADMIN'&&!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to use this operational screen.</p>';return;}
   const isOwner=profile.access_class==='ADMIN',isManager=['Manager','Ops Manager'].includes(profile.role),isAdmin=isOwner||isManager;
   const [{data:outlets},{data:userRow}]=await Promise.all([
     isOwner?supabase.from('outlets').select('id,name,theme_key,theme_color').order('id'):Promise.resolve({data:[]}),
     supabase.from('users').select('staff_id,outlet_id').eq('id',profile.id).maybeSingle()
   ]);
-  let outletId=Number((profile.access_class==='ADMIN'&&profile.context_outlet_id)||profile.outlet_id||outlets?.[0]?.id||1),staffId=!isAdmin?Number(userRow?.staff_id||0):null;
+  let outletId=Number((profile.access_class==='ADMIN'&&profile.context_outlet_id)||profile.outlet_id||outlets?.[0]?.id||1),staffId=!isAdmin?Number(userRow?.staff_id||0):selectedStaffId;
   const effectiveDate=async id=>{const {data,error}=await supabase.rpc('get_effective_business_day',{p_outlet_id:id,p_timestamp:new Date().toISOString()});if(error||!data)throw new Error(error?.message||'Could not determine the café business day.');return String(data);};
   let todayIST;try{todayIST=await effectiveDate(outletId);}catch(e){view.innerHTML='<span class="eyebrow">Attendance</span><h2>Business day unavailable</h2><p class="form-error">'+escapeHtml(e.message)+'</p>';return;}
   let yesterday=(()=>{const d=new Date(todayIST+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10);})();
