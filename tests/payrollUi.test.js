@@ -6,21 +6,22 @@ import {JSDOM} from 'jsdom';
 import * as rules from '../src/payrollRules.js';
 import * as access from '../src/moduleAccess.js';
 import {loadSalaryTransfers} from '../src/payrollData.js';
+import {onboardingDetailsHtml,bindProfileDocuments,renderMyProfile} from '../src/employeeProfiles.js';
 const source=(await fs.readFile(new URL('../src/app.js',import.meta.url),'utf8')).replace(/^import .*;\n/gm,'').replace('export async function renderApp','async function renderApp').replaceAll('import.meta.env','({})');
 const person={id:2,name:'Selected employee',outlet_id:2,basic_salary:15000,joining_date:'2025-01-31',active:true,employment_status:'ACTIVE',notes:null,status_effective_from:null,status_note:null,users:{id:'employee',role:'Staff',permissions:{module_access:{summary:true,'extra-time':false}}}};
 const owner={id:'owner',access_class:'ADMIN',role:'Owner',context_outlet_id:1};
 const est={basic_salary:15000,period_days:30,present_equivalent_days:27,absent_days:3,leave_days:0,half_days:0,late_mins:48,deductible_late_hours:1.5,late_deduction:63,half_day_deduction:0,holiday_duty_days:0,data_complete:true,advance_deduction:0,advance_installment_deduction:500};
-function harness({staffRows=[structuredClone(person)],current=null,saveError=null,emptyActive=false,estimate=est,userRow={staff_id:null,outlet_id:1}}={}) {
+function harness({staffRows=[structuredClone(person)],current=null,saveError=null,emptyActive=false,estimate=est,userRow={staff_id:null,outlet_id:1},employeeProfile=null}={}) {
  const dom=new JSDOM('<section id="view"></section>',{url:'https://example.test'}),calls=[];
  class Clock extends Date {constructor(...args){super(...(args.length?args:['2026-10-02T12:00:00Z']));}}
- const context=vm.createContext({...rules,...access,loadSalaryTransfers,document:dom.window.document,CustomEvent:dom.window.CustomEvent,Intl,Date:Clock,Map,Set,console,setTimeout,clearTimeout,confirm:()=>true,loadStaffAvatars:async()=>new Map(),staffAvatar:()=>'',bindAvatarImages:()=>{},refreshStaffAvatarElements:()=>{},editProfilePhoto:async()=>false});
+ const context=vm.createContext({...rules,...access,loadSalaryTransfers,onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog:async()=>null,document:dom.window.document,CustomEvent:dom.window.CustomEvent,Intl,Date:Clock,Map,Set,console,setTimeout,clearTimeout,confirm:()=>true,loadStaffAvatars:async()=>new Map(),staffAvatar:()=>'',bindAvatarImages:()=>{},refreshStaffAvatarElements:()=>{},editProfilePhoto:async()=>false});
  vm.runInContext(source,context);
  const client={from(table){const filters=[];const result=()=>{
   let data=table==='staff'?staffRows:table==='outlets'?[{id:1,name:'Current café'},{id:2,name:'Selected café'}]:table==='users'?[userRow]:[];
   if(table==='staff'&&filters.some(([k,v])=>k==='active'&&v===true)&&emptyActive)data=[];
   for(const [key,value] of filters)data=data.filter(row=>row[key]===value||table==='users');return {data};
  };const query={select(){return query;},eq(k,v){filters.push([k,v]);return query;},order(){return query;},limit(){return query;},in(){return query;},maybeSingle:async()=>({data:result().data[0]||null}),then(resolve,reject){return Promise.resolve(result()).then(resolve,reject);}};return query;},
- async rpc(name,args){calls.push({name,args});if(name==='get_salary_estimate_v2')return {data:{...estimate}};if(name==='get_salary_payroll_context')return {data:{current,prior:null}};if(name==='owner_save_staff_profile')return saveError?{error:{message:saveError}}:{data:{staff_id:args.p_staff_id}};return {data:[]};}};
+ async rpc(name,args){calls.push({name,args});if(name==='get_employee_profile_data')return {data:employeeProfile};if(name==='get_salary_estimate_v2')return {data:{...estimate}};if(name==='get_salary_payroll_context')return {data:{current,prior:null}};if(name==='owner_save_staff_profile')return saveError?{error:{message:saveError}}:{data:{staff_id:args.p_staff_id}};return {data:[]};}};
  return {dom,context,client,calls,view:dom.window.document.querySelector('#view')};
 }
 test('profile saves salary and access before opening the selected employee',async()=>{
@@ -61,4 +62,13 @@ test('profile reset submits correct employee and clears stale editor after succe
  h.client.functions={invoke:async(name,args)=>{request={name,...args};return {data:{success:true}};}};
  await h.context.renderPeople(h.view,h.client,{...owner,context_outlet_id:null});await h.view.querySelector('.manage-staff').onclick();h.view.querySelector('#editSalary').value='999';
  await h.view.querySelector('#resetProfile').onclick();assert.equal(request.name,'chaitracker-admin-reset');assert.equal(request.body.reset_type,'PROFILE');assert.equal(request.body.staff_id,2);assert.equal(h.view.querySelector('#editSalary').value,'15000');assert.match(h.view.querySelector('#resetAccessMsg').textContent,/Profile cleared/);h.dom.window.close();
+});
+
+test('admin sees complete onboarding details inside Profile and deletion stays superuser-only',async()=>{
+ const h=harness({employeeProfile:{full_legal_name:'Legal Name',identity_number:'ID-123',emergency_contact_name:'Parent'}});await h.context.renderPeople(h.view,h.client,{...owner,is_super_user:false,context_outlet_id:null});await h.view.querySelector('.manage-staff').onclick();
+ assert.match(h.view.querySelector('[data-profile-panel="profile"]').textContent,/Legal Name/);assert.match(h.view.querySelector('[data-profile-panel="profile"]').textContent,/ID-123/);assert.equal(h.view.querySelector('#deleteUser'),null);h.dom.window.close();
+});
+test('superuser gets Delete user but archived staff open read-only history and settlement links',async()=>{
+ const h=harness();await h.context.renderPeople(h.view,h.client,{...owner,is_super_user:true,context_outlet_id:null});await h.view.querySelector('.manage-staff').onclick();assert.equal(h.view.querySelector('#deleteUser').textContent,'Delete user');h.dom.window.close();
+ const archived={...structuredClone(person),active:false,employment_status:'LEFT'};archived.users.deleted_at='2026-10-03';const a=harness({staffRows:[archived]});await a.context.renderPeople(a.view,a.client,{...owner,context_outlet_id:null});assert.equal(a.view.querySelector('.manage-staff'),null);a.view.querySelector('[data-status="DELETED"]').click();await a.view.querySelector('.manage-staff').onclick();assert.equal(a.view.querySelector('#saveStaff'),null);assert.ok(a.view.querySelector('[data-archive-module="salary"]'));let navigation;a.view.addEventListener('app:navigate',e=>navigation=e.detail);a.view.querySelector('[data-archive-module="salary"]').click();assert.equal(navigation.staffId,2);a.dom.window.close();
 });

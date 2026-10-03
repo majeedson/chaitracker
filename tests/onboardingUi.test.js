@@ -7,7 +7,7 @@ const source=(await fs.readFile(new URL('../src/app.js',import.meta.url),'utf8')
 async function login(status='complete',pending=true){
  const dom=new JSDOM('<main id="root"></main>'),calls=[],person={id:'employee',name:'Employee',outlet_id:1,access_class:'STAFF',pin_set:false,onboarding_status:status,pin_reset_pending:pending};
  const ctx=vm.createContext({document:dom.window.document,console,FormData,File,fetch:async(url,args)=>{calls.push(args.body);return {ok:true,json:async()=>({success:true})};}});vm.runInContext(source,ctx);
- const client={from(table){const q={select(){return q;},order:async()=>({data:table==='outlets'?[{id:1,name:'Cafe'}]:[person]})};return q;}};
+ const client={from(table){const q={select(){return q;},eq(){return q;},order:async()=>({data:table==='outlets'?[{id:1,name:'Cafe'}]:[person]})};return q;}};
  const root=dom.window.document.querySelector('#root');await ctx.renderLogin(root,client);
  root.querySelector('#outlet-select').value='1';root.querySelector('#outlet-select').onchange();root.querySelector('#name-select').value='employee';root.querySelector('#name-select').onchange();root.querySelector('#start-onboarding').click();
  return {root,calls,dom};

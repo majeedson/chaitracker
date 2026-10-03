@@ -7,7 +7,7 @@ export const APP_DOMAINS=[
 ];
 export function roleModuleAccess(role='Staff',accessClass='STAFF'){
   const admin=accessClass==='ADMIN',manager=['Manager','Ops Manager'].includes(role);
-  return Object.fromEntries(['dashboard','attendance','salary','stock','orders','purchase','extra-time','summary','delta','people'].map(id=>[id,admin||['attendance','salary','stock','orders','purchase','extra-time'].includes(id)||(manager&&id==='summary')]));
+  return Object.fromEntries(['dashboard','attendance','salary','stock','orders','purchase','extra-time','summary','delta','people','my-profile'].map(id=>[id,admin||['attendance','salary','stock','orders','purchase','extra-time','my-profile'].includes(id)||(manager&&id==='summary')]));
 }
 export function effectiveModuleAccess(profile){
   const defaults=roleModuleAccess(profile.role,profile.access_class);

@@ -23,6 +23,8 @@ before(async()=>{
  insert into storage.objects values('employee-documents','${staff}/old.pdf'),('employee-photos','${staff}/old.jpg'),('employee-photos','someone-else/photo.jpg');
  insert into attendance(staff_id) values(1);insert into salary_records(id,staff_id,net_salary) values('OLD',1,15000);`);
  await db.exec(await fs.readFile(new URL('../supabase/migrations/20261003053222_staff_access_reset_b129.sql',import.meta.url),'utf8'));
+ await db.exec(`create table admin_access_audit(action text,target_user_id uuid,target_name text,performed_by uuid,details jsonb);update users set is_super_user=true where id='${owner}';create policy attendance_photos_authenticated_read on storage.objects for select to authenticated using(bucket_id='attendance-photos');`);
+ await db.exec(await fs.readFile(new URL('../supabase/migrations/20261003065117_employee_profiles_archive_b130.sql',import.meta.url),'utf8'));
 });
 after(async()=>db.close());beforeEach(async()=>{await db.exec('begin');await actor(owner);});afterEach(async()=>db.exec('rollback'));
 test('PIN reset keeps profile, detaches old session and requires temporary PIN',async()=>{
@@ -48,4 +50,51 @@ test('expired temporary PIN and stale onboarding completion are rejected',async(
  await reset('PIN');let u=await user();await db.exec("update users set pin_setup_expires_at=now()-interval '1 minute' where staff_id=1");
  await db.exec('savepoint expired');await assert.rejects(query('select complete_staff_onboarding($1,$2,$3,null,$4)',[staff,u.setup_revision,fresh,'1234']),/Temporary PIN/);await db.exec('rollback to savepoint expired');
  await reset('PROFILE');await assert.rejects(query('select complete_staff_onboarding($1,$2,$3,null,null)',[staff,u.setup_revision,fresh]),/Account setup changed/);
+});
+
+const archive=async(date='2026-10-03',name='Employee')=>(await query('select superuser_archive_user($1,$2,$3) value',[staff,name,date]))[0].value;
+test('full onboarding fields are available to admin/self, never to another staff member',async()=>{
+ const data=(await query('select get_employee_profile_data(1) value'))[0].value;assert.equal(data.identity_number,'secret');assert.equal(data.full_legal_name,'Old legal name');assert.equal(data.pin_hash,undefined);assert.equal(data.auth_user_id,undefined);
+ await actor(staff);assert.equal((await query('select get_employee_profile_data(null) value'))[0].value.identity_number,'secret');
+ await db.exec(`insert into staff(id,name,outlet_id) values(2,'Other',1);insert into users(id,auth_user_id,name,role,staff_id,active) values('${fresh}','${fresh}','Other','Manager',2,true);`);
+ await actor(fresh);await assert.rejects(query('select get_employee_profile_data(1)'),/only view your own/);
+});
+test('identity document access is admin/self only, not other managers or anonymous sessions',async()=>{
+ const path=staff+'/old.pdf';assert.equal((await query('select private.employee_identity_access($1) value',[path]))[0].value,true);
+ await actor(staff);assert.equal((await query('select private.employee_identity_access($1) value',[path]))[0].value,true);
+ await actor(fresh);assert.equal((await query('select private.employee_identity_access($1) value',[path]))[0].value,false);
+ await actor('');assert.equal((await query('select private.employee_identity_access($1) value',[path]))[0].value,false);
+});
+test('delete preserves payroll, EMI balance and transfer attribution while removing profile/access',async()=>{
+ await db.exec(`insert into staff_advance_requests(id,staff_id,amount,status) values('${fresh}',1,1000,'PAID');insert into staff_advance_deductions(advance_id,period_start,amount) values('${fresh}','2026-09-01',200);insert into extra_time_payments(id,staff_user_id,amount,status) values(1,'${staff}',150,'READY');`);
+ const r=await archive();assert.equal(r.impact.advance_balance,800);assert.equal(r.impact.transfer_earnings_due,150);assert.equal(r.impact.unpaid_salary,15000);assert.equal(r.files.length,2);assert.equal(r.auth_user_id,staff);
+ const u=await user();assert.equal(u.active,false);assert.equal(u.auth_user_id,null);assert.ok(u.deleted_at);assert.equal(u.staff_id,1);assert.equal(u.name,'Employee');assert.equal((await query('select * from employee_profiles')).length,0);
+ assert.equal((await query('select * from attendance')).length,1);assert.equal((await query('select net_salary from salary_records'))[0].net_salary,'15000');assert.equal((await query('select amount from staff_advance_deductions'))[0].amount,'200');assert.equal((await query('select u.staff_id from extra_time_payments p join users u on u.id=p.staff_user_id'))[0].staff_id,1);
+ assert.equal((await query('select * from login_directory where staff_id=1')).length,0);assert.equal((await query('select * from admin_access_audit')).length,1);
+ await actor(staff);assert.equal((await query('select private.actor_id() value'))[0].value,null);
+});
+test('deleted accounts cannot be reactivated, reset or onboarded through legacy APIs',async()=>{
+ await archive();
+ const rejected=async(sql,args,pattern)=>{await db.exec('savepoint blocked');await assert.rejects(query(sql,args),pattern);await db.exec('rollback to savepoint blocked');};
+ await rejected('update users set active=true where staff_id=1',[],/cannot be reactivated/);
+ await rejected("select owner_set_staff_status(1,'ACTIVE')",[],/read-only/);
+ await rejected("select admin_reset_staff_access(1,'PIN')",[],/cannot be reactivated/);
+ await rejected('insert into employee_profiles(user_id,onboarding_status) values($1,\'complete\')',[staff],/cannot collect/);
+ await rejected("insert into staff_advance_requests(staff_id,amount,status) values(1,500,'REQUESTED')",[],/New requests/);
+ await rejected("insert into leave_requests(staff_id,status) values(1,'PENDING')",[],/New requests/);
+ assert.equal((await query('select private.employee_identity_access($1) value',[staff+'/old.pdf']))[0].value,false);
+});
+test('pending advances, pending leave and unfinished transfers each block deletion atomically',async()=>{
+ for(const insertion of ["insert into staff_advance_requests(staff_id,amount,status) values(1,500,'REQUESTED')","insert into leave_requests(staff_id,status) values(1,'PENDING')",`insert into extra_time_requests(requested_by,status) values('${staff}','DISPATCHED')`]){
+  await db.exec('savepoint pending');await db.exec(insertion);await assert.rejects(archive(),/Resolve pending/);await db.exec('rollback to savepoint pending');assert.equal((await user()).active,true);assert.equal((await query('select * from employee_profiles')).length,1);
+ }
+});
+test('only superuser can delete; self/superuser deletion and wrong confirmation are blocked',async()=>{
+ await db.exec('savepoint no_super');await db.exec(`update users set is_super_user=false where id='${owner}'`);await assert.rejects(archive(),/Super User access required/);await db.exec('rollback to savepoint no_super');
+ await db.exec('savepoint self');await assert.rejects(query('select superuser_archive_user($1,$2,null)',[owner,'Admin']),/cannot delete yourself/);await db.exec('rollback to savepoint self');
+ await db.exec('savepoint name');await assert.rejects(archive('2026-10-03','Wrong name'),/exact user name/);await db.exec('rollback to savepoint name');assert.equal((await user()).active,true);
+});
+test('existing last working date is preserved and cleanup retries do not duplicate history/audit',async()=>{
+ await db.exec("update staff set employment_end_date='2026-09-15' where id=1");await archive('2026-10-03');assert.equal((await query('select employment_end_date from staff'))[0].employment_end_date.toISOString().slice(0,10),'2026-09-15');
+ await archive();assert.equal((await query('select * from admin_access_audit')).length,1);assert.equal((await query('select * from staff_status_history')).length,1);
 });
