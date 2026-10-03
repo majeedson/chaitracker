@@ -21,6 +21,11 @@ test('module overrides apply independently and leave role-only domains intact',(
 });
 test('admins retain administrative access and resetting uses role defaults',()=>{
  const access=effectiveModuleAccess({access_class:'ADMIN',role:'Owner',permissions:{module_access:{summary:false,delta:false}}});
- assert.ok(Object.values(access).every(Boolean));
+ assert.ok(Object.entries(access).filter(([id])=>id!=='my-profile').every(([,allowed])=>allowed));
+ assert.equal(access['my-profile'],false);
  assert.equal(roleModuleAccess('Staff').summary,false);assert.equal(roleModuleAccess('Manager').summary,true);
+});
+test('My profile is available to staff and managers, excluded from all administrators',()=>{
+ for(const role of ['Staff','Manager','Ops Manager'])assert.equal(hasModuleAccess({role,access_class:'STAFF'},'my-profile'),true);
+ for(const role of ['Owner','Staff','Manager'])assert.equal(hasModuleAccess({role,access_class:'ADMIN',permissions:{module_access:{'my-profile':true}}},'my-profile'),false);
 });

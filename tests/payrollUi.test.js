@@ -11,12 +11,13 @@ const source=(await fs.readFile(new URL('../src/app.js',import.meta.url),'utf8')
 const person={id:2,name:'Selected employee',outlet_id:2,basic_salary:15000,joining_date:'2025-01-31',active:true,employment_status:'ACTIVE',notes:null,status_effective_from:null,status_note:null,users:{id:'employee',role:'Staff',permissions:{module_access:{summary:true,'extra-time':false}}}};
 const owner={id:'owner',access_class:'ADMIN',role:'Owner',context_outlet_id:1};
 const est={basic_salary:15000,period_days:30,present_equivalent_days:27,absent_days:3,leave_days:0,half_days:0,late_mins:48,deductible_late_hours:1.5,late_deduction:63,half_day_deduction:0,holiday_duty_days:0,data_complete:true,advance_deduction:0,advance_installment_deduction:500};
-function harness({staffRows=[structuredClone(person)],current=null,saveError=null,emptyActive=false,estimate=est,userRow={staff_id:null,outlet_id:1},employeeProfile=null}={}) {
+function harness({staffRows=[structuredClone(person)],current=null,saveError=null,emptyActive=false,estimate=est,userRow={staff_id:null,outlet_id:1},employeeProfile=null,peopleError=null}={}) {
  const dom=new JSDOM('<section id="view"></section>',{url:'https://example.test'}),calls=[];
  class Clock extends Date {constructor(...args){super(...(args.length?args:['2026-10-02T12:00:00Z']));}}
  const context=vm.createContext({...rules,...access,loadSalaryTransfers,onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog:async()=>null,document:dom.window.document,CustomEvent:dom.window.CustomEvent,Intl,Date:Clock,Map,Set,console,setTimeout,clearTimeout,confirm:()=>true,loadStaffAvatars:async()=>new Map(),staffAvatar:()=>'',bindAvatarImages:()=>{},refreshStaffAvatarElements:()=>{},editProfilePhoto:async()=>false});
  vm.runInContext(source,context);
  const client={from(table){const filters=[];const result=()=>{
+  if(table==='users'&&peopleError)return {data:null,error:{message:peopleError}};
   let data=table==='staff'?staffRows:table==='outlets'?[{id:1,name:'Current café'},{id:2,name:'Selected café'}]:table==='users'?[userRow]:[];
   if(table==='staff'&&filters.some(([k,v])=>k==='active'&&v===true)&&emptyActive)data=[];
   for(const [key,value] of filters)data=data.filter(row=>row[key]===value||table==='users');return {data};
@@ -24,6 +25,13 @@ function harness({staffRows=[structuredClone(person)],current=null,saveError=nul
  async rpc(name,args){calls.push({name,args});if(name==='get_employee_profile_data')return {data:employeeProfile};if(name==='get_salary_estimate_v2')return {data:{...estimate}};if(name==='get_salary_payroll_context')return {data:{current,prior:null}};if(name==='owner_save_staff_profile')return saveError?{error:{message:saveError}}:{data:{staff_id:args.p_staff_id}};return {data:[]};}};
  return {dom,context,client,calls,view:dom.window.document.querySelector('#view')};
 }
+test('People query failures display a retry action instead of leaving Loading',async()=>{
+ const h=harness({peopleError:'permission denied for table users'});h.view.innerHTML='<div class="loading">Loading…</div>';await h.context.renderPeople(h.view,h.client,owner);
+ assert.match(h.view.textContent,/Unable to load People/);assert.match(h.view.textContent,/permission denied/);assert.doesNotMatch(h.view.textContent,/Loading/);assert.equal(typeof h.view.querySelector('#retryPeople').onclick,'function');h.dom.window.close();
+});
+test('administrator controls have a message target for validation errors',async()=>{
+ const h=harness({userRow:{id:'admin',name:'Admin',active:true,is_super_user:false,access_class:'ADMIN'}});await h.context.renderPeople(h.view,h.client,{...owner,is_super_user:true});await h.view.querySelector('.admin-pin-update').onclick();assert.match(h.view.querySelector('#adminMessage').textContent,/Enter a 4–8 digit/);h.dom.window.close();
+});
 test('profile saves salary and access before opening the selected employee',async()=>{
  const h=harness();await h.context.renderPeople(h.view,h.client,{...owner,context_outlet_id:null});await h.view.querySelector('.manage-staff').onclick();
  h.view.querySelector('#editSalary').value='16000';h.view.querySelector('[data-access-domain="summary"][data-access-prefix="edit"]').checked=false;

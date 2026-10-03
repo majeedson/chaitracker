@@ -6,7 +6,7 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 130;
+const APP_BUILD = 131;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -122,7 +122,7 @@ async function renderLogin(root, supabase) {
       <section class="login-card">
         ${reloadButton}
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=130" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=131" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -693,7 +693,13 @@ async function renderPeople(view, supabase, profile) {
     return { outlets: outlets || [], staffRows: staffRows || [], adminRows: adminRows || [],avatarRows };
   };
 
-  let { outlets, staffRows, adminRows,avatarRows } = await loadData();
+  let outlets,staffRows,adminRows,avatarRows;
+  try { ({outlets,staffRows,adminRows,avatarRows}=await loadData()); }
+  catch(error){
+    view.innerHTML='<span class="eyebrow">People</span><h2>Unable to load People</h2><p class="form-error" role="alert">'+escapeHtml(error.message||'Please check your connection and try again.')+'</p><button type="button" id="retryPeople" class="primary">Try again</button>';
+    view.querySelector('#retryPeople').onclick=()=>{view.innerHTML='<div class="loading">Loading…</div>';return renderPeople(view,supabase,profile);};
+    return;
+  }
 
   view.innerHTML = `
     <div class="section-heading"><div><span class="eyebrow">People</span><h2>Staff & Users</h2></div><span class="soft-badge" id="staffCount"></span></div>
@@ -713,7 +719,7 @@ async function renderPeople(view, supabase, profile) {
     <div id="peopleAdmins" class="subsection" hidden>
       <div class="section-heading"><div><h3>Administrators</h3><span class="hint">Admin accounts are separate from employee records</span></div>${profile.is_super_user?'<button type="button" id="showAddAdmin" class="primary">Add Admin</button>':''}</div>
       ${profile.is_super_user?`<div id="addAdminPanel" class="card admin-add-panel" hidden><div class="section-heading"><h3>Add administrator</h3><button type="button" id="cancelAddAdmin" class="ghost">Cancel</button></div><div class="form-grid"><label>Name<input id="adminName" placeholder="Administrator name"></label><label>Home café<select id="adminOutlet">${outlets.map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></label></div><p class="hint">Initial Admin PIN: 123456. The Admin can use it for first sign-in; later PIN changes do not restore this default.</p><div id="adminFormMsg"></div><button type="button" id="addAdminBtn" class="primary">Create Admin</button></div>`:''}
-      <div class="admin-list" id="adminList"></div>
+      <div id="adminMessage" class="purchase-message" role="status" hidden></div><div class="admin-list" id="adminList"></div>
     </div>
     <div id="peopleActionMsg" role="status"></div>
     <div id="peopleStaff" class="subsection"><div class="section-heading"><h3>Staff records</h3><span class="hint">Select a person to manage their employment and access</span></div><div id="staffList"></div></div>
