@@ -13,7 +13,7 @@ export async function checkRelease() {
     assert.ok(versions.every(v=>v===build),`${name} asset versions must match Build ${build}`);
   }
   const migrationNames=await fs.readdir(new URL('../supabase/migrations/',import.meta.url));
-  const migration=migrationNames.find(name=>name.endsWith(`_payroll_access_b${build}.sql`));
+  const migration=migrationNames.find(name=>name.endsWith(`_b${build}.sql`));
   assert.ok(migration,`Build ${build} needs a database migration`);
   const sql=await fs.readFile(new URL('../supabase/migrations/'+migration,import.meta.url),'utf8');
   assert.ok(sql.includes(`jsonb_build_object('schema_build',${build})`),'Database release must match APP_BUILD');

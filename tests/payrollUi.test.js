@@ -50,3 +50,15 @@ test('payment recording refuses unsaved payroll changes',async()=>{
  const current={id:'SAL',period_start:'2026-10-01',period_end:'2026-10-30',pay_date:'2026-11-09',payroll_status:'FINALIZED',net_salary:14500,payroll_details:{basic_salary:15000,present_days:27,absent_days:3,late_mins:0,late_hours:0,half_days:0,holiday_days:0,holiday_pay:0,advance_installment_deduction:500,extra_earnings:[],extra_deductions:[],included_transfer_ids:[]}};
  const h=harness({current});await h.context.renderOwnerSalaryProcessor(h.view,h.client,owner,{},[person],2);const form=h.view.querySelector('#payrollForm');form.elements.ot_credit.value='250';form.elements.ot_credit.dispatchEvent(new h.dom.window.Event('input',{bubbles:true}));h.view.querySelector('#markPayrollPaid').click();assert.match(h.view.querySelector('#payrollMessage').textContent,/Update finalized payroll/);assert.equal(h.calls.filter(x=>x.name==='save_salary_payroll').length,0);h.dom.window.close();
 });
+
+test('ordinary admin has distinct reset controls inside Access and cancellation makes no request',async()=>{
+ const h=harness();await h.context.renderPeople(h.view,h.client,{...owner,is_super_user:false,context_outlet_id:null});await h.view.querySelector('.manage-staff').onclick();
+ const panel=h.view.querySelector('[data-profile-panel="access"]');assert.equal(panel.querySelector('#resetPin').textContent,'Reset PIN');assert.equal(panel.querySelector('#resetProfile').textContent,'Reset profile');
+ h.context.confirm=()=>false;await panel.querySelector('#resetProfile').onclick();assert.equal(h.view.querySelector('#resetAccessMsg').textContent,'');h.dom.window.close();
+});
+test('profile reset submits correct employee and clears stale editor after success',async()=>{
+ const h=harness();let request;
+ h.client.functions={invoke:async(name,args)=>{request={name,...args};return {data:{success:true}};}};
+ await h.context.renderPeople(h.view,h.client,{...owner,context_outlet_id:null});await h.view.querySelector('.manage-staff').onclick();h.view.querySelector('#editSalary').value='999';
+ await h.view.querySelector('#resetProfile').onclick();assert.equal(request.name,'chaitracker-admin-reset');assert.equal(request.body.reset_type,'PROFILE');assert.equal(request.body.staff_id,2);assert.equal(h.view.querySelector('#editSalary').value,'15000');assert.match(h.view.querySelector('#resetAccessMsg').textContent,/Profile cleared/);h.dom.window.close();
+});

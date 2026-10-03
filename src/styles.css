@@ -786,3 +786,6 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 #resetRoleAccess{width:100%}
 .profile-panel .form-grid{min-width:0}
 .profile-panel .form-grid label,.profile-panel .form-grid input{min-width:0;max-width:100%}
+
+.access-reset-section{border-top:1px solid var(--line);margin-top:24px;padding-top:18px}.access-reset-section .action-row{flex-wrap:wrap}.access-reset-section button{min-height:44px}.access-reset-section h4{margin:0 0 8px}
+.login-card{position:relative}.login-reload{position:absolute;top:calc(14px + env(safe-area-inset-top));right:14px;z-index:2;display:grid;place-items:center;width:44px;height:44px;min-width:44px;padding:0;border:1px solid rgba(255,255,255,.8);border-radius:50%;background:rgba(255,255,255,.94);color:var(--accent);box-shadow:0 4px 14px rgba(0,0,0,.12);cursor:pointer}.login-reload:hover{background:#fff}.login-reload:focus-visible{outline:3px solid var(--accent);outline-offset:3px}.login-reload:active{transform:scale(.94)}

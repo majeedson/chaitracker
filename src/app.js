@@ -5,7 +5,7 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 
 import { loadSalaryTransfers } from './payrollData.js';
 
-const APP_BUILD = 128;
+const APP_BUILD = 129;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -55,6 +55,7 @@ function icon(name, size=20) {
     close:'<path d="m6 6 12 12M18 6 6 18"/>',
     logout:'<path d="M10 5H5v14h5M14 8l4 4-4 4M18 12H9"/>',
     lock:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>'
+    ,reload:'<path d="M20 7v5h-5"/><path d="M20 12a8 8 0 1 0-2.3 5.7M20 12l-3-5"/>'
   };
   return `<svg class="ui-icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]||paths.home}</svg>`;
 }
@@ -107,15 +108,18 @@ export async function renderApp(root, supabase) {
 async function renderLogin(root, supabase) {
   const [{ data: outlets }, { data: directory, error }] = await Promise.all([
     supabase.from('outlets').select('id,name,theme_key,theme_color').order('id'),
-    supabase.from('login_directory').select('id,name,role,outlet_id,outlet_name,can_switch_outlet,auth_enrolled,pin_set,theme_key,theme_color,onboarding_status,access_class,is_super_user,staff_id').order('name')
+    supabase.from('login_directory').select('id,name,role,outlet_id,outlet_name,can_switch_outlet,auth_enrolled,pin_set,theme_key,theme_color,onboarding_status,access_class,is_super_user,staff_id,pin_reset_pending').order('name')
   ]);
-  if (error) { root.innerHTML='<main class="login-shell"><section class="login-card"><h1>CafeTracker</h1><p>Login setup unavailable.</p></section></main>'; return; }
+  const reloadButton=`<button id="reloadPage" type="button" class="login-reload" aria-label="Reload page" title="Reload page">${icon('reload',22)}</button>`;
+  const bindReload=()=>{root.querySelector('#reloadPage').onclick=()=>window.location.reload();};
+  if (error) { root.innerHTML=`<main class="login-shell"><section class="login-card">${reloadButton}<h1>CafeTracker</h1><p>Login setup unavailable.</p></section></main>`;bindReload();return; }
 
   root.innerHTML=`
     <main class="login-shell">
       <section class="login-card">
+        ${reloadButton}
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=128" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=129" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -131,6 +135,7 @@ async function renderLogin(root, supabase) {
       </section>
     </main>`;
 
+  bindReload();
   const outletSelect=root.querySelector('#outlet-select'),nameSelect=root.querySelector('#name-select'),pin=root.querySelector('#pin'),loginBtn=root.querySelector('#login-btn');
   const loginArea=root.querySelector('#pin-login-area'),onboardingStart=root.querySelector('#onboarding-start'),picker=root.querySelector('#login-picker'),onboardingShell=root.querySelector('#onboarding-shell'),errorBox=root.querySelector('#login-error'),cafeStep=root.querySelector('#login-cafe-step');
   let selectedPerson=null,loginMode='staff';
@@ -157,14 +162,18 @@ async function renderLogin(root, supabase) {
     if(selectedPerson)applyTheme(selectedPerson);
     const isAdminAccount=selectedPerson?.access_class==='ADMIN';
     const needsOnboarding=!!selectedPerson&&!selectedPerson.pin_set&&!isAdminAccount;
+    const pinOnly=needsOnboarding&&selectedPerson.onboarding_status==='complete';
+    onboardingStart.querySelector('strong').textContent=pinOnly?'Reset your PIN':'Welcome to CafeTracker';
+    onboardingStart.querySelector('span').textContent=pinOnly?'Enter your temporary PIN and choose a new private PIN.':'Complete your profile and create your private PIN.';
+    root.querySelector('#start-onboarding').innerHTML=pinOnly?'Create new PIN <span>→</span>':'Complete setup <span>→</span>';
     loginArea.hidden=needsOnboarding; onboardingStart.hidden=!needsOnboarding;
     pin.disabled=!selectedPerson||needsOnboarding; loginBtn.disabled=!selectedPerson||needsOnboarding; errorBox.hidden=true;
     if(selectedPerson&&!needsOnboarding)pin.focus();
   };
 
-  pin.oninput=()=>{pin.value=pin.value.replace(/\\D/g,'').slice(0,8);};
+  pin.oninput=()=>{pin.value=pin.value.replace(/\D/g,'').slice(0,8);};
   const submitLogin=async()=>{
-    const enteredPin=pin.value.replace(/\\D/g,'').slice(0,8);
+    const enteredPin=pin.value.replace(/\D/g,'').slice(0,8);
     if(enteredPin.length<4){errorBox.textContent='Enter at least 4 digits.';errorBox.hidden=false;return;}
     errorBox.textContent='Signing you in…';errorBox.hidden=false;loginBtn.disabled=true;
     try{
@@ -180,6 +189,8 @@ async function renderLogin(root, supabase) {
 
   function renderOnboarding(){
     picker.hidden=true;onboardingShell.hidden=false;
+    const pinOnly=selectedPerson.onboarding_status==='complete';
+    const requiresTempPin=!!selectedPerson.pin_reset_pending;
     const steps=[
       {key:'personal',label:'About you',icon:'user'},
       {key:'emergency',label:'Emergency',icon:'heart'},
@@ -188,7 +199,7 @@ async function renderLogin(root, supabase) {
       {key:'review',label:'Review',icon:'check'},
       {key:'pin',label:'PIN',icon:'lock'}
     ];
-    let step=0; const state={};
+    let step=pinOnly?5:0; const state={};
     const draw=()=>{
       const progress=Math.round((step/(steps.length-1))*100);
       let body='';
@@ -197,10 +208,10 @@ async function renderLogin(root, supabase) {
       if(step===2)body=`<div class="onboard-title"><div class="feature-icon">${icon('id',22)}</div><div><span class="eyebrow">Identity</span><h2>Verify your ID</h2></div></div><div class="form-stack"><label>Document type<select id="ob-id-type"><option value="">Choose document</option><option ${state.identity_type==='Aadhaar'?'selected':''}>Aadhaar</option><option ${state.identity_type==='Passport'?'selected':''}>Passport</option><option ${state.identity_type==='Other'?'selected':''}>Other</option></select></label><label>Document number<input id="ob-id-number" value="${escapeHtml(state.identity_number||'')}" placeholder="ID document number"></label><label class="upload-card">${icon('id',26)}<strong>Upload identity document</strong><span>JPG, PNG or PDF · max 6 MB</span><input id="ob-id-file" type="file" accept="image/jpeg,image/png,application/pdf"></label><div id="id-file-name" class="file-name">${state.identity_document?.name?escapeHtml(state.identity_document.name):''}</div></div>`;
       if(step===3)body=`<div class="onboard-title"><div class="feature-icon">${icon('camera',22)}</div><div><span class="eyebrow">Profile photo</span><h2>Add a clear photo</h2></div></div><label class="upload-card photo-upload">${icon('camera',30)}<strong>Take or upload photo</strong><span>Clear front-facing photo · max 5 MB</span><input id="ob-photo" type="file" accept="image/jpeg,image/png,image/webp" capture="user"></label><div id="photo-file-name" class="file-name">${state.profile_photo?.name?escapeHtml(state.profile_photo.name):''}</div>`;
       if(step===4)body=`<div class="onboard-title"><div class="feature-icon">${icon('check',22)}</div><div><span class="eyebrow">Almost done</span><h2>Review your details</h2></div></div><div class="review-list"><div><span>Employee</span><strong>${escapeHtml(selectedPerson.name)}</strong></div><div><span>Full legal name</span><strong>${escapeHtml(state.full_legal_name||'—')}</strong></div><div><span>Nationality</span><strong>${escapeHtml(state.nationality||'—')}</strong></div><div><span>Emergency contact</span><strong>${escapeHtml(state.emergency_contact_name||'—')} · ${escapeHtml(state.emergency_contact_relation||'')}</strong></div><div><span>Identity</span><strong>${escapeHtml(state.identity_type||'—')} · on file</strong></div></div><label class="confirm-row"><input id="ob-confirm" type="checkbox"> I confirm these details are correct.</label>`;
-      if(step===5)body=`<div class="onboard-hero"><div class="feature-icon large">${icon('lock',28)}</div><span class="eyebrow">Secure your account</span><h2>Create your private PIN</h2><p>Use 4–8 digits. Your employer does not need to know this PIN.</p><label>New PIN<input id="ob-pin" type="password" inputmode="numeric" maxlength="8" placeholder="4–8 digits"></label><label>Confirm PIN<input id="ob-pin2" type="password" inputmode="numeric" maxlength="8" placeholder="Repeat PIN"></label></div>`;
-      onboardingShell.innerHTML=`<div class="onboard-progress"><div><button id="ob-close" class="icon-button" aria-label="Back to login">←</button><span>${step+1} of ${steps.length}</span></div><div class="progress-track"><i style="width:${progress}%"></i></div></div><div class="onboard-body">${body}<p id="ob-error" class="form-error" hidden></p></div><div class="onboard-actions">${step>0?'<button id="ob-back" class="secondary">Back</button>':''}<button id="ob-next" class="primary">${step===steps.length-1?'Finish & create PIN':'Continue'} <span>→</span></button></div>`;
+      if(step===5)body=`<div class="onboard-hero"><div class="feature-icon large">${icon('lock',28)}</div><span class="eyebrow">Secure your account</span><h2>Create your private PIN</h2><p>Use 4–8 digits. Your employer does not need to know this PIN.</p>${requiresTempPin?'<label>Temporary PIN<input id="ob-temp-pin" type="password" inputmode="numeric" maxlength="4" autocomplete="current-password" placeholder="Temporary PIN from admin"></label>':''}<label>New PIN<input id="ob-pin" type="password" inputmode="numeric" maxlength="8" placeholder="4–8 digits"></label><label>Confirm PIN<input id="ob-pin2" type="password" inputmode="numeric" maxlength="8" placeholder="Repeat PIN"></label></div>`;
+      onboardingShell.innerHTML=`<div class="onboard-progress"><div><button id="ob-close" class="icon-button" aria-label="Back to login">←</button><span>${pinOnly?'PIN reset':`${step+1} of ${steps.length}`}</span></div><div class="progress-track"><i style="width:${progress}%"></i></div></div><div class="onboard-body">${body}<p id="ob-error" class="form-error" hidden></p></div><div class="onboard-actions">${step>0&&!pinOnly?'<button id="ob-back" class="secondary">Back</button>':''}<button id="ob-next" class="primary">${step===steps.length-1?'Finish & create PIN':'Continue'} <span>→</span></button></div>`;
       onboardingShell.querySelector('#ob-close').onclick=()=>{onboardingShell.hidden=true;picker.hidden=false;};
-      if(step>0)onboardingShell.querySelector('#ob-back').onclick=()=>{saveStep();step--;draw();};
+      if(step>0&&!pinOnly)onboardingShell.querySelector('#ob-back').onclick=()=>{saveStep();step--;draw();};
       const idf=onboardingShell.querySelector('#ob-id-file');if(idf)idf.onchange=()=>{state.identity_document=idf.files[0];onboardingShell.querySelector('#id-file-name').textContent=state.identity_document?.name||'';};
       const pf=onboardingShell.querySelector('#ob-photo');if(pf)pf.onchange=()=>{state.profile_photo=pf.files[0];onboardingShell.querySelector('#photo-file-name').textContent=state.profile_photo?.name||'';};
       onboardingShell.querySelector('#ob-next').onclick=async()=>{if(!validateStep())return;saveStep();if(step<steps.length-1){step++;draw();}else await submitOnboarding();};
@@ -218,13 +229,15 @@ async function renderLogin(root, supabase) {
       if(step===2&&(!onboardingShell.querySelector('#ob-id-type').value||!onboardingShell.querySelector('#ob-id-number').value.trim()||!state.identity_document))msg='Choose an ID type, enter its number and upload the document.';
       if(step===3&&!state.profile_photo)msg='Please add a profile photo.';
       if(step===4&&!onboardingShell.querySelector('#ob-confirm').checked)msg='Please confirm that your details are correct.';
-      if(step===5){const a=onboardingShell.querySelector('#ob-pin').value.trim(),b=onboardingShell.querySelector('#ob-pin2').value.trim();if(!/^[0-9]{4,8}$/.test(a))msg='Choose a 4–8 digit PIN.';else if(a!==b)msg='The PINs do not match.';}
+      if(step===5){const a=onboardingShell.querySelector('#ob-pin').value.trim(),b=onboardingShell.querySelector('#ob-pin2').value.trim();if(requiresTempPin&&!/^[0-9]{4}$/.test(onboardingShell.querySelector('#ob-temp-pin').value.trim()))msg='Enter your temporary 4-digit PIN.';else if(requiresTempPin&&a===onboardingShell.querySelector('#ob-temp-pin').value.trim())msg='Choose a new PIN different from the temporary PIN.';else if(!/^[0-9]{4,8}$/.test(a))msg='Choose a 4–8 digit PIN.';else if(a!==b)msg='The PINs do not match.';}
       if(msg){err.textContent=msg;err.hidden=false;return false;}return true;
     };
     const submitOnboarding=async()=>{
       const btn=onboardingShell.querySelector('#ob-next'),err=onboardingShell.querySelector('#ob-error');btn.disabled=true;btn.textContent='Creating your account…';
       try{
         const fd=new FormData();Object.entries(state).forEach(([k,v])=>{if(v instanceof File)fd.append(k==='identity_document'?'identity_document':'profile_photo',v);else if(v!=null)fd.append(k,String(v));});
+        if(pinOnly)fd.append('action','reset_pin');
+        if(requiresTempPin)fd.append('setup_code',onboardingShell.querySelector('#ob-temp-pin').value.trim());
         fd.append('user_id',selectedPerson.id);fd.append('new_pin',onboardingShell.querySelector('#ob-pin').value);
         const response=await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chaitracker-onboarding`,{method:'POST',headers:{apikey:import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY},body:fd});
         const payload=await response.json();if(!response.ok||!payload.success)throw new Error(payload.error||'Onboarding failed.');
@@ -782,13 +795,14 @@ async function renderPeople(view, supabase, profile) {
         <div class="card staff-editor profile-panel" data-profile-panel="access" hidden><div class="section-heading"><div><span class="eyebrow">Access</span><h3>Access control</h3></div><span id="accessSelectedCount" class="soft-badge"></span></div>
         <div class="form-grid"><label>Role<select id="editRole">${['Staff','Manager','Ops Manager'].map(r=>`<option ${r===(u?.role||'Staff')?'selected':''}>${r}</option>`).join('')}</select></label></div>
         <div class="access-domain-list" id="editStaffAccess">${accessDomainFields(access,'edit')}</div>
-        <button type="button" id="resetRoleAccess" class="secondary">Reset to role defaults</button></div>
+        <button type="button" id="resetRoleAccess" class="secondary">Reset to role defaults</button>
+        <div class="access-reset-section"><h4>Account resets</h4><p class="section-help">PIN reset keeps personal details and documents. Profile reset clears all onboarding details, ID information and uploaded files. The staff member then completes a fresh setup. Employment settings, attendance and payment history are retained.</p><div class="action-row"><button type="button" id="resetPin" class="secondary">Reset PIN</button><button type="button" id="resetProfile" class="danger">Reset profile</button></div><div id="resetAccessMsg" role="status"></div></div></div>
         <div class="card staff-editor profile-panel" data-profile-panel="employment" hidden><div class="section-heading"><div><span class="eyebrow">Employment</span><h3>Status</h3></div></div><div class="form-grid"><label>Employment status<select id="editEmploymentStatus">${[['ACTIVE','Active'],['VACATION','Vacation'],['LEAVE','On leave'],['INACTIVE','Inactive'],['LEFT','Left employment']].map(([v,l])=>`<option value="${v}" ${v===(s.employment_status||(s.active?'ACTIVE':'INACTIVE'))?'selected':''}>${l}</option>`).join('')}</select></label><label>Status effective from<input id="editStatusDate" type="date" value="${escapeHtml(s.status_effective_from||'')}"></label></div><label>Status note<textarea id="editStatusNote" rows="2" placeholder="Optional — e.g. annual vacation">${escapeHtml(s.status_note||'')}</textarea></label>
         <div class="employment-history"><h4>Status history</h4>${(Array.isArray(statusHistory)?statusHistory:[]).map(h=>`<div><strong>${escapeHtml(statusText(h.status))}</strong><span>${escapeHtml(h.effective_from||'')}${h.note?' · '+escapeHtml(h.note):''}</span></div>`).join('')||'<p class="section-help">No status history recorded.</p>'}</div></div>
         <div class="card profile-panel" data-profile-panel="attendance" hidden><span class="eyebrow">Attendance</span><h3>Attendance history</h3><p class="section-help">Use the Attendance workspace for the full calendar, corrections and daily status.</p><button type="button" class="secondary profile-open-module" data-module="attendance">Open Attendance</button></div>
         <div class="card profile-panel" data-profile-panel="salary" hidden><span class="eyebrow">Salary</span><h3>Payroll</h3><div class="form-grid"><label>Basic salary ₹<input id="editSalary" type="number" min="0.01" step="0.01" value="${Number(s.basic_salary||0)}"></label></div><button type="button" class="secondary profile-open-module" data-module="salary">Open Salary</button></div>
         <div class="card profile-panel" data-profile-panel="documents" hidden><span class="eyebrow">Documents</span><h3>Employee documents</h3><div class="document-meta"><div><span>Onboarding</span><strong>${escapeHtml(documentMeta?.onboarding_status||'invited')}</strong></div><div><span>Identity type</span><strong>${escapeHtml(documentMeta?.identity_type||'—')}</strong></div><div><span>Identity document</span><strong>${documentMeta?.identity_document_on_file?'On file':'Not uploaded'}</strong></div><div><span>Profile photo</span><strong id="profilePhotoOnFile">${documentMeta?.profile_photo_on_file?'On file':'Not uploaded'}</strong></div></div><p class="section-help">Files remain private. This profile shows document status without exposing identity numbers.</p></div>
-        <div id="editMsg"></div><div class="profile-actions"><button id="saveStaff" class="primary">Save changes</button>${profile.is_super_user?'<button id="resetPin" class="secondary">Reset login</button>':''}</div>
+        <div id="editMsg"></div><div class="profile-actions"><button id="saveStaff" class="primary">Save changes</button></div>
       </div>`;
     view.querySelector('#cancelEdit').onclick=renderList;
     const updateAccessCount=()=>{view.querySelector('#accessSelectedCount').textContent=Object.values(readAccessDomains(view,'edit')).filter(Boolean).length+' / '+APP_DOMAINS.length+' modules';};
@@ -814,19 +828,27 @@ async function renderPeople(view, supabase, profile) {
       finally{btn.disabled=false;btn.textContent='Save changes';}
     };
     view.querySelector('#saveStaff').onclick=()=>saveProfile();
-    const resetPinBtn=view.querySelector('#resetPin');if(resetPinBtn)resetPinBtn.onclick=async()=>{
-      const msg=view.querySelector('#editMsg'),btn=view.querySelector('#resetPin');
-      btn.disabled=true;btn.textContent='Resetting…';
+    let resetting=false;
+    const resetAccount=async(type)=>{
+      if(resetting)return;
+      const full=type==='PROFILE',msg=view.querySelector('#resetAccessMsg');
+      const confirmation=full?`Reset ${s.name}'s profile? This clears personal details, emergency contact, ID information and all uploaded profile files, and resets their PIN. They must onboard again. Employment settings, attendance and payment history remain.`:`Reset ${s.name}'s PIN? Temporary PIN 1234 is valid for 24 hours. They must create a new private PIN. Their profile and documents remain.`;
+      if(!confirm(confirmation))return;
+      resetting=true;const buttons=[view.querySelector('#resetPin'),view.querySelector('#resetProfile'),view.querySelector('#saveStaff')];buttons.forEach(b=>b.disabled=true);
+      msg.textContent='Resetting…';
       try{
-        const {data,error}=await supabase.rpc('superuser_reset_staff_pin_setup',{p_staff_id:staffId});
-        if(error)throw error;
-        msg.innerHTML='<div class="notice setup-share"><strong>Login reset.</strong><br><span class="hint">The staff member can select their name and complete setup again.</span><div class="message-preview">${escapeHtml(staffWelcomeMessage(s.name))}</div><div class="share-actions"><button type="button" id="copyResetWelcome" class="secondary">Copy message</button><button type="button" id="shareResetWhatsApp" class="whatsapp-action">Open WhatsApp</button></div></div>';
-        view.querySelector('#copyResetWelcome').onclick=(e)=>copyStaffWelcomeMessage(s.name,e.currentTarget);
-        view.querySelector('#shareResetWhatsApp').onclick=()=>openStaffWelcomeWhatsApp(s.name);
-        ({outlets,staffRows,avatarRows}=await loadData());
-      }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to reset PIN.')+'</p>';}
-      finally{btn.disabled=false;btn.textContent='Reset login';}
+        const {data,error}=await supabase.functions.invoke('chaitracker-admin-reset',{body:{staff_id:staffId,reset_type:type}});
+        if(error){let detail=error.message;try{detail=(await error.context.json()).error||detail;}catch{}throw new Error(detail);}
+        if(!data?.success)throw new Error(data?.error||'Reset failed.');
+        ({outlets,staffRows,adminRows,avatarRows}=await loadData());
+        await openEditor(staffId);
+        view.querySelector('[data-profile-tab="access"]').click();
+        view.querySelector('#resetAccessMsg').innerHTML='<div class="notice">'+(full?'Profile cleared. The staff member can select their café and name, then complete setup from the beginning.':'PIN reset. Tell the staff member to select their café and name, enter temporary PIN <strong>1234</strong>, then create a new private PIN within 24 hours.')+(data.cleanup_pending?'<p class="form-error">Some uploaded files could not be deleted. Retry Reset profile to finish file cleanup.</p>':'')+'</div>';
+      }catch(error){msg.innerHTML='<p class="form-error">'+escapeHtml(error.message||'Unable to reset access.')+'</p>';}
+      finally{resetting=false;buttons.forEach(b=>b.disabled=false);}
     };
+    view.querySelector('#resetPin').onclick=()=>resetAccount('PIN');
+    view.querySelector('#resetProfile').onclick=()=>resetAccount('PROFILE');
   };
 
   renderList();
