@@ -16,6 +16,7 @@ before(async()=>{
  create table attendance_corrections(attendance_id integer,staff_id integer,outlet_id integer,attendance_date date,requested_punch_time timestamptz,reason text,status text,requested_by uuid,reviewed_by uuid,reviewed_at timestamptz,review_note text);
  create or replace function get_effective_business_day(integer,timestamptz) returns date language sql stable as $$select (($2 at time zone 'Asia/Kolkata')-interval '4 hours')::date$$;`);
  await db.exec(await fs.readFile(new URL('../supabase/migrations/20261005163305_staff_shift_photo_checkin_b134.sql',import.meta.url),'utf8'));
+ await db.exec(await fs.readFile(new URL('../supabase/migrations/20261005170542_historical_attendance_import.sql',import.meta.url),'utf8'));
  await db.exec(`insert into outlets(id,name,shift_start_hour) values(1,'Cafe',11);insert into staff(id,name,outlet_id) values(1,'Manager',1),(2,'Employee',1);insert into users(id,auth_user_id,name,role,access_class,outlet_id,staff_id) values('${admin}','${admin}','Admin','Owner','ADMIN',1,null),('${manager}','${manager}','Manager','Manager','STAFF',1,1),('${staff}','${staff}','Employee','Staff','STAFF',1,2);`);
  day=(await rows('select get_effective_business_day(1,now())::text as business_date'))[0].business_date;
 });
@@ -66,4 +67,15 @@ test('business day uses 4AM rollover and public callers cannot invoke service pu
  assert.equal((await rows("select get_effective_business_day(1,'2026-10-05T21:30:00Z')::text v"))[0].v,'2026-10-05');
  assert.equal((await rows("select get_effective_business_day(1,'2026-10-05T23:30:00Z')::text v"))[0].v,'2026-10-06');
  await db.exec('set local role authenticated');await assert.rejects(rows('select record_staff_photo_checkin($1,$2)',[manager,'x']),/permission denied/);
+});
+test('admin history includes inactive staff and recorded dates outside employment settings',async()=>{
+ await db.exec("update staff set active=false,joining_date='2026-04-01',employment_end_date='2026-04-30' where id=2;insert into attendance(staff_id,outlet_id,attendance_date,shift_start,punch_time) values(2,1,'2026-03-10','11:00','11:10')");
+ const calendar=await rows("select * from get_attendance_calendar(1,2,'2026-03-10','2026-03-10')");assert.equal(calendar.length,1);assert.equal(calendar[0].staff_id,2);assert.equal(calendar[0].punch_time,'11:10:00');
+});
+test('historical records retain their recorded outlet after a staff transfer',async()=>{
+ await db.exec("insert into outlets(id,name) values(2,'Previous cafe');insert into attendance(staff_id,outlet_id,attendance_date,shift_start,punch_time) values(1,2,'2026-03-10','11:00','11:10')");
+ const calendar=(await rows("select * from get_attendance_calendar(1,1,'2026-03-10','2026-03-10')"))[0];assert.equal(calendar.outlet_id,2);assert.equal(calendar.outlet_name,'Previous cafe');
+});
+test('source import audit is private to database administration',async()=>{
+ await actor(staff);await db.exec('set local role authenticated');await assert.rejects(rows('select * from private.attendance_sheet_imports'),/permission denied/);
 });
