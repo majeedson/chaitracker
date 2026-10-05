@@ -6,7 +6,7 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 132;
+const APP_BUILD = 133;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -122,7 +122,7 @@ async function renderLogin(root, supabase) {
       <section class="login-card">
         ${reloadButton}
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=132" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=133" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -853,16 +853,18 @@ async function renderPeople(view, supabase, profile) {
 
     bindAvatarImages(view);
     view.querySelector('#editStaffPhoto').onclick=async()=>{try{if(await editProfilePhoto(supabase,s)){avatarRows=await loadStaffAvatars(supabase);view.querySelector('#profilePhotoOnFile').textContent='On file';}}catch(error){view.querySelector('#editMsg').innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';}};
-    view.querySelectorAll('[data-profile-tab]').forEach(tab=>tab.onclick=()=>{view.querySelectorAll('[data-profile-tab]').forEach(x=>x.classList.toggle('active',x===tab));view.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==tab.dataset.profileTab);});
+    view.querySelectorAll('[data-profile-tab]').forEach(tab=>tab.onclick=()=>{view.querySelectorAll('[data-profile-tab]').forEach(x=>x.classList.toggle('active',x===tab));view.querySelectorAll('[data-profile-panel]').forEach(p=>p.hidden=p.dataset.profilePanel!==tab.dataset.profileTab);view.querySelector('#saveStaff').textContent=tab.dataset.profileTab==='employment'?'Save employment status':'Save changes';});
     view.querySelectorAll('.profile-open-module').forEach(btn=>{btn.textContent=btn.dataset.module==='salary'?'Save & open Salary':'Save & open Attendance';btn.onclick=async()=>{if(JSON.stringify(readChanges())!==initialEditor&&!await saveProfile(false))return;view.dispatchEvent(new CustomEvent('app:navigate',{bubbles:true,detail:{module:btn.dataset.module,staffId}}));};});
     const expected={name:s.name,outlet_id:Number(s.outlet_id),basic_salary:Number(s.basic_salary),joining_date:s.joining_date,notes:s.notes??null,role:u?.role||'Staff',permissions:perms,employment_status:s.employment_status,status_effective_from:s.status_effective_from??null,status_note:s.status_note??null};
-    const readChanges=()=>({name:view.querySelector('#editName').value.trim(),outlet_id:Number(view.querySelector('#editOutlet').value),role:view.querySelector('#editRole').value,basic_salary:Number(view.querySelector('#editSalary').value||0),joining_date:view.querySelector('#editJoining').value,permissions:{...perms,module_access:readAccessDomains(view,'edit')},notes:view.querySelector('#editNotes').value,employment_status:view.querySelector('#editEmploymentStatus').value,status_effective_from:view.querySelector('#editStatusDate').value||null,status_note:view.querySelector('#editStatusNote').value.trim()||null});
+    const readChanges=()=>({name:view.querySelector('#editName').value.trim(),outlet_id:Number(view.querySelector('#editOutlet').value),role:view.querySelector('#editRole').value,basic_salary:Number(view.querySelector('#editSalary').value||0),joining_date:view.querySelector('#editJoining').value||null,permissions:{...perms,module_access:readAccessDomains(view,'edit')},notes:view.querySelector('#editNotes').value,employment_status:view.querySelector('#editEmploymentStatus').value,status_effective_from:view.querySelector('#editStatusDate').value||null,status_note:view.querySelector('#editStatusNote').value.trim()||null});
     const initialEditor=JSON.stringify(readChanges());
     const saveProfile=async(closeEditor=true)=>{
       const msg=view.querySelector('#editMsg'),btn=view.querySelector('#saveStaff');
       btn.disabled=true;btn.textContent='Saving…';
       try{
-        const {error}=await supabase.rpc('owner_save_staff_profile',{p_staff_id:staffId,p_expected:expected,p_changes:readChanges()});
+        const employmentOnly=!view.querySelector('[data-profile-panel="employment"]').hidden;
+        const changes=readChanges();
+        const {error}=employmentOnly?await supabase.rpc('owner_set_staff_status',{p_staff_id:staffId,p_status:changes.employment_status,p_effective_from:changes.status_effective_from,p_note:changes.status_note}):await supabase.rpc('owner_save_staff_profile',{p_staff_id:staffId,p_expected:expected,p_changes:changes});
         if(error)throw error;
         ({outlets,staffRows,adminRows,avatarRows}=await loadData());if(closeEditor)renderList();return true;
       }catch(err){msg.innerHTML='<p class="form-error">'+escapeHtml(err.message||'Unable to save changes.')+'</p>';return false;}

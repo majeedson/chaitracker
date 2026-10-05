@@ -19,6 +19,7 @@ before(async()=>{
  await db.exec(await fs.readFile(new URL('fixtures/payroll-schema.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../supabase/payroll_loan_override_b115.sql',import.meta.url),'utf8'));
  await db.exec(await fs.readFile(new URL('../supabase/migrations/20261002125447_payroll_access_b128.sql',import.meta.url),'utf8'));
+ await db.exec(await fs.readFile(new URL('../supabase/migrations/20261005054016_staff_optional_dates_b133.sql',import.meta.url),'utf8'));
  await db.exec(`insert into outlets(id,name,timezone,shift_start_hour,shift_start_minute,attendance_grace_minutes,half_day_late_minutes) values(1,'Cafe','Asia/Kolkata',11,0,15,240),(2,'Other','Asia/Kolkata',11,0,15,240);
  insert into staff(id,name,outlet_id,basic_salary,joining_date,active,employment_status) values(1,'Employee',1,15000,'2025-01-01',true,'ACTIVE'),(2,'Other employee',1,12000,'2025-01-07',true,'ACTIVE');
  insert into users(id,auth_user_id,name,role,access_class,outlet_id,staff_id,active,permissions) values
@@ -103,6 +104,10 @@ test('transfer reads paginate within the period and survive Transfers revocation
  insert into extra_time_payments(id,dispatch_id,staff_user_id,category,amount,status) select id,id,'${staff}','CHICKEN_PATTY',100,'READY' from extra_time_requests;`);
  await actor(staff);const pages=[];const client={rpc:async(name,args)=>{pages.push(args.p_after_id);try{return {data:(await rows('select get_salary_transfer_payments($1,$2,$3,$4) value',[args.p_staff_id,args.p_start,args.p_end,args.p_after_id]))[0].value};}catch(error){return {error};}}};
  const data=await loadSalaryTransfers(client,1,'2026-09-01','2026-09-30');assert.equal(data.length,305);assert.equal(data[0].id,301);assert.deepEqual(pages,[0,600]);await assert.rejects(rows("select get_salary_transfer_payments(2,'2026-09-01','2026-09-30')"),/own salary/);
+});
+test('blank effective date is normalized and legacy status saves do not need joining dates',async()=>{
+ await rows('select owner_save_staff_profile(1,$1,$2)',[JSON.stringify(snapshot),JSON.stringify({...snapshot,status_effective_from:''})]);assert.equal((await rows('select status_effective_from from staff where id=1'))[0].status_effective_from,null);
+ await db.exec("update staff set joining_date=null,active=false,employment_status='INACTIVE' where id=1;update users set active=false where staff_id=1");await rows("select owner_set_staff_status(1,'ACTIVE','2026-10-05',null)");assert.equal((await rows('select active from users where staff_id=1'))[0].active,true);assert.equal((await rows('select joining_date from staff where id=1'))[0].joining_date,null);
 });
 test('profile saves atomically update salary/access and reject stale editors',async()=>{
  const changes={...snapshot,basic_salary:16000,permissions:{module_access:{summary:false}},status_effective_from:'2026-09-01'};
