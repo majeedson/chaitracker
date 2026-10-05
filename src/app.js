@@ -6,7 +6,7 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 134;
+const APP_BUILD = 135;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -122,7 +122,7 @@ async function renderLogin(root, supabase) {
       <section class="login-card">
         ${reloadButton}
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=134" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=135" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -761,6 +761,7 @@ async function renderPeople(view, supabase, profile) {
   let peopleOutlet = profile.access_class==='ADMIN' ? (profile.context_outlet_id?String(profile.context_outlet_id):'all') : (profile.outlet_id ? String(profile.outlet_id) : 'all');
   let peopleStatus = 'ALL';
   let peopleSearch = '';
+  let inactiveExpanded = false;
 
   const staffStatus = s => (Array.isArray(s.users)?s.users[0]:s.users)?.deleted_at?'DELETED':s.employment_status || (s.active ? 'ACTIVE' : 'INACTIVE');
   const statusText = status => ({ACTIVE:'Active',VACATION:'Vacation',LEAVE:'On leave',INACTIVE:'Inactive',LEFT:'Left',DELETED:'Archived'}[status] || status);
@@ -771,6 +772,10 @@ async function renderPeople(view, supabase, profile) {
     const counts = outletRows.reduce((a,s)=>{const st=staffStatus(s);if(st!=='DELETED')a.ALL++;a[st]=(a[st]||0)+1;return a;},{ALL:0,ACTIVE:0,VACATION:0,LEAVE:0,INACTIVE:0,LEFT:0,DELETED:0});
     const q=peopleSearch.trim().toLowerCase();
     const visible=outletRows.filter(s=>(peopleStatus==='ALL'?staffStatus(s)!=='DELETED':staffStatus(s)===peopleStatus)&&(!q||s.name.toLowerCase().includes(q)));
+    const isInactive=s=>['INACTIVE','LEFT'].includes(staffStatus(s))||s.active===false;
+    const inactive=peopleStatus==='ALL'?visible.filter(isInactive):[];
+    const current=peopleStatus==='ALL'?visible.filter(s=>!isInactive(s)):visible;
+    const personRow=s=>{const u=Array.isArray(s.users)?s.users[0]:s.users,st=staffStatus(s);return `<button type="button" class="person-row manage-staff" data-id="${s.id}">${staffAvatar(s,avatarRows.get(Number(s.id)),'small')}<span class="person-main"><strong>${escapeHtml(s.name)}</strong><small>${escapeHtml(u?.role||'Staff')} · ${escapeHtml(outletMap.get(Number(s.outlet_id))||'—')}</small></span><span class="person-status status-${st.toLowerCase()}">${escapeHtml(statusText(st))}</span><span class="person-chevron">›</span></button>`};
     view.querySelector('#staffCount').textContent = `${counts.ACTIVE} active`;
     view.querySelector('#staffList').innerHTML = `
       <div class="people-tools">
@@ -780,9 +785,10 @@ async function renderPeople(view, supabase, profile) {
       <div class="people-filter-row">
         ${[['ALL','All'],['ACTIVE','Active'],['VACATION','Vacation'],['LEAVE','Leave'],['INACTIVE','Inactive'],['LEFT','Left'],['DELETED','Archived']].map(([v,l])=>`<button type="button" class="people-filter ${peopleStatus===v?'active':''}" data-status="${v}">${l} <span>${counts[v]||0}</span></button>`).join('')}
       </div>
-      <div class="people-compact-list">
-        ${visible.length?visible.map(s=>{const u=Array.isArray(s.users)?s.users[0]:s.users,st=staffStatus(s);return `<button type="button" class="person-row manage-staff" data-id="${s.id}">${staffAvatar(s,avatarRows.get(Number(s.id)),'small')}<span class="person-main"><strong>${escapeHtml(s.name)}</strong><small>${escapeHtml(u?.role||'Staff')} · ${escapeHtml(outletMap.get(Number(s.outlet_id))||'—')}</small></span><span class="person-status status-${st.toLowerCase()}">${escapeHtml(statusText(st))}</span><span class="person-chevron">›</span></button>`}).join(''):'<div class="notice">No staff match this view.</div>'}
-      </div>`;
+      ${current.length?`<div class="people-compact-list">${current.map(personRow).join('')}</div>`:visible.length?'':'<div class="notice">No staff match this view.</div>'}
+      ${inactive.length?`<details class="people-inactive" id="inactiveStaff" ${inactiveExpanded||q?'open':''}><summary>Inactive staff <span class="soft-badge">${inactive.length}</span></summary><div class="people-compact-list">${inactive.map(personRow).join('')}</div></details>`:''}
+      `;
+    const inactiveSection=view.querySelector('#inactiveStaff');if(inactiveSection)inactiveSection.ontoggle=()=>{if(!q)inactiveExpanded=inactiveSection.open;};
     bindAvatarImages(view);
     const outlet=view.querySelector('#peopleOutlet'); if(outlet)outlet.onchange=e=>{peopleOutlet=e.target.value;peopleStatus='ALL';renderList();};
     const search=view.querySelector('#peopleSearch'); if(search){search.oninput=e=>{peopleSearch=e.target.value;const pos=e.target.selectionStart;renderList();const next=view.querySelector('#peopleSearch');next?.focus();try{next?.setSelectionRange(pos,pos)}catch{}};}

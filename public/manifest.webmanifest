@@ -7,19 +7,19 @@
   "theme_color": "#CB202D",
   "icons": [
     {
-      "src": "/chaitracker/icons/app-192.png?v=134",
+      "src": "/chaitracker/icons/app-192.png?v=135",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/chaitracker/icons/app-512.png?v=134",
+      "src": "/chaitracker/icons/app-512.png?v=135",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/chaitracker/icons/app-maskable-512.png?v=134",
+      "src": "/chaitracker/icons/app-maskable-512.png?v=135",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
