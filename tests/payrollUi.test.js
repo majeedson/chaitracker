@@ -22,9 +22,18 @@ function harness({staffRows=[structuredClone(person)],current=null,saveError=nul
   if(table==='staff'&&filters.some(([k,v])=>k==='active'&&v===true)&&emptyActive)data=[];
   for(const [key,value] of filters)data=data.filter(row=>row[key]===value||table==='users');return {data};
  };const query={select(){return query;},eq(k,v){filters.push([k,v]);return query;},order(){return query;},limit(){return query;},in(){return query;},maybeSingle:async()=>({data:result().data[0]||null}),then(resolve,reject){return Promise.resolve(result()).then(resolve,reject);}};return query;},
- async rpc(name,args){calls.push({name,args});if(name==='get_employee_profile_data')return {data:employeeProfile};if(name==='get_salary_estimate_v2')return {data:{...estimate}};if(name==='get_salary_payroll_context')return {data:{current,prior:null}};if(name==='owner_save_staff_profile')return saveError?{error:{message:saveError}}:{data:{staff_id:args.p_staff_id}};return {data:[]};}};
+ async rpc(name,args){calls.push({name,args});if(name==='get_staff_shift_settings')return {data:{business_date:'2026-10-05',effective_start:'13:00:00',history:[]}};if(name==='get_effective_business_day')return {data:'2026-10-05'};if(name==='get_photo_checkin_status')return {data:{checked_in:false,shift_start:'13:00:00'}};if(name==='get_employee_profile_data')return {data:employeeProfile};if(name==='get_salary_estimate_v2')return {data:{...estimate}};if(name==='get_salary_payroll_context')return {data:{current,prior:null}};if(name==='owner_save_staff_profile')return saveError?{error:{message:saveError}}:{data:{staff_id:args.p_staff_id}};return {data:[]};}};
  return {dom,context,client,calls,view:dom.window.document.querySelector('#view')};
 }
+test('People Employment saves a dated shift separately from profile and status',async()=>{
+ const h=harness();await h.context.renderPeople(h.view,h.client,{...owner,context_outlet_id:null});await h.view.querySelector('.manage-staff').onclick();h.view.querySelector('[data-profile-tab="employment"]').click();h.view.querySelector('#editShiftStart').value='13:00';h.view.querySelector('#editName').value='Unsaved name';await h.view.querySelector('#saveShift').onclick();const save=h.calls.find(x=>x.name==='admin_save_staff_shift');assert.equal(save.args.p_staff_id,2);assert.equal(save.args.p_start_time,'13:00');assert.equal(save.args.p_effective_from,'2026-10-05');assert.equal(h.calls.some(x=>x.name==='owner_save_staff_profile'||x.name==='owner_set_staff_status'),false);assert.equal(h.view.querySelector('#editName').value,'Unsaved name');assert.match(h.view.querySelector('#shiftMessage').textContent,/saved/);h.dom.window.close();
+});
+test('managers get their own photo check-in while retaining staff attendance filters',async()=>{
+ const h=harness({userRow:{staff_id:2,outlet_id:2}});await h.context.renderAttendance(h.view,h.client,{id:'manager',role:'Manager',access_class:'STAFF',outlet_id:2});assert.ok(h.view.querySelector('#checkinBtn'));assert.ok(h.view.querySelector('#attStaff'));assert.match(h.view.querySelector('#staffAttendanceHint').textContent,/13:00/);h.dom.window.close();
+});
+test('administrators remain exempt from photo check-in',async()=>{
+ const h=harness();await h.context.renderAttendance(h.view,h.client,owner);assert.equal(h.view.querySelector('#checkinBtn'),null);h.dom.window.close();
+});
 test('People query failures display a retry action instead of leaving Loading',async()=>{
  const h=harness({peopleError:'permission denied for table users'});h.view.innerHTML='<div class="loading">Loading…</div>';await h.context.renderPeople(h.view,h.client,owner);
  assert.match(h.view.textContent,/Unable to load People/);assert.match(h.view.textContent,/permission denied/);assert.doesNotMatch(h.view.textContent,/Loading/);assert.equal(typeof h.view.querySelector('#retryPeople').onclick,'function');h.dom.window.close();

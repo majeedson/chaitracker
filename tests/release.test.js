@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {checkRelease,checkDatabaseRelease} from '../scripts/check-release.mjs';
-test('app, assets and database migration have the same build',async()=>assert.equal(await checkRelease(),133));
+test('app, assets and database migration have the same build',async()=>assert.equal(await checkRelease(),134));
 test('deployment refuses a missing or older database release',async()=>{
  const fake=data=>async()=>({ok:true,json:async()=>data});
  await assert.rejects(checkDatabaseRelease(128,'https://example.test','public-key',fake({schema_build:127})),/at least Build 128/);
