@@ -25,6 +25,7 @@ before(async()=>{
  await db.exec(await fs.readFile(new URL('../supabase/migrations/20261003053222_staff_access_reset_b129.sql',import.meta.url),'utf8'));
  await db.exec(`create table admin_access_audit(action text,target_user_id uuid,target_name text,performed_by uuid,details jsonb);update users set is_super_user=true where id='${owner}';create policy attendance_photos_authenticated_read on storage.objects for select to authenticated using(bucket_id='attendance-photos');`);
  await db.exec(await fs.readFile(new URL('../supabase/migrations/20261003065117_employee_profiles_archive_b130.sql',import.meta.url),'utf8'));
+ await db.exec(await fs.readFile(new URL('../supabase/migrations/20261005053132_login_visibility_b132.sql',import.meta.url),'utf8'));
 });
 after(async()=>db.close());beforeEach(async()=>{await db.exec('begin');await actor(owner);});afterEach(async()=>db.exec('rollback'));
 test('PIN reset keeps profile, detaches old session and requires temporary PIN',async()=>{
@@ -52,6 +53,15 @@ test('expired temporary PIN and stale onboarding completion are rejected',async(
  await reset('PROFILE');await assert.rejects(query('select complete_staff_onboarding($1,$2,$3,null,null)',[staff,u.setup_revision,fresh]),/Account setup changed/);
 });
 
+test('login visibility hides directory rows without changing access, profile or history',async()=>{
+ const original=await user();await query('select admin_set_login_visibility($1,false)',[staff]);const hidden=await user();assert.equal(hidden.active,original.active);assert.equal(hidden.auth_user_id,original.auth_user_id);assert.equal(hidden.show_on_login,false);assert.equal((await query('select * from login_directory where id=$1',[staff])).length,0);assert.equal((await query('select * from employee_profiles where user_id=$1',[staff])).length,1);assert.equal((await query('select * from attendance')).length,1);await query('select admin_set_login_visibility($1,true)',[staff]);assert.equal((await query('select * from login_directory where id=$1',[staff])).length,1);
+});
+test('visibility changes reject staff actors and hiding the final active administrator',async()=>{
+ await db.exec('savepoint denied');await actor(staff);await assert.rejects(query('select admin_set_login_visibility($1,false)',[staff]),/Admin access required/);await db.exec('rollback to savepoint denied');await actor(owner);await assert.rejects(query('select admin_set_login_visibility($1,false)',[owner]),/at least one active administrator/);
+});
+test('ordinary administrators can manage staff visibility but not admin visibility',async()=>{
+ await db.exec(`update users set is_super_user=false where id='${owner}'`);await query('select admin_set_login_visibility($1,false)',[staff]);assert.equal((await user()).show_on_login,false);await assert.rejects(query('select admin_set_login_visibility($1,true)',[owner]),/Super User access required/);
+});
 const archive=async(date='2026-10-03',name='Employee')=>(await query('select superuser_archive_user($1,$2,$3) value',[staff,name,date]))[0].value;
 test('full onboarding fields are available to admin/self, never to another staff member',async()=>{
  const data=(await query('select get_employee_profile_data(1) value'))[0].value;assert.equal(data.identity_number,'secret');assert.equal(data.full_legal_name,'Old legal name');assert.equal(data.pin_hash,undefined);assert.equal(data.auth_user_id,undefined);

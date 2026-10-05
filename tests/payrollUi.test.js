@@ -32,6 +32,9 @@ test('People query failures display a retry action instead of leaving Loading',a
 test('administrator controls have a message target for validation errors',async()=>{
  const h=harness({userRow:{id:'admin',name:'Admin',active:true,is_super_user:false,access_class:'ADMIN'}});await h.context.renderPeople(h.view,h.client,{...owner,is_super_user:true});await h.view.querySelector('.admin-pin-update').onclick();assert.match(h.view.querySelector('#adminMessage').textContent,/Enter a 4–8 digit/);h.dom.window.close();
 });
+test('staff Access checkbox saves visibility immediately and reverts on error',async()=>{
+ const h=harness();await h.context.renderPeople(h.view,h.client,{...owner,context_outlet_id:null});await h.view.querySelector('.manage-staff').onclick();const input=h.view.querySelector('#editLoginVisible');assert.equal(input.checked,true);input.checked=false;await input.onchange();assert.equal(h.calls.find(x=>x.name==='admin_set_login_visibility').args.p_visible,false);assert.match(h.view.querySelector('#loginVisibilityMsg').textContent,/saved/);h.client.rpc=async()=>({error:{message:'Permission denied'}});input.checked=true;await input.onchange();assert.equal(input.checked,false);assert.equal(input.disabled,false);assert.match(h.view.querySelector('#loginVisibilityMsg').textContent,/Permission denied/);h.dom.window.close();
+});
 test('profile saves salary and access before opening the selected employee',async()=>{
  const h=harness();await h.context.renderPeople(h.view,h.client,{...owner,context_outlet_id:null});await h.view.querySelector('.manage-staff').onclick();
  h.view.querySelector('#editSalary').value='16000';h.view.querySelector('[data-access-domain="summary"][data-access-prefix="edit"]').checked=false;

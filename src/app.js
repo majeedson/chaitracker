@@ -6,7 +6,7 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 131;
+const APP_BUILD = 132;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -122,7 +122,7 @@ async function renderLogin(root, supabase) {
       <section class="login-card">
         ${reloadButton}
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=131" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=132" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -685,8 +685,8 @@ async function renderPeople(view, supabase, profile) {
   const loadData = async () => {
     const [{ data: outlets, error: outletError }, { data: staffRows, error: staffError }, { data: adminRows, error: adminError },avatarRows] = await Promise.all([
       supabase.from('outlets').select('id,name').order('id'),
-      supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status,status_effective_from,status_note,notes,users:users!staff_id(id,role,pin_set_at,permissions,deleted_at)').order('name'),
-      supabase.from('users').select('id,name,active,is_super_user,access_class,deleted_at').eq('access_class','ADMIN').order('name'),
+      supabase.from('staff').select('id,name,outlet_id,basic_salary,joining_date,active,employment_status,status_effective_from,status_note,notes,users:users!staff_id(id,role,pin_set_at,permissions,deleted_at,show_on_login)').order('name'),
+      supabase.from('users').select('id,name,active,is_super_user,access_class,deleted_at,show_on_login').eq('access_class','ADMIN').order('name'),
       loadStaffAvatars(supabase)
     ]);
     if(outletError)throw outletError;if(staffError)throw staffError;if(adminError)throw adminError;
@@ -733,10 +733,20 @@ async function renderPeople(view, supabase, profile) {
     }catch(error){view.querySelector('#peopleActionMsg').innerHTML='<p class="form-error">'+escapeHtml(error.message)+'</p>';}
   };
 
+  const bindLoginVisibility=(input,user,message)=>{
+    input.checked=user.show_on_login!==false;
+    input.onchange=async()=>{
+      const previous=user.show_on_login!==false,next=input.checked;input.disabled=true;message.textContent='Saving login visibility…';
+      try{const {error}=await supabase.rpc('admin_set_login_visibility',{p_user_id:user.id,p_visible:next});if(error)throw error;user.show_on_login=next;message.textContent='Login visibility saved.';message.className='hint';}
+      catch(error){input.checked=previous;message.textContent=error.message||'Unable to save login visibility.';message.className='form-error';}
+      finally{input.disabled=false;}
+    };
+  };
   const renderAdmins=()=>{
     const list=view.querySelector('#adminList');if(!list)return;const message=view.querySelector('#adminMessage');const showAdminMessage=(text,type='error')=>{message.textContent=text;message.className='purchase-message '+(type==='success'?'success':'error');message.hidden=false;if(type==='success')setTimeout(()=>{if(message.isConnected)message.hidden=true;},2200);};
     list.innerHTML=adminRows.map(a=>`<div class="admin-row admin-manage-row"><div class="admin-identity"><strong>${escapeHtml(a.name)}</strong>${a.is_super_user?'<span class="soft-badge">Super User</span>':''}<span class="${a.active?'status-ok':'status-warn'}">${a.deleted_at?'Archived':a.active?'Active':'Inactive'}</span></div>${profile.is_super_user&&!a.is_super_user&&!a.deleted_at?`<div class="admin-controls"><label>New PIN<input type="password" inputmode="numeric" autocomplete="new-password" maxlength="8" class="admin-new-pin" data-id="${a.id}" placeholder="4–8 digits"></label><button type="button" class="secondary admin-pin-update" data-id="${a.id}">Update PIN</button><button type="button" class="ghost admin-active-toggle" data-id="${a.id}" data-active="${a.active}">${a.active?'Deactivate':'Reactivate'}</button></div>`:''}</div>`).join('');
     adminRows.forEach((a,index)=>{if(profile.is_super_user&&!a.is_super_user&&a.id!==profile.id){const btn=document.createElement('button');btn.type='button';btn.className='danger admin-delete-user';btn.textContent=a.deleted_at?'Finish deletion cleanup':'Delete user';btn.onclick=()=>deleteAccount(a.id);list.children[index].append(btn);}});
+    adminRows.forEach((a,index)=>{if(!a.deleted_at){const section=document.createElement('div');section.innerHTML='<h4>Access</h4><label class="onboard-confirm"><input type="checkbox" class="admin-login-visible"> Show in login dropdown</label><p class="hint">Saves immediately. Inactive accounts stay hidden.</p><div role="status"></div>';list.children[index].append(section);const input=section.querySelector('input');bindLoginVisibility(input,a,section.querySelector('[role="status"]'));input.disabled=!profile.is_super_user;}});
     list.querySelectorAll('.admin-pin-update').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,input=list.querySelector('.admin-new-pin[data-id="'+id+'"]'),pin=input?.value||'';if(!/^\d{4,8}$/.test(pin))return showAdminMessage('Enter a 4–8 digit numeric PIN.');btn.disabled=true;btn.textContent='Updating…';const {data,error}=await supabase.functions.invoke('chaitracker-admin-pin',{body:{target_user_id:id,new_pin:pin}});if(error||!data?.ok){showAdminMessage(data?.error||error?.message||'Unable to update PIN.');btn.disabled=false;btn.textContent='Update PIN';return;}input.value='';btn.disabled=false;btn.textContent='Updated';showAdminMessage('Admin PIN updated.','success');setTimeout(()=>btn.textContent='Update PIN',1200);});
     list.querySelectorAll('.admin-active-toggle').forEach(btn=>btn.onclick=async()=>{const id=btn.dataset.id,next=btn.dataset.active!=='true';if(!confirm((next?'Reactivate':'Deactivate')+' this Admin account?'))return;btn.disabled=true;const {error}=await supabase.rpc('superuser_set_admin_active',{p_user_id:id,p_active:next});if(error){showAdminMessage(error.message);btn.disabled=false;return;}({outlets,staffRows,adminRows,avatarRows}=await loadData());renderAdmins();});
   };
@@ -821,6 +831,7 @@ async function renderPeople(view, supabase, profile) {
         <label>Notes<textarea id="editNotes" rows="3" placeholder="Optional employment notes">${escapeHtml(s.notes||'')}</textarea></label><div id="onboardingDetails">${onboardingError?'<p class="form-error">'+escapeHtml(onboardingError.message)+'</p>':onboardingDetailsHtml(onboarding||{})}</div></div>
         <div class="card staff-editor profile-panel" data-profile-panel="access" hidden><div class="section-heading"><div><span class="eyebrow">Access</span><h3>Access control</h3></div><span id="accessSelectedCount" class="soft-badge"></span></div>
         <div class="form-grid"><label>Role<select id="editRole">${['Staff','Manager','Ops Manager'].map(r=>`<option ${r===(u?.role||'Staff')?'selected':''}>${r}</option>`).join('')}</select></label></div>
+        <label class="onboard-confirm"><input type="checkbox" id="editLoginVisible" ${u?.show_on_login!==false?'checked':''} ${u?'':'disabled'}> Show in login dropdown</label><p class="hint">Saves immediately. Hiding a name does not deactivate the account. Inactive accounts stay hidden.</p><div id="loginVisibilityMsg" role="status"></div>
         <div class="access-domain-list" id="editStaffAccess">${accessDomainFields(access,'edit')}</div>
         <button type="button" id="resetRoleAccess" class="secondary">Reset to role defaults</button>
         <div class="access-reset-section"><h4>Account resets</h4><p class="section-help">PIN reset keeps personal details and documents. Profile reset clears all onboarding details, ID information and uploaded files. The staff member then completes a fresh setup. Employment settings, attendance and payment history are retained.</p><div class="action-row"><button type="button" id="resetPin" class="secondary">Reset PIN</button><button type="button" id="resetProfile" class="danger">Reset profile</button></div><div id="resetAccessMsg" role="status"></div></div></div>
@@ -833,6 +844,7 @@ async function renderPeople(view, supabase, profile) {
       </div>`;
     view.querySelector('#cancelEdit').onclick=renderList;
     bindProfileDocuments(view.querySelector('#onboardingDetails'),supabase,onboarding||{});
+    if(u)bindLoginVisibility(view.querySelector('#editLoginVisible'),u,view.querySelector('#loginVisibilityMsg'));
     const deleteButton=view.querySelector('#deleteUser');if(deleteButton)deleteButton.onclick=()=>deleteAccount(u.id);
     const updateAccessCount=()=>{view.querySelector('#accessSelectedCount').textContent=Object.values(readAccessDomains(view,'edit')).filter(Boolean).length+' / '+APP_DOMAINS.length+' modules';};
     const resetAccess=()=>{const defaults=roleModuleAccess(view.querySelector('#editRole').value);view.querySelectorAll('[data-access-prefix="edit"]').forEach(input=>input.checked=defaults[input.dataset.accessDomain]);updateAccessCount();};
