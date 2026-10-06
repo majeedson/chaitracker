@@ -23,14 +23,25 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: browser-actions/setup-chrome@v2
+        id: chrome
+        with:
+          chrome-version: stable
+          install-dependencies: true
       - run: npm ci
       - run: npm test
       - name: Check Credits phone layouts
         run: node tests/browser/credits-layout.mjs
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
       - name: Check Purchases and Orders phone layouts
         run: node tests/browser/vendor-purchases-layout.mjs
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
       - name: Check Cigarettes phone layouts
         run: node tests/browser/cigarettes-layout.mjs
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
       - run: npm run check:release
       - name: Require matching database before publishing
         if: github.event_name != 'pull_request'

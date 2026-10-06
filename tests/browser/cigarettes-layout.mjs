@@ -33,11 +33,11 @@ const server=http.createServer(async(req,res)=>{
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 const chromeProfile=await fs.mkdtemp(path.join(os.tmpdir(),'vendors-chrome-'));
-const chrome=spawn('google-chrome',['--headless','--no-sandbox','--disable-gpu','--no-first-run','--remote-debugging-port=0','--user-data-dir='+chromeProfile]);
+const chrome=spawn(process.env.CHROME_BIN||'google-chrome',['--disable-dev-shm-usage','--headless','--no-sandbox','--disable-gpu','--no-first-run','--remote-debugging-port=0','--user-data-dir='+chromeProfile]);
 let socket;
 try{
  const endpoint=await new Promise((resolve,reject)=>{
-  const timer=setTimeout(()=>reject(Error('Chromium did not start')),20000);let stderr='';
+  const timer=setTimeout(()=>reject(Error('Chromium did not start: '+stderr)),20000);let stderr='';
   chrome.on('error',e=>{clearTimeout(timer);reject(e);});
   chrome.stderr.on('data',chunk=>{stderr+=chunk.toString();const endpoint=stderr.match(/DevTools listening on (ws:\/\/[^\s]+)/)?.[1];if(endpoint){clearTimeout(timer);resolve(endpoint);}});
  });
