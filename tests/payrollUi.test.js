@@ -12,7 +12,7 @@ const source=(await fs.readFile(new URL('../src/app.js',import.meta.url),'utf8')
 const person={id:2,name:'Selected employee',outlet_id:2,basic_salary:15000,joining_date:'2025-01-31',active:true,employment_status:'ACTIVE',notes:null,status_effective_from:null,status_note:null,users:{id:'employee',role:'Staff',permissions:{module_access:{summary:true,'extra-time':false}}}};
 const owner={id:'owner',access_class:'ADMIN',role:'Owner',context_outlet_id:1};
 const est={basic_salary:15000,period_days:30,present_equivalent_days:27,absent_days:3,leave_days:0,half_days:0,late_mins:48,deductible_late_hours:1.5,late_deduction:63,half_day_deduction:0,holiday_duty_days:0,data_complete:true,advance_deduction:0,advance_installment_deduction:500};
-function harness({staffRows=[structuredClone(person)],current=null,saveError=null,emptyActive=false,estimate=est,userRow={staff_id:null,outlet_id:1},employeeProfile=null,peopleError=null}={}) {
+function harness({staffRows=[structuredClone(person)],current=null,saveError=null,emptyActive=false,estimate=est,userRow={staff_id:null,outlet_id:1},employeeProfile=null,peopleError=null,attendanceRows=[],correctionRecord=null}={}) {
  const dom=new JSDOM('<section id="view"></section>',{url:'https://example.test'}),calls=[];
  class Clock extends Date {constructor(...args){super(...(args.length?args:['2026-10-02T12:00:00Z']));}}
  const context=vm.createContext({...rules,...access,loadSalaryTransfers,onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog:async()=>null,FormData,attendancePhotoError,prepareAttendancePhoto:async()=>new Blob(['compressed'],{type:'image/jpeg'}),document:dom.window.document,CustomEvent:dom.window.CustomEvent,Intl,Date:Clock,Map,Set,console,setTimeout,clearTimeout,confirm:()=>true,loadStaffAvatars:async()=>new Map(),staffAvatar:()=>'',bindAvatarImages:()=>{},refreshStaffAvatarElements:()=>{},editProfilePhoto:async()=>false});
@@ -23,7 +23,7 @@ function harness({staffRows=[structuredClone(person)],current=null,saveError=nul
   if(table==='staff'&&filters.some(([k,v])=>k==='active'&&v===true)&&emptyActive)data=[];
   for(const [key,value] of filters)data=data.filter(row=>row[key]===value||table==='users');return {data};
  };const query={select(){return query;},eq(k,v){filters.push([k,v]);return query;},order(){return query;},limit(){return query;},in(){return query;},maybeSingle:async()=>({data:result().data[0]||null}),then(resolve,reject){return Promise.resolve(result()).then(resolve,reject);}};return query;},
- async rpc(name,args){calls.push({name,args});if(name==='get_staff_shift_settings')return {data:{business_date:'2026-10-05',effective_start:'13:00:00',history:[]}};if(name==='get_effective_business_day')return {data:'2026-10-05'};if(name==='get_photo_checkin_status')return {data:{checked_in:false,shift_start:'13:00:00'}};if(name==='get_employee_profile_data')return {data:employeeProfile};if(name==='get_salary_estimate_v2')return {data:{...estimate}};if(name==='get_salary_payroll_context')return {data:{current,prior:null}};if(name==='owner_save_staff_profile')return saveError?{error:{message:saveError}}:{data:{staff_id:args.p_staff_id}};return {data:[]};}};
+ async rpc(name,args){calls.push({name,args});if(name==='get_attendance_calendar')return {data:attendanceRows};if(name==='get_attendance_correction_context')return {data:{record:correctionRecord,shift_start:correctionRecord?.shift_start||'11:00:00',history:[]}};if(name==='get_staff_shift_settings')return {data:{business_date:'2026-10-05',effective_start:'13:00:00',history:[]}};if(name==='get_effective_business_day')return {data:'2026-10-05'};if(name==='get_photo_checkin_status')return {data:{checked_in:false,shift_start:'13:00:00'}};if(name==='get_employee_profile_data')return {data:employeeProfile};if(name==='get_salary_estimate_v2')return {data:{...estimate}};if(name==='get_salary_payroll_context')return {data:{current,prior:null}};if(name==='owner_save_staff_profile')return saveError?{error:{message:saveError}}:{data:{staff_id:args.p_staff_id}};return {data:[]};}};
  return {dom,context,client,calls,view:dom.window.document.querySelector('#view')};
 }
 test('People Employment saves a dated shift separately from profile and status',async()=>{
@@ -110,4 +110,32 @@ test('history refresh failure after successful check-in preserves success and bl
  let uploads=0;h.client.functions={invoke:async()=>{uploads++;h.client.rpc=async()=>{throw Error('Refresh unavailable');};return {data:{ok:true}};}};
  const input=h.view.querySelector('#attendancePhoto'),btn=h.view.querySelector('#checkinBtn');Object.defineProperty(input,'files',{value:[new File(['original'],'large.jpg',{type:'image/jpeg'})]});
  await input.onchange();assert.equal(btn.disabled,true);assert.match(h.view.querySelector('#checkinMsg').textContent,/Attendance recorded/);await input.onchange();assert.equal(uploads,1);h.dom.window.close();
+});
+
+const attendanceFixture={attendance_date:'2026-10-05',staff_id:2,staff_name:'Employee',outlet_id:1,shift_start:'11:00:00',punch_time:null,late_mins:0,status:'NOT_CHECKED_IN',is_future:false};
+const openCorrection=async h=>{h.view.querySelector('.correct-btn').click();await new Promise(resolve=>setImmediate(resolve));};
+test('admin can record a missed arrival through scoped RPCs without reading the attendance table',async()=>{
+ const h=harness({attendanceRows:[attendanceFixture]}),from=h.client.from;h.client.from=table=>{assert.notEqual(table,'attendance');return from(table);};
+ await h.context.renderAttendance(h.view,h.client,owner);assert.ok(h.view.querySelector('.correct-btn'));await openCorrection(h);
+ assert.equal(h.view.querySelector('#attendanceCorrection').hidden,false);assert.equal(h.view.querySelector('#correctionShift').value,'11:00');
+ h.view.querySelector('#correctionTime').value='11:25';h.view.querySelector('#correctionReason').value='Verified arrival';await h.view.querySelector('#saveCorrection').onclick();
+ const call=h.calls.find(x=>x.name==='save_attendance_correction');assert.equal(call.args.p_expected,null);assert.equal(call.args.p_punch_time,'11:25:00');assert.equal(call.args.p_shift_start,'11:00:00');assert.equal(call.args.p_status,'Present');h.dom.window.close();
+});
+test('admin can edit status and day shift while preserving fractional arrival seconds when unchanged',async()=>{
+ const record={id:1,shift_start:'13:00:00',punch_time:'11:25:20.542924',status:'Present'};
+ const h=harness({attendanceRows:[{...attendanceFixture,punch_time:record.punch_time}],correctionRecord:record});await h.context.renderAttendance(h.view,h.client,owner);await openCorrection(h);
+ h.view.querySelector('#correctionShift').value='11:00';h.view.querySelector('#correctionReason').value='Shift corrected';await h.view.querySelector('#saveCorrection').onclick();
+ const call=h.calls.find(x=>x.name==='save_attendance_correction');assert.equal(call.args.p_punch_time,record.punch_time);assert.equal(call.args.p_expected,record);
+ await openCorrection(h);const status=h.view.querySelector('#correctionStatus');status.value='Absent';status.onchange();assert.equal(h.view.querySelector('#correctionTime').disabled,true);h.view.querySelector('#correctionReason').value='Absent verified';await h.view.querySelector('#saveCorrection').onclick();
+ const absent=h.calls.filter(x=>x.name==='save_attendance_correction').at(-1);assert.equal(absent.args.p_punch_time,null);assert.equal(absent.args.p_status,'Absent');h.dom.window.close();
+});
+test('failed or stale correction keeps the editor open and restores the save button',async()=>{
+ const h=harness({attendanceRows:[attendanceFixture]});await h.context.renderAttendance(h.view,h.client,owner);await openCorrection(h);
+ const rpc=h.client.rpc;h.client.rpc=async(name,args)=>name==='save_attendance_correction'?{error:{message:'Attendance changed since you opened it'}}:rpc(name,args);
+ h.view.querySelector('#correctionTime').value='11:25';h.view.querySelector('#correctionReason').value='Arrival verified';await h.view.querySelector('#saveCorrection').onclick();
+ assert.equal(h.view.querySelector('#saveCorrection').disabled,false);assert.equal(h.view.querySelector('#cancelCorrection').disabled,false);assert.equal(h.view.querySelector('#attendanceCorrection').hidden,false);assert.match(h.view.querySelector('#attendanceMessage').textContent,/changed since/);h.dom.window.close();
+});
+test('future rows have no correction action and managers cannot create missing attendance',async()=>{
+ const h=harness({attendanceRows:[{...attendanceFixture,is_future:true}]});await h.context.renderAttendance(h.view,h.client,owner);assert.equal(h.view.querySelector('.correct-btn'),null);h.dom.window.close();
+ const manager=harness({attendanceRows:[attendanceFixture],userRow:{staff_id:1,outlet_id:1}});await manager.context.renderAttendance(manager.view,manager.client,{id:'manager',role:'Manager',access_class:'STAFF',outlet_id:1});assert.equal(manager.view.querySelector('.correct-btn'),null);manager.dom.window.close();
 });

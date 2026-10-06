@@ -9,7 +9,7 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 139;
+const APP_BUILD = 140;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['credits', 'Credits'],
@@ -127,7 +127,7 @@ async function renderLogin(root, supabase) {
       <section class="login-card">
         ${reloadButton}
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=139" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=140" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -820,7 +820,7 @@ async function renderPeople(view, supabase, profile) {
     const employment=view.querySelector('[data-profile-panel="employment"]');
     const shiftHistory=Array.isArray(shiftSettings?.history)?shiftSettings.history:[];
     const shiftDate=shiftSettings?.business_date||'';
-    employment.insertAdjacentHTML('beforeend',`<div class="employment-history"><h4>Regular shift</h4><p class="section-help">Current shift: ${escapeHtml(shiftSettings?.effective_start||'Unavailable')}. Daily shift overrides take priority. Changes apply from the selected date; recorded attendance keeps its original shift.</p><div class="form-grid"><label>Shift starts at<input id="editShiftStart" type="time" value="${escapeHtml((shiftSettings?.effective_start||'').slice(0,5))}"></label><label>Effective from<input id="editShiftDate" type="date" min="${escapeHtml(shiftDate)}" value="${escapeHtml(shiftDate)}"></label></div><label class="onboard-confirm"><input id="editShiftDefault" type="checkbox"> Use café and role default</label><button type="button" id="saveShift" class="secondary" ${shiftError?'disabled':''}>Save shift</button><p id="shiftMessage" role="status">${shiftError?escapeHtml(shiftError.message):''}</p><h4>Shift history</h4>${shiftHistory.map(h=>`<div><strong>${escapeHtml(h.start_time||'Café and role default')}</strong><span>From ${escapeHtml(h.effective_from)}</span></div>`).join('')||'<p class="section-help">No regular shift changes recorded.</p>'}</div>`);
+    employment.insertAdjacentHTML('beforeend',`<div class="employment-history"><h4>Regular shift</h4><p class="section-help">Current shift: ${escapeHtml(shiftSettings?.effective_start||'Unavailable')}. Daily shift overrides take priority. Changes apply from the selected date. Today’s recorded attendance is recalculated; a shift explicitly corrected for one date takes priority. Earlier dates stay unchanged.</p><div class="form-grid"><label>Shift starts at<input id="editShiftStart" type="time" value="${escapeHtml((shiftSettings?.effective_start||'').slice(0,5))}"></label><label>Effective from<input id="editShiftDate" type="date" min="${escapeHtml(shiftDate)}" value="${escapeHtml(shiftDate)}"></label></div><label class="onboard-confirm"><input id="editShiftDefault" type="checkbox"> Use café and role default</label><button type="button" id="saveShift" class="secondary" ${shiftError?'disabled':''}>Save shift</button><p id="shiftMessage" role="status">${shiftError?escapeHtml(shiftError.message):''}</p><h4>Shift history</h4>${shiftHistory.map(h=>`<div><strong>${escapeHtml(h.start_time||'Café and role default')}</strong><span>From ${escapeHtml(h.effective_from)}</span></div>`).join('')||'<p class="section-help">No regular shift changes recorded.</p>'}</div>`);
     view.querySelector('#editShiftDefault').onchange=event=>{view.querySelector('#editShiftStart').disabled=event.target.checked;};
     view.querySelector('#saveShift').onclick=async()=>{
       const button=view.querySelector('#saveShift'),message=view.querySelector('#shiftMessage');
@@ -828,7 +828,7 @@ async function renderPeople(view, supabase, profile) {
       const date=view.querySelector('#editShiftDate').value;
       if(start===''||!date){message.textContent='Choose a shift start and effective date.';return;}
       button.disabled=true;
-      try{const {error}=await supabase.rpc('admin_save_staff_shift',{p_staff_id:staffId,p_start_time:start,p_effective_from:date});if(error)throw error;message.textContent='Shift saved. Reopen this profile to see the updated shift history.';button.disabled=false;}catch(error){message.textContent=error.message||'Unable to save shift.';button.disabled=false;}
+      try{const {error}=await supabase.rpc('admin_save_staff_shift',{p_staff_id:staffId,p_start_time:start,p_effective_from:date});if(error)throw error;message.textContent='Shift saved. Today’s attendance has been recalculated where applicable. Reopen this profile to see the updated shift history.';button.disabled=false;}catch(error){message.textContent=error.message||'Unable to save shift.';button.disabled=false;}
     };
     bindProfileDocuments(view.querySelector('#onboardingDetails'),supabase,onboarding||{});
     if(u)bindLoginVisibility(view.querySelector('#editLoginVisible'),u,view.querySelector('#loginVisibilityMsg'));
@@ -1642,8 +1642,12 @@ async function renderAttendance(view, supabase, profile,selectedStaffId=null) {
 
       <div id="attendanceMessage" class="purchase-message" hidden></div>
       <div id="attendanceCorrection" class="attendance-correction" hidden>
-        <div class="attendance-correction-card"><div class="section-heading"><div><span class="eyebrow">Correction</span><h3>Correct check-in</h3></div><button id="cancelCorrection" class="ghost" type="button">Cancel</button></div>
-        <label>Check-in time<input id="correctionTime" type="time"></label>
+        <div class="attendance-correction-card"><div class="section-heading"><div><span class="eyebrow">Correction</span><h3>Correct attendance</h3></div><button id="cancelCorrection" class="ghost" type="button">Cancel</button></div>
+        <p id="correctionPerson" class="section-help"></p>
+        <div class="form-grid"><label>Shift starts at<input id="correctionShift" type="time" ${isOwner?'':'disabled'}></label><label>Arrival time<input id="correctionTime" type="time"></label></div>
+        <label>Attendance<select id="correctionStatus" ${isOwner?'':'disabled'}><option value="Present">Present · calculate lateness</option><option value="HalfDay">Half-day</option><option value="Absent">Absent</option><option value="Leave">Leave</option></select></label>
+        <p class="section-help">This correction applies to this date. Lateness is calculated from the shift and arrival time. The original photo is retained.</p>
+        <div id="correctionHistory" class="section-help"></div>
         <label>Reason<textarea id="correctionReason" rows="3" placeholder="Why is this correction needed?"></textarea></label>
         <button id="saveCorrection" class="primary" type="button">Save correction</button></div>
       </div>
@@ -1712,8 +1716,40 @@ async function renderAttendance(view, supabase, profile,selectedStaffId=null) {
   let correctionRow=null;
   const closeCorrection=()=>{correctionRow=null;view.querySelector('#attendanceCorrection').hidden=true;view.querySelector('#correctionReason').value='';};
   view.querySelector('#cancelCorrection').onclick=closeCorrection;
-  const correctRow=async r=>{const{data,error}=await supabase.from('attendance').select('id').eq('staff_id',r.staff_id).eq('attendance_date',r.attendance_date).maybeSingle();if(error||!data)return showAttendanceMessage(error?.message||'Attendance record not found.');correctionRow={...r,attendance_id:data.id};view.querySelector('#correctionTime').value=r.punch_time?.slice(0,5)||'';view.querySelector('#correctionReason').value='';view.querySelector('#attendanceCorrection').hidden=false;view.querySelector('#attendanceCorrection').scrollIntoView({behavior:'smooth',block:'center'});};
-  view.querySelector('#saveCorrection').onclick=async()=>{if(!correctionRow)return;const newTime=view.querySelector('#correctionTime').value,reason=view.querySelector('#correctionReason').value.trim(),btn=view.querySelector('#saveCorrection');if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(newTime))return showAttendanceMessage('Enter a valid check-in time.');if(reason.length<3)return showAttendanceMessage('Enter a reason for the correction.');btn.disabled=true;btn.textContent='Saving…';const{error}=await supabase.rpc('correct_attendance',{p_attendance_id:correctionRow.attendance_id,p_punch_time:newTime+':00',p_reason:reason});btn.disabled=false;btn.textContent='Save correction';if(error)return showAttendanceMessage(error.message);closeCorrection();showAttendanceMessage('Attendance corrected.','success');await refresh();};
+  const correctionStatus=view.querySelector('#correctionStatus'),correctionTime=view.querySelector('#correctionTime');
+  correctionStatus.onchange=()=>{const absent=['Absent','Leave'].includes(correctionStatus.value);correctionTime.disabled=absent;if(absent)correctionTime.value='';};
+  const correctRow=async r=>{
+    if(view.querySelector('#saveCorrection').disabled)return;
+    try{
+      const{data,error}=await supabase.rpc('get_attendance_correction_context',{p_staff_id:Number(r.staff_id),p_date:r.attendance_date});
+      if(error||!data)throw new Error(error?.message||'Could not open attendance correction.');
+      correctionRow={...r,expected:data.record||null};
+      view.querySelector('#correctionPerson').textContent=r.staff_name+' · '+prettyDate(r.attendance_date);
+      view.querySelector('#correctionShift').value=(data.shift_start||r.shift_start||'').slice(0,5);
+      correctionTime.value=(data.record?.punch_time||'').slice(0,5);
+      correctionStatus.value=isOwner?(data.record?.status==='HalfDay'&&!data.record?.manual_half_day?'Present':data.record?.status||'Present'):'Present';correctionStatus.onchange();
+      view.querySelector('#correctionReason').value='';
+      view.querySelector('#correctionHistory').innerHTML=(data.history||[]).map(h=>`<p><strong>${escapeHtml(h.reason)}</strong><br>${escapeHtml(h.before_record?.shift_start?.slice(0,5)||'—')} / ${escapeHtml(h.before_record?.punch_time?.slice(0,5)||'—')} → ${escapeHtml(h.after_record?.shift_start?.slice(0,5)||'—')} / ${escapeHtml(h.after_record?.punch_time?.slice(0,5)||'—')}</p>`).join('');
+      const panel=view.querySelector('#attendanceCorrection');panel.hidden=false;panel.scrollIntoView?.({behavior:'smooth',block:'center'});
+    }catch(error){showAttendanceMessage(error.message||'Could not open attendance correction.');}
+  };
+  view.querySelector('#saveCorrection').onclick=async()=>{
+    if(!correctionRow)return;
+    const row=correctionRow,newTime=correctionTime.value,shift=view.querySelector('#correctionShift').value,status=correctionStatus.value,
+      reason=view.querySelector('#correctionReason').value.trim(),btn=view.querySelector('#saveCorrection'),cancel=view.querySelector('#cancelCorrection');
+    const validTime=t=>/^([01]\d|2[0-3]):[0-5]\d$/.test(t);
+    if(!validTime(shift))return showAttendanceMessage('Enter a valid shift start.');
+    if(['Present','HalfDay'].includes(status)&&!validTime(newTime))return showAttendanceMessage('Enter a valid arrival time.');
+    if(reason.length<3)return showAttendanceMessage('Enter a reason for the correction.');
+    btn.disabled=true;cancel.disabled=true;btn.textContent='Saving…';
+    try{
+      const{error}=await supabase.rpc('save_attendance_correction',{p_staff_id:Number(row.staff_id),p_date:row.attendance_date,p_shift_start:shift+':00',
+        p_punch_time:['Absent','Leave'].includes(status)?null:(newTime===(row.expected?.punch_time||'').slice(0,5)?row.expected.punch_time:newTime+':00'),p_status:status,p_reason:reason,p_expected:row.expected});
+      if(error)throw error;
+      closeCorrection();showAttendanceMessage('Attendance corrected.','success');await refresh();
+    }catch(error){showAttendanceMessage(error.message||'Could not save attendance. Please retry.');}
+    finally{btn.disabled=false;cancel.disabled=false;btn.textContent='Save correction';}
+  };
   let attendanceRequest=0;
   const refresh=async()=>{
     const request=++attendanceRequest;
@@ -1735,7 +1771,7 @@ async function renderAttendance(view, supabase, profile,selectedStaffId=null) {
     view.querySelector('#attendanceState').textContent=rows.length+(filter==='month'?' calendar rows':' staff');view.querySelector('#attendanceListTitle').textContent=filter==='month'?'View daily attendance':'Attendance';const recordsDisclosure=view.querySelector('#attendanceRecordsDisclosure');if(recordsDisclosure)recordsDisclosure.open=filter!=='month';
     const priority={NEEDS_REVIEW:0,ABSENT:1,NOT_CHECKED_IN:2,LATE:3,HALF_DAY:4,HALF_DAY_LEAVE:5,LEAVE:6,PRESENT:7,WEEKLY_OFF:8,UPCOMING:9};
     const ordered=[...rows].sort((a,b)=>filter==='month'?(a.attendance_date.localeCompare(b.attendance_date)||a.staff_name.localeCompare(b.staff_name)):((priority[a.status]??9)-(priority[b.status]??9)||a.staff_name.localeCompare(b.staff_name)));
-    view.querySelector('#attendanceList').innerHTML=ordered.length?ordered.map(r=>`<article class="attendance-row ${r.status==='NEEDS_REVIEW'?'attention':''}"><div class="attendance-main">${staffAvatar({id:r.staff_id,name:r.staff_name},{...attendanceAvatars.get(Number(r.staff_id)),checked_in:!!r.punch_time&&!(['ABSENT','LEAVE'].includes(r.status)),business_date:r.attendance_date},'small')}<div><div class="attendance-name">${escapeHtml(r.staff_name)}</div><div class="attendance-meta">${prettyDate(r.attendance_date)} · Shift ${prettyTime(r.shift_start)}</div></div></div><div class="attendance-result"><div class="attendance-time">${r.punch_time?prettyTime(r.punch_time):'—'}</div><span class="attendance-badge ${statusClass(r.status)}">${escapeHtml(statusLabel(r))}</span></div><div class="attendance-actions">${r.photo_url?'<button type="button" class="text-action photo-btn">View photo</button>':''}${isAdmin&&r.punch_time&&(isOwner||(Number(r.staff_id)!==Number(userRow?.staff_id)&&r.photo_url))?'<button type="button" class="text-action correct-btn">Correct</button>':''}</div></article>`).join(''):'<p class="section-help">No staff records for this period.</p>';
+    view.querySelector('#attendanceList').innerHTML=ordered.length?ordered.map(r=>`<article class="attendance-row ${r.status==='NEEDS_REVIEW'?'attention':''}"><div class="attendance-main">${staffAvatar({id:r.staff_id,name:r.staff_name},{...attendanceAvatars.get(Number(r.staff_id)),checked_in:!!r.punch_time&&!(['ABSENT','LEAVE'].includes(r.status)),business_date:r.attendance_date},'small')}<div><div class="attendance-name">${escapeHtml(r.staff_name)}</div><div class="attendance-meta">${prettyDate(r.attendance_date)} · Shift ${prettyTime(r.shift_start)}</div></div></div><div class="attendance-result"><div class="attendance-time">${r.punch_time?prettyTime(r.punch_time):'—'}</div><span class="attendance-badge ${statusClass(r.status)}">${escapeHtml(statusLabel(r))}</span></div><div class="attendance-actions">${r.photo_url?'<button type="button" class="text-action photo-btn">View photo</button>':''}${isAdmin&&!r.is_future&&r.attendance_date<=todayIST&&(isOwner||(r.punch_time&&Number(r.staff_id)!==Number(userRow?.staff_id)&&r.photo_url&&r.attendance_date>=yesterday))?'<button type="button" class="text-action correct-btn">Correct</button>':''}</div></article>`).join(''):'<p class="section-help">No staff records for this period.</p>';
     bindAvatarImages(view);
     [...view.querySelectorAll('.attendance-row')].forEach((el,i)=>{const r=ordered[i];el.querySelector('.photo-btn')?.addEventListener('click',()=>openPhoto(r.photo_url));el.querySelector('.correct-btn')?.addEventListener('click',()=>correctRow(r));});
     if(!isOwner){const {data,error}=await supabase.rpc('get_photo_checkin_status'),btn=view.querySelector('#checkinBtn'),status=view.querySelector('#staffAttendanceStatus'),hint=view.querySelector('#staffAttendanceHint');const checked=!!data?.checked_in;btn.disabled=checked||!!error;btn.textContent=checked?'Checked in · '+prettyTime(data.punch_time):'Take photo & check in';status.textContent=error?'Check-in status unavailable':checked?'Checked in':'Not checked in';hint.textContent=error?error.message:checked?'Today’s attendance is recorded.':'Take a photo to mark today’s attendance. Shift: '+prettyTime(data?.shift_start);}
