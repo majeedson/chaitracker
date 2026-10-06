@@ -6,7 +6,7 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 135;
+const APP_BUILD = 136;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -25,8 +25,8 @@ function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-function monthOptions(selected, count=24) {
-  const [year,month]=String(selected).split('-').map(Number);
+function monthOptions(selected, count=24, latest=selected) {
+  const [year,month]=String(latest).split('-').map(Number);
   return Array.from({length:count},(_,index)=>{
     const date=new Date(Date.UTC(year,month-1-index,1));
     const value=date.toISOString().slice(0,7);
@@ -122,7 +122,7 @@ async function renderLogin(root, supabase) {
       <section class="login-card">
         ${reloadButton}
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=135" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=136" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -1651,6 +1651,7 @@ async function renderAdvancePanel(view,supabase,profile,userRow){
 }
 
 async function renderAttendance(view, supabase, profile,selectedStaffId=null) {
+  const history=profile._attendanceHistory||(profile._attendanceHistory={});
   if(profile.access_class==='ADMIN'&&selectedStaffId){const{data:person}=await supabase.from('staff').select('outlet_id').eq('id',selectedStaffId).maybeSingle();if(person)profile={...profile,context_outlet_id:person.outlet_id};}
   if(profile.access_class==='ADMIN'&&!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to use this operational screen.</p>';return;}
   const isOwner=profile.access_class==='ADMIN',isManager=['Manager','Ops Manager'].includes(profile.role),isAdmin=isOwner||isManager;
@@ -1664,7 +1665,8 @@ async function renderAttendance(view, supabase, profile,selectedStaffId=null) {
   let yesterday=(()=>{const d=new Date(todayIST+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-1);return d.toISOString().slice(0,10);})();
   let monthKey=todayIST.slice(0,7);
   if(!isOwner&&!userRow?.staff_id){view.innerHTML='<span class="eyebrow">Attendance</span><h2>Staff profile not linked</h2><p class="section-help">Ask an owner to link your CafeTracker user to your staff profile.</p>';return;}
-  let filter='today',selectedMonth=monthKey,staffRows=[];
+  let filter=['today','yesterday','month'].includes(history.range)?history.range:'today',selectedMonth=/^\d{4}-(0[1-9]|1[0-2])$/.test(history.month||'')&&history.month<=monthKey?history.month:monthKey,staffRows=[];
+  const attendanceMonthOptions=()=>{const[y,m]=monthKey.split('-').map(Number),[selectedYear,selectedNumber]=selectedMonth.split('-').map(Number);return monthOptions(selectedMonth,Math.max(24,(y-selectedYear)*12+m-selectedNumber+1),monthKey);};
   view.innerHTML=`
     <div class="attendance-page ${isAdmin?'attendance-admin':'attendance-staff'}">
       <div class="attendance-workspace-toggle"><button type="button" class="active" data-att-view="attendance">Attendance</button><button type="button" data-att-view="leave">Leave</button></div>
@@ -1673,7 +1675,7 @@ async function renderAttendance(view, supabase, profile,selectedStaffId=null) {
       ${!isOwner?`<section class="attendance-checkin attendance-primary-action"><div><strong id="staffAttendanceStatus">Ready to check in</strong><span id="staffAttendanceHint">Take a photo to mark today’s attendance.</span></div><input id="attendancePhoto" type="file" accept="image/jpeg,image/png" capture="user" hidden><button id="checkinBtn" class="primary" type="button">Take photo & check in</button><p id="checkinMsg" class="summary-inline-status" hidden></p></section>`:''}
       <div class="summary-title-row attendance-heading"><div><span class="eyebrow">${isAdmin?'Workforce':'History'}</span><h2>Attendance</h2><p id="attendanceContext">Today’s attendance</p></div><span class="summary-state" id="attendanceState">Loading…</span></div>
 
-      <section class="attendance-filter-bar"><div class="attendance-tabs"><button data-range="today" class="active">Today</button><button data-range="yesterday">Yesterday</button><button data-range="month">Month</button></div><label id="monthPickerWrap" class="summary-label attendance-month" hidden><span>Month</span><select id="attMonth">${monthOptions(selectedMonth,24)}</select></label></section>
+      <section class="attendance-filter-bar"><div class="attendance-tabs"><button data-range="today" class="${filter==='today'?'active':''}">Today</button><button data-range="yesterday" class="${filter==='yesterday'?'active':''}">Yesterday</button><button data-range="month" class="${filter==='month'?'active':''}">Monthly</button></div><div id="monthPickerWrap" class="attendance-month-navigation" ${filter==='month'?'':'hidden'}><button id="attPreviousMonth" class="ghost" type="button" aria-label="Previous month">‹</button><label class="summary-label attendance-month"><span>Month</span><select id="attMonth">${attendanceMonthOptions()}</select></label><button id="attNextMonth" class="ghost" type="button" aria-label="Next month" ${selectedMonth===monthKey?'disabled':''}>›</button></div></section>
       ${isAdmin?`<section class="summary-section compact"><div class="summary-section-title"><span></span><h3>Filter by staff</h3></div><label class="summary-label">Staff<select id="attStaff"><option value="">All staff</option></select></label></section>`:''}
 
       <div id="attendanceMessage" class="purchase-message" hidden></div>
@@ -1750,11 +1752,15 @@ async function renderAttendance(view, supabase, profile,selectedStaffId=null) {
   view.querySelector('#cancelCorrection').onclick=closeCorrection;
   const correctRow=async r=>{const{data,error}=await supabase.from('attendance').select('id').eq('staff_id',r.staff_id).eq('attendance_date',r.attendance_date).maybeSingle();if(error||!data)return showAttendanceMessage(error?.message||'Attendance record not found.');correctionRow={...r,attendance_id:data.id};view.querySelector('#correctionTime').value=r.punch_time?.slice(0,5)||'';view.querySelector('#correctionReason').value='';view.querySelector('#attendanceCorrection').hidden=false;view.querySelector('#attendanceCorrection').scrollIntoView({behavior:'smooth',block:'center'});};
   view.querySelector('#saveCorrection').onclick=async()=>{if(!correctionRow)return;const newTime=view.querySelector('#correctionTime').value,reason=view.querySelector('#correctionReason').value.trim(),btn=view.querySelector('#saveCorrection');if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(newTime))return showAttendanceMessage('Enter a valid check-in time.');if(reason.length<3)return showAttendanceMessage('Enter a reason for the correction.');btn.disabled=true;btn.textContent='Saving…';const{error}=await supabase.rpc('correct_attendance',{p_attendance_id:correctionRow.attendance_id,p_punch_time:newTime+':00',p_reason:reason});btn.disabled=false;btn.textContent='Save correction';if(error)return showAttendanceMessage(error.message);closeCorrection();showAttendanceMessage('Attendance corrected.','success');await refresh();};
+  let attendanceRequest=0;
   const refresh=async()=>{
+    const request=++attendanceRequest;
     const[startDate,endDate]=dateRange();view.querySelector('#attendanceState').textContent='Loading…';
     const{data,error}=await supabase.rpc('get_attendance_calendar',{p_outlet_id:outletId,p_staff_id:staffId||null,p_start_date:startDate,p_end_date:endDate});
+    if(request!==attendanceRequest||!view.querySelector('#attendanceList'))return;
     if(error){view.querySelector('#attendanceList').innerHTML=`<p class="form-error">${escapeHtml(error.message)}</p>`;view.querySelector('#attendanceState').textContent='Error';return;}
     let attendanceAvatars=new Map();try{attendanceAvatars=await loadStaffAvatars(supabase,[...new Set((data||[]).map(r=>Number(r.staff_id)))]);}catch(error){console.warn(error.message);}
+    if(request!==attendanceRequest||!view.querySelector('#attendanceList'))return;
     const rows=data||[],counts={present:rows.filter(r=>['PRESENT','LATE','HALF_DAY','NEEDS_REVIEW'].includes(r.status)).length,late:rows.filter(r=>['LATE','HALF_DAY'].includes(r.status)&&Number(r.late_mins)>0).length,lateMins:rows.reduce((a,r)=>a+Number(r.late_mins||0),0),absent:rows.filter(r=>r.status==='ABSENT').length,leave:rows.filter(r=>r.status==='LEAVE').length,missing:rows.filter(r=>r.status==='NOT_CHECKED_IN').length,half:rows.filter(r=>['HALF_DAY','HALF_DAY_LEAVE'].includes(r.status)).length};
     view.querySelector('#attendanceStats').innerHTML=`<div class="attendance-stats"><div><strong>${counts.present}</strong><span>Present</span></div><div><strong>${counts.late}</strong><span>Late</span></div>${filter==='month'?`<div><strong>${counts.absent}</strong><span>Absent</span></div><div><strong>${counts.leave}</strong><span>Leave</span></div><div><strong>${counts.half}</strong><span>Half-day</span></div><div><strong>${counts.lateMins}</strong><span>Late min</span></div>`:`<div><strong>${counts.missing}</strong><span>Not in</span></div><div><strong>${counts.absent}</strong><span>Absent</span></div>`}</div>`;
     const outletName=isOwner?((outlets||[]).find(x=>Number(x.id)===Number(outletId))?.name||'Café'):(profile.outlets?.name||'Café');
@@ -1766,7 +1772,7 @@ async function renderAttendance(view, supabase, profile,selectedStaffId=null) {
     view.querySelector('#attendanceContext').textContent=filter==='today'?'Today’s attendance':filter==='yesterday'?'Yesterday’s attendance':new Date(selectedMonth+'-01T12:00:00').toLocaleDateString('en-GB',{month:'long',year:'numeric'});
     view.querySelector('#attendanceState').textContent=rows.length+(filter==='month'?' calendar rows':' staff');view.querySelector('#attendanceListTitle').textContent=filter==='month'?'View daily attendance':'Attendance';const recordsDisclosure=view.querySelector('#attendanceRecordsDisclosure');if(recordsDisclosure)recordsDisclosure.open=filter!=='month';
     const priority={NEEDS_REVIEW:0,ABSENT:1,NOT_CHECKED_IN:2,LATE:3,HALF_DAY:4,HALF_DAY_LEAVE:5,LEAVE:6,PRESENT:7,WEEKLY_OFF:8,UPCOMING:9};
-    const ordered=[...rows].sort((a,b)=>filter==='month'?(b.attendance_date.localeCompare(a.attendance_date)||a.staff_name.localeCompare(b.staff_name)):((priority[a.status]??9)-(priority[b.status]??9)||a.staff_name.localeCompare(b.staff_name)));
+    const ordered=[...rows].sort((a,b)=>filter==='month'?(a.attendance_date.localeCompare(b.attendance_date)||a.staff_name.localeCompare(b.staff_name)):((priority[a.status]??9)-(priority[b.status]??9)||a.staff_name.localeCompare(b.staff_name)));
     view.querySelector('#attendanceList').innerHTML=ordered.length?ordered.map(r=>`<article class="attendance-row ${r.status==='NEEDS_REVIEW'?'attention':''}"><div class="attendance-main">${staffAvatar({id:r.staff_id,name:r.staff_name},{...attendanceAvatars.get(Number(r.staff_id)),checked_in:!!r.punch_time&&!(['ABSENT','LEAVE'].includes(r.status)),business_date:r.attendance_date},'small')}<div><div class="attendance-name">${escapeHtml(r.staff_name)}</div><div class="attendance-meta">${prettyDate(r.attendance_date)} · Shift ${prettyTime(r.shift_start)}</div></div></div><div class="attendance-result"><div class="attendance-time">${r.punch_time?prettyTime(r.punch_time):'—'}</div><span class="attendance-badge ${statusClass(r.status)}">${escapeHtml(statusLabel(r))}</span></div><div class="attendance-actions">${r.photo_url?'<button type="button" class="text-action photo-btn">View photo</button>':''}${isAdmin&&r.punch_time&&(isOwner||(Number(r.staff_id)!==Number(userRow?.staff_id)&&r.photo_url))?'<button type="button" class="text-action correct-btn">Correct</button>':''}</div></article>`).join(''):'<p class="section-help">No staff records for this period.</p>';
     bindAvatarImages(view);
     [...view.querySelectorAll('.attendance-row')].forEach((el,i)=>{const r=ordered[i];el.querySelector('.photo-btn')?.addEventListener('click',()=>openPhoto(r.photo_url));el.querySelector('.correct-btn')?.addEventListener('click',()=>correctRow(r));});
@@ -1774,9 +1780,20 @@ async function renderAttendance(view, supabase, profile,selectedStaffId=null) {
   };
 
   view.querySelectorAll('[data-att-view]').forEach(btn=>btn.onclick=()=>{const leave=btn.dataset.attView==='leave';view.querySelectorAll('[data-att-view]').forEach(b=>b.classList.toggle('active',b===btn));view.querySelector('#attendancePanel').hidden=leave;view.querySelector('#leavePanel').hidden=!leave;});
-  if(isAdmin){await loadStaff();staffSelect.onchange=()=>{staffId=staffSelect.value?Number(staffSelect.value):null;refresh();};}
-  view.querySelectorAll('.attendance-tabs button').forEach(btn=>btn.onclick=()=>{filter=btn.dataset.range;view.querySelectorAll('.attendance-tabs button').forEach(b=>b.classList.toggle('active',b===btn));view.querySelector('#monthPickerWrap').hidden=filter!=='month';refresh();});
-  if(monthInput)monthInput.onchange=()=>{selectedMonth=monthInput.value||monthKey;refresh();};
+  if(isAdmin){await loadStaff();staffSelect.onchange=()=>{staffId=staffSelect.value?Number(staffSelect.value):null;return refresh();};}
+  view.querySelectorAll('.attendance-tabs button').forEach(btn=>btn.onclick=()=>{filter=btn.dataset.range;history.range=filter;view.querySelectorAll('.attendance-tabs button').forEach(b=>b.classList.toggle('active',b===btn));view.querySelector('#monthPickerWrap').hidden=filter!=='month';return refresh();});
+  const selectMonth=month=>{
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||month>monthKey)return;
+    selectedMonth=month;
+    history.month=selectedMonth;
+    monthInput.innerHTML=attendanceMonthOptions();
+    view.querySelector('#attNextMonth').disabled=selectedMonth===monthKey;
+    return refresh();
+  };
+  monthInput.onchange=()=>selectMonth(monthInput.value||monthKey);
+  const moveMonth=offset=>{const[y,m]=selectedMonth.split('-').map(Number);return selectMonth(new Date(Date.UTC(y,m-1+offset,1)).toISOString().slice(0,7));};
+  view.querySelector('#attPreviousMonth').onclick=()=>moveMonth(-1);
+  view.querySelector('#attNextMonth').onclick=()=>moveMonth(1);
   if(!isOwner){const photo=view.querySelector('#attendancePhoto'),btn=view.querySelector('#checkinBtn'),msg=view.querySelector('#checkinMsg');btn.onclick=()=>photo.click();photo.onchange=async()=>{const file=photo.files?.[0];if(!file)return;btn.disabled=true;btn.textContent='Checking in…';msg.hidden=true;try{const body=new FormData();body.append('photo',file);const{data,error}=await supabase.functions.invoke('chaitracker-attendance',{body});if(error||!data?.ok){let detail=data?.error;if(!detail&&error?.context){try{detail=(await error.context.json()).error;}catch{}}throw new Error(detail||error?.message||'Check-in failed');}msg.textContent='Attendance recorded';msg.className='summary-inline-status ok';msg.hidden=false;await refresh();await refreshStaffAvatarElements(supabase,[Number(userRow.staff_id)]);}catch(error){msg.textContent=error.message||'Check-in failed. Please retry.';msg.className='summary-inline-status bad';msg.hidden=false;btn.disabled=false;btn.textContent='Take photo & check in';}finally{photo.value='';}};}
   await refresh();
 }

@@ -466,6 +466,13 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .attendance-filter-bar .attendance-tabs{margin:0}
 .attendance-filter-bar .attendance-month{display:flex;align-items:center;gap:9px;margin:9px 0 0}
 .attendance-filter-bar .attendance-month[hidden]{display:none}
+.attendance-month-navigation{display:grid;grid-template-columns:40px minmax(0,1fr) 40px;align-items:end;gap:8px;margin-top:12px;min-width:0}
+.attendance-month-navigation[hidden]{display:none}
+.attendance-filter-bar .attendance-month-navigation .attendance-month{display:block;width:100%;margin:0;min-width:0}
+.attendance-month-navigation .attendance-month>span{display:block;margin-bottom:6px}
+.attendance-month-navigation select{min-height:44px;width:100%;max-width:100%;min-width:0;box-sizing:border-box}
+.attendance-month-navigation>button{min-height:44px;padding:0;font-size:26px;line-height:1}
+.attendance-month-navigation>button:disabled{opacity:.35;cursor:default}
 #leaveEndWrap[hidden]{display:none}
 .leave-request-card{min-width:0;overflow:hidden}
 .leave-request-card .summary-label{min-width:0;max-width:100%}
