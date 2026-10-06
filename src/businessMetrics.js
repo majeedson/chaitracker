@@ -9,7 +9,7 @@ export function businessTotals(data,start,end,ids=data.outlets.map(o=>Number(o.i
   // Preserve saved history, but flag channel differences beyond ₹2 rounding tolerance.
   const unreconciled=summaries.filter(d=>Math.abs(Number(d.net_sales||0)-(Number(d.cash_sales||0)+Number(d.direct_digital||0)+Number(d.online_net||0)-Number(d.discounts||0)))>2);
   for(const outlet of data.outlets.filter(o=>selected.has(Number(o.id)))){
-    const first=outlet.first_summary,startDate=first&&first>start?first:start;
+    const first=outlet.first_activity||outlet.first_summary,startDate=first&&first>start?first:start;
     const expected=first&&first<=end&&end>=startDate?Math.round((new Date(end+'T12:00:00Z')-new Date(startDate+'T12:00:00Z'))/86400000)+1:0;
     const reported=new Set(summaries.filter(d=>Number(d.outlet_id)===Number(outlet.id)).map(d=>d.business_date)).size;
     coverage.push({id:Number(outlet.id),name:outlet.name,expected,reported,missing:Math.max(0,expected-reported)});

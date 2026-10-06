@@ -63,6 +63,14 @@ test('approved leave without any punches displays the calculated staff estimate'
  const h=harness({staffRows:[selected],userRow:{staff_id:2,outlet_id:2},estimate});await h.context.renderSalary(h.view,h.client,{id:'employee',access_class:'STAFF',role:'Staff'});
  assert.match(h.view.querySelector('#salaryEstimate').textContent,/13,000/);assert.match(h.view.querySelector('#salaryEstimate').textContent,/Days off · 4/);assert.doesNotMatch(h.view.querySelector('#salaryEstimate').textContent,/Not enough records/);h.dom.window.close();
 });
+test('historical paid import metadata preserves saved advances in both owner and staff salary views',async()=>{
+ const selected={...structuredClone(person),joining_date:'2025-01-01'};
+ const current={id:'OLD',legacy_salary_id:'OLD',period_start:'2026-09-01',period_end:'2026-09-30',pay_date:'2026-10-01',payroll_status:'PAID',basic_salary:15000,net_salary:12999,petty_advance:2000,holiday_pay:0,absent_days:0,present_days:30,late_penalty:0,loan_prev_balance:0,loan_remaining:0,payroll_details:{salary_sheet_import:{owner_confirmed_paid:true}}};
+ const a=harness({current,staffRows:[selected]});await a.context.renderSalary(a.view,a.client,owner,'salary',2);
+ assert.equal(a.view.querySelector('[name="advance_deduction"]').value,'2000');assert.equal(a.view.querySelector('[name="advance_installment_deduction"]').value,'0');assert.equal(a.view.querySelector('#markPayrollPaid'),null);assert.match(a.view.querySelector('#payrollNet').textContent,/12,999/);a.dom.window.close();
+ const b=harness({current,staffRows:[selected],userRow:{staff_id:2,outlet_id:2}});await b.context.renderSalary(b.view,b.client,{id:'employee',access_class:'STAFF',role:'Staff'});
+ const line=[...b.view.querySelectorAll('.salary-line')].find(x=>x.textContent.includes('Earlier petty advances'));assert.match(line.textContent,/2,000/);assert.match(b.view.textContent,/Paid · method not recorded/);assert.doesNotMatch(b.view.textContent,/Payment not yet recorded/);b.dom.window.close();
+});
 test('a stale or invalid profile cannot navigate away with unsaved salary',async()=>{
  const h=harness({saveError:'This profile changed'});await h.context.renderPeople(h.view,h.client,{...owner,context_outlet_id:null});await h.view.querySelector('.manage-staff').onclick();h.view.querySelector('#editSalary').value='16000';let navigation=false;h.view.addEventListener('app:navigate',()=>navigation=true);await h.view.querySelector('[data-module="salary"].profile-open-module').onclick();assert.equal(navigation,false);assert.match(h.view.querySelector('#editMsg').textContent,/profile changed/);h.dom.window.close();
 });
