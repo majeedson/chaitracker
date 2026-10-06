@@ -24,6 +24,14 @@ before(async()=>{
  insert into users(id,auth_user_id,name,access_class,outlet_id) values('${owner}','${owner}','Owner','ADMIN',null),('${staff}','${staff}','Staff','STAFF',1);
  `);
  await db.exec(migration);
+ await db.exec(`alter table items add minimum_stock numeric default 0,add reorder_qty numeric default 0;
+ alter table outlet_items add target_stock numeric default 0,add minimum_stock numeric default 0,add order_rounding numeric default 1;
+ create table stocktakes(id bigint,outlet_id integer,business_date date,status text,submitted_at timestamptz);
+ create table stocktake_lines(stocktake_id bigint,item_id text,counted_quantity_base numeric);
+ create table current_stock(outlet_id integer,item_id text,count_now numeric);
+ create table purchase_orders(id varchar primary key,business_date date,outlet_id integer,vendor_id integer,created_by uuid,status text,message text,order_method text);
+ create table purchase_order_items(purchase_order_id varchar,item_id text,current_stock numeric,minimum_stock numeric,reorder_qty numeric,order_qty numeric,suggestion_method text);`);
+ await db.exec(await fs.readFile(new URL('../supabase/migrations/20261006163036_purchase_catalogue_cleanup_b144.sql',import.meta.url),'utf8'));
 });
 after(async()=>db?.close());beforeEach(async()=>{await db.exec('begin');await actor(staff);});afterEach(async()=>db.exec('rollback;reset role'));
 test('staff additions share catalogue in both domains, normalize/reuse duplicates and preserve units',async()=>{
@@ -100,4 +108,20 @@ test('Orders creates an item in its vendor card while preserving another vendor 
  let cards=view.querySelectorAll('#tomorrowOrderRows details');input(dom,cards[1].querySelector('.order-qty'),'7');cards[0].querySelector('.order-card-add').click();
  const form=cards[0].querySelector('form');form.elements.item_name.value='New order item';form.elements.category_id.value='1';form.elements.unit.value='kg';await form.onsubmit({preventDefault(){}});
  cards=view.querySelectorAll('#tomorrowOrderRows details');assert.equal(cards[1].querySelector('.order-qty').value,'7');const added=view.querySelector('.order-suggestion-row[data-id="new"]');assert.ok(added);input(dom,added.querySelector('.order-qty'),'3');cards[0].querySelector('.category-message').click();assert.match(cards[0].querySelector('textarea').value,/New order item — 3 kg/);assert.equal(cat.items.at(-1).item_id,'new');dom.window.close();
+});
+
+test('Provit permits only four raw supplies; PCafe and transfer preparation stay out of both catalogues and new additions',async()=>{
+ await db.exec("insert into vendors values(3,'Provit',true),(4,'Pcafe',false);");
+ const raw=['Whole Chicken','Shawarma Chicken','Chicken Wings','Chicken Skin'];
+ for(let n=0;n<raw.length;n++){await db.query("insert into items(id,name,category_id,vendor_id,unit) values($1,$2,1,3,'g')",[String(n),raw[n]]);await db.query("insert into outlet_items(outlet_id,item_id,stock_unit,preferred_vendor_id) values(1,$1,'g',3)",[String(n)]);};
+ await db.exec("insert into items(id,name,category_id,vendor_id,unit) values('prepared','Boiled chicken',1,3,'g'),('rumali','Rumali',1,4,'Pc');insert into outlet_items(outlet_id,item_id,stock_unit,preferred_vendor_id) values(1,'prepared','g',3),(1,'rumali','Pc',4)");
+ for(const module of ['purchase','orders']){const c=await catalogue(module);assert.equal(c.vendors.some(v=>v.name==='Pcafe'),false);assert.deepEqual(c.items.filter(i=>i.vendor_name==='Provit').map(i=>i.item_name).sort(),raw.slice().sort());assert.equal(c.items.some(i=>i.item_name==='Rumali'),false);}
+ const suggestions=(await db.query("select item_name from public.get_tomorrows_order(1,date '2026-10-06')")).rows.map(i=>i.item_name);assert.equal(suggestions.includes('Boiled chicken'),false);assert.equal(suggestions.includes('Rumali'),false);assert.equal(suggestions.filter(i=>raw.includes(i)).length,4);
+ for(const name of ['Finger','Kheema','Boiled Chicken','Rumali chai cafe','Chicken Patty'])await reject(()=>add(name),/Transfers/);
+ await reject(()=>db.query("select public.add_vendor_catalogue_item(1,'orders',4,'Anything',1,null,'Pc')"),/Vendor not found/);
+ await reject(()=>db.query("select public.add_vendor_catalogue_item(1,'purchase',3,'Fried',1,null,'Pc')"),/Transfers/);
+ const prepared=[{item_id:'prepared',qty:1,unit:'g',invoice_amount:10,entry_type:'item'}];await reject(()=>db.query("select public.save_purchase_entries(1,date '2026-10-06',$1,'Provit',$2)",[staff,JSON.stringify(prepared)]),/Check item/);
+ await actor(owner);await reject(()=>db.query('select public.create_manual_purchase_order(1,3,$1,$2)',[owner,JSON.stringify([{item_id:'prepared',qty:1}])]),/unavailable/);
+ // Stock identities and prepared-item history remain available to their own modules.
+ assert.equal((await db.query("select active from items where id='prepared'")).rows[0].active,true);
 });
