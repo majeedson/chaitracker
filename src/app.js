@@ -1,3 +1,4 @@
+import { renderCigarettes } from './cigarettes.js';
 import { bindItemAdder } from './vendorCatalogue.js';
 import { renderVendorPurchases } from './vendorPurchases.js';
 import { renderVendorCredits } from './vendorCredits.js';
@@ -11,12 +12,13 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 144;
+const APP_BUILD = 145;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['credits', 'Credits'],
   ['attendance', 'Attendance'],
   ['salary', 'Salary'],
+  ['cigarettes', 'Cigarettes'],
   ['stock', 'Stock'],
   ['orders', 'Orders'],
   ['purchase', 'Purchases'],
@@ -45,6 +47,7 @@ function icon(name, size=20) {
   const paths={
     home:'<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v10h13V10"/><path d="M9 20v-6h6v6"/>',
     attendance:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    cigarettes:'<rect x="3" y="10" width="18" height="6" rx="1"/><path d="M16 10v6M5 7V4M8 7V3"/>',
     stock:'<path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
     purchase:'<path d="M6 7h15l-2 8H8L6 3H3"/><circle cx="9" cy="19" r="1"/><circle cx="18" cy="19" r="1"/>',
     'extra-time':'<path d="M13 2 5 14h6l-1 8 9-13h-6z"/>',
@@ -129,7 +132,7 @@ async function renderLogin(root, supabase) {
       <section class="login-card">
         ${reloadButton}
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=144" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=145" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -325,10 +328,12 @@ function renderWorkspace(root, supabase, profile) {
 async function loadModule(view, supabase, profile, module, options={}) {
   if(!hasModuleAccess(profile,module)){view.innerHTML='<h2>Access unavailable</h2>';return;}
   view._businessDashboardRequest=null;
+  view._cigaretteRequest=null;
   view._creditsRequest=null;view._creditsClosingRequest=null;
   view.innerHTML = '<div class="loading">Loading…</div>';
-  if(['dashboard','credits','salary','people','summary','my-profile','orders','purchase'].includes(module)){const {data,error}=await supabase.rpc('get_app_release');if(error||Number(data?.schema_build||0)<APP_BUILD){view.innerHTML='<h2>Update required</h2><p class="section-help">The database update is not ready yet. Please try again shortly.</p>';return;}}
+  if(['dashboard','credits','salary','people','summary','my-profile','orders','purchase','cigarettes'].includes(module)){const {data,error}=await supabase.rpc('get_app_release');if(error||Number(data?.schema_build||0)<APP_BUILD){view.innerHTML='<h2>Update required</h2><p class="section-help">The database update is not ready yet. Please try again shortly.</p>';return;}}
 
+  if (module === 'cigarettes') { await renderCigarettes(view,supabase,profile); return; }
   if (module === 'credits') { await renderVendorCredits(view, supabase, profile); return; }
   if (module === 'dashboard') { await renderDashboard(view, supabase, profile); return; }
   if (module === 'attendance') { await renderAttendance(view, supabase, profile,options.staffId); return; }
@@ -375,14 +380,15 @@ async function renderDailySummary(view, supabase, profile) {
   const {data:businessDay,error:businessDayError}=await supabase.rpc('get_effective_business_day',{p_outlet_id:outletId,p_timestamp:new Date().toISOString()});
   if(businessDayError||!businessDay){view.innerHTML='<span class="eyebrow">Daily Summary</span><h2>Business day unavailable</h2><p class="form-error">'+escapeHtml(businessDayError?.message||'Could not determine the café business day.')+'</p>';return;}
   const businessDate=String(businessDay);
-  const [{data:vendors},{data:staff},{data:existing},{data:previous},{data:outlet},{data:stocktake},{data:advances,error:advanceError}]=await Promise.all([
+  const [{data:vendors},{data:staff},{data:existing},{data:previous},{data:outlet},{data:stocktake},{data:advances,error:advanceError},{data:cigSummary,error:cigSummaryError}]=await Promise.all([
     supabase.from('vendors').select('id,name').order('name'),
     supabase.rpc('get_staff_roster',{p_outlet_id:outletId}),
     supabase.from('daily_summaries').select('*').eq('outlet_id',outletId).eq('business_date',businessDate).maybeSingle(),
     supabase.from('daily_summaries').select('business_date,physical_cash').eq('outlet_id',outletId).lt('business_date',businessDate).order('business_date',{ascending:false}).limit(1).maybeSingle(),
     supabase.from('outlets').select('name,swiggy_payout_rate,zomato_payout_rate,theme_key,theme_color').eq('id',outletId).maybeSingle(),
-    supabase.from('stocktakes').select('id,status').eq('outlet_id',outletId).eq('business_date',businessDate).eq('status','SUBMITTED').limit(1).maybeSingle(),
-    supabase.rpc('get_summary_advances',{p_outlet_id:outletId,p_business_date:businessDate})
+    supabase.from('stocktakes').select('id,status').eq('outlet_id',outletId).eq('business_date',businessDate).eq('stocktake_type','DAILY').eq('status','SUBMITTED').limit(1).maybeSingle(),
+    supabase.rpc('get_summary_advances',{p_outlet_id:outletId,p_business_date:businessDate}),
+    supabase.rpc('get_cigarette_summary',{p_outlet_id:outletId,p_date:businessDate})
   ]);
   if(advanceError){view.innerHTML='<h2>Daily Summary unavailable</h2><p class="form-error">'+escapeHtml(advanceError.message||'Could not reconcile advance payouts. Please retry.')+'</p>';return;}
   const paidAdvances=(advances||[]).filter(a=>a.status==='PAID'&&a.business_date===businessDate);
@@ -404,7 +410,7 @@ async function renderDailySummary(view, supabase, profile) {
         <span class="summary-state">${escapeHtml(statusText)}</span>
       </div>
       <div class="close-status-strip">
-        <span id="closeSalesStatus">Sales <b>○</b></span><span id="closeExpenseStatus">Expenses <b>○</b></span><span class="${stocktake?'done':'pending'}">Stock <b>${stocktake?'✓':'○'}</b></span><span class="${ordersDone?'done':'pending'}">Orders <b>${ordersDone?'✓':'○'}</b></span>
+        <span class="${cigSummary?.closed?'done':'pending'}">Cigarettes <b>${cigSummary?.closed?'✓':'○'}</b></span><span id="closeSalesStatus">Sales <b>○</b></span><span id="closeExpenseStatus">Expenses <b>○</b></span><span class="${stocktake?'done':'pending'}">Stock <b>${stocktake?'✓':'○'}</b></span><span class="${ordersDone?'done':'pending'}">Orders <b>${ordersDone?'✓':'○'}</b></span>
       </div>
 
       <section class="summary-section">
@@ -418,6 +424,7 @@ async function renderDailySummary(view, supabase, profile) {
 
       <section class="summary-section">
         <div class="summary-section-title"><span></span><h3>Sales</h3></div>
+        <p class="hint">Cigarette POS sales: ${cigSummaryError?'unavailable':cigSummary?.sales?money(cigSummary.sales.reduce((n,x)=>n+Number(x.amount),0))+' · included in total sales':'not recorded'}</p>
         <div class="summary-two">
           <label class="summary-label">Cash ₹<input id="sCash" type="number" inputmode="decimal" value="${existing?.cash_sale??0}"></label>
           <label class="summary-label">UPI ₹<input id="sUpi" type="number" inputmode="decimal" value="${existing?.upi_sale??0}"></label>
@@ -926,8 +933,11 @@ async function renderPeople(view, supabase, profile) {
 async function renderDelta(view,supabase,profile){
   if(!hasModuleAccess(profile,'delta')){view.innerHTML='<span class="eyebrow">Delta</span><h2>Access unavailable</h2>';return;}
   if(profile.access_class==='ADMIN'&&!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to compare stock counts.</p>';return;}
-  const outletId=Number(profile.access_class==='ADMIN'?profile.context_outlet_id:profile.outlet_id);const{data,error}=await supabase.from('inventory_entries').select('business_date,item_id,count_now,unit,created_at').eq('outlet_id',outletId).order('business_date',{ascending:false}).order('created_at',{ascending:false}).limit(2000);
+  const outletId=Number(profile.access_class==='ADMIN'?profile.context_outlet_id:profile.outlet_id);let{data,error}=await supabase.from('inventory_entries').select('business_date,item_id,count_now,unit,created_at').eq('outlet_id',outletId).order('business_date',{ascending:false}).order('created_at',{ascending:false}).limit(2000);
   if(error){view.innerHTML='<span class="eyebrow">Delta</span><h2>Unavailable</h2><p class="form-error">'+escapeHtml(error.message)+'</p>';return;}
+  const {data:cigaretteIds,error:cigaretteIdsError}=await supabase.rpc('get_cigarette_item_ids',{p_outlet_id:outletId});
+  if(cigaretteIdsError){view.innerHTML='<p class="form-error">'+escapeHtml(cigaretteIdsError.message)+'</p>';return;}
+  data=(data||[]).filter(x=>!(cigaretteIds||[]).includes(x.item_id));
   const dates=[...new Set((data||[]).map(x=>x.business_date))].slice(0,2);if(dates.length<2){view.innerHTML='<span class="eyebrow">Stock review</span><h2>Delta</h2><div class="notice">Two stock dates are needed before a delta can be calculated.</div>';return;}
   const latestFor=d=>{const m=new Map();(data||[]).filter(x=>x.business_date===d).forEach(x=>{if(!m.has(x.item_id))m.set(x.item_id,x);});return m;},a=latestFor(dates[0]),b=latestFor(dates[1]);const ids=[...new Set([...a.keys(),...b.keys()])];const{data:items}=await supabase.from('items').select('id,name').in('id',ids);const names=new Map((items||[]).map(x=>[x.id,x.name]));const rows=ids.map(id=>({id,name:names.get(id)||id,now:Number(a.get(id)?.count_now||0),before:Number(b.get(id)?.count_now||0),unit:a.get(id)?.unit||b.get(id)?.unit||''})).map(x=>({...x,delta:x.now-x.before})).sort((x,y)=>Math.abs(y.delta)-Math.abs(x.delta));
   view.innerHTML=`<div class="section-heading"><div><span class="eyebrow">Stock review</span><h2>Delta</h2><p>${escapeHtml(dates[1])} → ${escapeHtml(dates[0])}</p></div><span class="soft-badge">${rows.filter(x=>x.delta!==0).length} changed</span></div><div class="table-wrap"><table><thead><tr><th>Item</th><th>Previous</th><th>Current</th><th>Delta</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x.name)}</td><td>${x.before} ${escapeHtml(x.unit)}</td><td>${x.now} ${escapeHtml(x.unit)}</td><td>${x.delta>0?'+':''}${x.delta}</td></tr>`).join('')}</tbody></table></div>`;
@@ -949,7 +959,7 @@ async function renderStock(view,supabase,profile){
   ]);
   if(itemError||monthlyError){view.innerHTML='<span class="eyebrow">Stock</span><h2>Stock unavailable</h2><p class="form-error">'+escapeHtml((itemError||monthlyError).message)+'</p>';return;}
   applyTheme(outlet);
-  const stockMode=profile._stockMode==='monthly'?'monthly':'daily';const due=stockMode==='monthly'?(monthlyItems||[]):(dailyItems||[]).filter(x=>x.count_cycle!=='MONTHLY'),controlled=due.filter(x=>x.count_cycle==='CONTROLLED'),ordinary=due.filter(x=>x.count_cycle!=='CONTROLLED');
+  const stockMode=profile._stockMode==='monthly'?'monthly':'daily';const due=(stockMode==='monthly'?(monthlyItems||[]):(dailyItems||[]).filter(x=>x.count_cycle!=='MONTHLY')).filter(x=>!x.pieces_per_pack),controlled=due.filter(x=>x.count_cycle==='CONTROLLED'),ordinary=due.filter(x=>x.count_cycle!=='CONTROLLED');
   const purchaseByItem=new Map();(recentPurchases||[]).forEach(p=>{if(!purchaseByItem.has(String(p.item_id)))purchaseByItem.set(String(p.item_id),p);});
   const recentLabel=x=>{const p=purchaseByItem.get(String(x.item_id));if(!p)return'';const days=Math.round((new Date(String(businessDate)+'T12:00:00')-new Date(String(p.business_date)+'T12:00:00'))/86400000);if(days<0||days>7)return'';return days===0?'Purchased today':days===1?'Purchased yesterday':'Purchased '+days+'d ago';};
   const cycleLabel=x=>({DAILY:'Daily',WEEKLY:'Weekly',MONTHLY:'Monthly',CONTROLLED:'Controlled'})[x]||x;
@@ -994,7 +1004,7 @@ async function renderStock(view,supabase,profile){
     try{localStorage.removeItem(draftKey);}catch{}show(stockMode==='monthly'?'Monthly stock saved.':'Tonight’s stock saved.','success');save.textContent='Saved ✓';
   };
 
-  orderPane.hidden=true;
+
 }
 async function renderPurchases(view, supabase, profile, workspace='purchase') {
   const ordersOnly=workspace==='orders';
@@ -1056,7 +1066,8 @@ async function renderPurchases(view, supabase, profile, workspace='purchase') {
     const catalog=data||[],itemMap=new Map((items||[]).map(item=>[String(item.id),item]));
     const vendorIds=new Map((outletItems||[]).map(item=>[String(item.item_id),Number(item.preferred_vendor_id||itemMap.get(String(item.item_id))?.vendor_id||0)]));
     const stockUnits=new Map(catalog.map(item=>[String(item.item_id),String(item.order_unit||'').trim().toLowerCase()]));
-    const rows=(data||[]).filter(x=>!['VENDOR_MANAGED','CONTROLLED'].includes(x.order_strategy)).map(x=>{const gram=String(x.order_unit||'').trim().toLowerCase()==='g';return gram?{...x,current_stock:Number(x.current_stock||0)/1000,suggested_qty:Math.ceil(Number(x.suggested_qty||0)/1000),order_unit:'kg'}:x;});
+    const purchaseIds=new Set(catalogue.items.map(i=>String(i.item_id)));
+    const rows=(data||[]).filter(x=>purchaseIds.has(String(x.item_id))&&!['VENDOR_MANAGED','CONTROLLED'].includes(x.order_strategy)).map(x=>{const gram=String(x.order_unit||'').trim().toLowerCase()==='g';return gram?{...x,current_stock:Number(x.current_stock||0)/1000,suggested_qty:Math.ceil(Number(x.suggested_qty||0)/1000),order_unit:'kg'}:x;});
     const manualIds=new Set();
     const section=view.querySelector('#purchaseOrderWorkspace'),box=view.querySelector('#tomorrowOrderRows');if(!section||!box)return;
     let groupMode='vendor';

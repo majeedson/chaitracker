@@ -1,3 +1,4 @@
+import {cigaretteGroups} from './cigaretteMetrics.js';
 import {businessTotals,comparableChange,dashboardPeriods,groupedCosts,shiftDay,shiftMonth,monthEnd} from './businessMetrics.js';
 const html=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=value=>value===null||value===undefined?'—':'₹'+Number(value).toLocaleString('en-IN',{maximumFractionDigits:2});
@@ -85,15 +86,26 @@ export async function renderBusinessDashboard(view,supabase,profile){
   render();
   // Operational checks do not delay financial figures or turn missing data into an all-clear.
   const checks=await Promise.allSettled(data.outlets.map(async o=>{
-    const [attendance,stock]=await Promise.all([
+    const [attendance,stock,cigarettes]=await Promise.all([
       supabase.rpc('get_attendance_calendar',{p_outlet_id:o.id,p_start_date:o.business_day,p_end_date:o.business_day,p_staff_id:null}),
-      supabase.from('current_stock').select('item_id,minimum_stock,count_now,business_date').eq('outlet_id',o.id)
+      supabase.from('current_stock').select('item_id,minimum_stock,count_now,business_date').eq('outlet_id',o.id),
+      supabase.rpc('get_cigarette_workspace',{p_outlet_id:o.id,p_date:shiftDay(o.business_day,-1)})
     ]);
     const alerts=[];
     if(attendance.error)alerts.push({id:o.id,outlet:o.name,text:'Attendance check unavailable',module:'attendance'});
     else {const rows=attendance.data||[];if(!rows.length)alerts.push({id:o.id,outlet:o.name,text:'No attendance records for today',module:'attendance'});const review=rows.filter(r=>r.status==='NEEDS_REVIEW').length,notIn=rows.filter(r=>r.status==='NOT_CHECKED_IN').length;if(review||notIn)alerts.push({id:o.id,outlet:o.name,text:`${review} need review · ${notIn} not checked in`,module:'attendance'});}
     if(stock.error)alerts.push({id:o.id,outlet:o.name,text:'Stock check unavailable',module:'stock'});
     else {if(!stock.data?.length)alerts.push({id:o.id,outlet:o.name,text:'No stock counts available',module:'stock'});const latest=new Map();for(const r of stock.data||[]){const old=latest.get(r.item_id);if(!old||r.business_date>old.business_date)latest.set(r.item_id,r);}const low=[...latest.values()].filter(r=>Number(r.minimum_stock)>0&&Number(r.count_now)<Number(r.minimum_stock)).length;if(low)alerts.push({id:o.id,outlet:o.name,text:`${low} items below minimum · based on latest counts`,module:'stock'});}
+    if(cigarettes.error)alerts.push({id:o.id,outlet:o.name,text:'Cigarette check unavailable',module:'cigarettes'});
+    else if(cigarettes.data?.items?.length){
+     const day=cigarettes.data.day;
+     if(!day?.closed_at)alerts.push({id:o.id,outlet:o.name,text:'Previous day cigarette closing pending',module:'cigarettes'});
+     else {const report=day.report,groups=cigaretteGroups(report.brands,report.sales,Object.fromEntries(report.brands.map(b=>[b.item_id,b.closing])),shiftDay(o.business_day,-1));
+      const missing=groups.reduce((n,g)=>n+Math.max(0,g.difference||0),0),excess=groups.reduce((n,g)=>n+Math.max(0,-(g.difference||0)),0);
+      if(missing||excess)alerts.push({id:o.id,outlet:o.name,text:`Cigarettes: ${missing} unaccounted · ${excess} excess pieces`,module:'cigarettes'});
+      if(groups.some(g=>!g.complete))alerts.push({id:o.id,outlet:o.name,text:'Cigarette SK check incomplete',module:'cigarettes'});
+     }
+    }
     return alerts;
   }));
   if(view._businessDashboardRequest!==activeRequest)return;

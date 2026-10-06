@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {APP_DOMAINS,roleModuleAccess,effectiveModuleAccess,hasModuleAccess} from '../src/moduleAccess.js';
-test('only the requested five domains are configurable',()=>{
- assert.deepEqual(APP_DOMAINS.map(x=>x[0]),['orders','purchase','extra-time','summary','delta']);
+test('operational domains include the dedicated Cigarettes module',()=>{
+ assert.deepEqual(APP_DOMAINS.map(x=>x[0]),['orders','purchase','extra-time','summary','cigarettes','delta']);
 });
 test('existing roles retain their actual access despite unused legacy flags',()=>{
  for(const role of ['Staff','Manager','Ops Manager']){

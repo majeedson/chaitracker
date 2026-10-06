@@ -25,7 +25,7 @@ export async function renderVendorPurchases(view,client,profile,{outletId,busine
     const {data,error}=await client.from('purchases').select('id,vendor_name,item_id,qty,unit,invoice_amount,entry_type,items(name)').eq('outlet_id',outletId).eq('business_date',businessDate).order('created_at',{ascending:false}).limit(100);
     const target=view.querySelector('#purchaseHistory');
     if(error){target.textContent=error.message;return;}
-    target.innerHTML=(data||[]).map(p=>`<div class="purchase-history-line"><span><strong>${e(p.items?.name||catalogue.items.find(i=>String(i.item_id)===String(p.item_id))?.item_name||'Invoice')}</strong><small>${e(p.vendor_name)}${p.entry_type==='item'?' · '+e(p.qty)+' '+e(p.unit):''}</small></span><b>₹${money(p.invoice_amount)}</b></div>`).join('')||'<div class="notice">No purchases recorded today.</div>';
+    target.innerHTML=(data||[]).filter(p=>!(catalogue.cigarette_item_ids||[]).includes(p.item_id)).map(p=>`<div class="purchase-history-line"><span><strong>${e(p.items?.name||catalogue.items.find(i=>String(i.item_id)===String(p.item_id))?.item_name||'Invoice')}</strong><small>${e(p.vendor_name)}${p.entry_type==='item'?' · '+e(p.qty)+' '+e(p.unit):''}</small></span><b>₹${money(p.invoice_amount)}</b></div>`).join('')||'<div class="notice">No purchases recorded today.</div>';
   };
   for(const vendor of catalogue.vendors){
     const card=view.ownerDocument.createElement('details');card.className='order-category-group purchase-vendor-card';card.dataset.vendorId=vendor.id;card.dataset.mode='item';
