@@ -21,7 +21,7 @@ before(async()=>{
  await db.exec("insert into outlets(id,name) values(1,'Teapot'),(2,'Chai');"+
  "insert into users(id,auth_user_id,name,access_class,active) values('"+admin+"','"+admin+"','Owner','ADMIN',true),('"+staff+"','"+staff+"','Manager','STAFF',true);"+
  "create or replace function public.get_effective_business_day(integer,timestamptz) returns date language sql stable as $$select date '2026-10-06'$$;");
- await db.exec(await fs.readFile(new URL('../supabase/migrations/20261006120000_customer_credits_b141.sql',import.meta.url),'utf8'));
+ await db.exec(await fs.readFile(new URL('../supabase/migrations/20261006125345_customer_credits_b141.sql',import.meta.url),'utf8'));
 });
 after(async()=>db?.close());beforeEach(async()=>{await db.exec('begin');await actor(admin);});afterEach(async()=>db.exec('rollback;reset role'));
 test('customer name, phone and opening credit are stored separately; collections reduce receivables without creating sales',async()=>{
