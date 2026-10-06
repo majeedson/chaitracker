@@ -104,11 +104,11 @@ begin
    or length(coalesce(p_payload->>'phone',''))>32 or coalesce(p_payload->>'phone','') !~ '^[+0-9 ()-]+$'
    or length(regexp_replace(coalesce(p_payload->>'phone',''),'[^0-9]','','g')) not between 7 and 15 then raise exception 'Enter a customer name and valid phone number'; end if;
   if p_action='CUSTOMER' then
+   amount:=round(coalesce((p_payload->>'amount')::numeric,0),2);
+   if amount<0 or amount>=1000000000000 then raise exception 'Invalid opening credit'; end if;
    insert into private.credit_customers(id,outlet_id,name,phone,created_business_date,created_by)
     values(req,outlet,btrim(p_payload->>'name'),btrim(p_payload->>'phone'),today,actor);
    customer:=req;
-   amount:=round(coalesce((p_payload->>'amount')::numeric,0),2);
-   if amount<0 or amount>=1000000000000 then raise exception 'Invalid opening credit'; end if;
    if amount>0 then
     insert into private.customer_credit_movements(id,outlet_id,customer_id,business_date,kind,amount,effect,note,created_by)
      values(req,outlet,customer,today,'ADD_CREDIT',amount,amount,v_note,actor);
