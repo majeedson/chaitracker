@@ -1,3 +1,4 @@
+import { renderBusinessDashboard } from './businessDashboard.js';
 import { loadStaffAvatars,staffAvatar,bindAvatarImages,refreshStaffAvatarElements,editProfilePhoto } from './staffAvatars.js';
 import { renderExtraTime } from './extraTime.js';
 import { APP_DOMAINS,roleModuleAccess,effectiveModuleAccess,hasModuleAccess } from './moduleAccess.js';
@@ -6,7 +7,7 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 136;
+const APP_BUILD = 137;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -122,7 +123,7 @@ async function renderLogin(root, supabase) {
       <section class="login-card">
         ${reloadButton}
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=136" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=137" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -306,7 +307,7 @@ function renderWorkspace(root, supabase, profile) {
     root.querySelectorAll('.drawer-item').forEach(b=>b.classList.toggle('active',b.dataset.module===module));
     closeDrawer();window.scrollTo({top:0,behavior:'instant'});await loadModule(view,supabase,profile,module,options);if(checkinNotice)view.insertAdjacentHTML('afterbegin','<p class="notice" role="status">Take your photo and check in for the current café day to open other modules. Leave and My profile remain available.</p>');if(profile.staff_id)refreshStaffAvatarElements(supabase,[Number(profile.staff_id)]).catch(console.warn);view.scrollIntoView({block:'start',behavior:'instant'});
   };
-  root.addEventListener('app:navigate',event=>{openModule(event.detail.module,{staffId:event.detail.staffId});});
+  root.addEventListener('app:navigate',event=>{const outletId=Number(event.detail.outletId);if(isAdmin&&outletId){profile.context_outlet_id=outletId;localStorage.setItem(outletContextKey,String(outletId));for(const select of root.querySelectorAll('#global-outlet,#mobile-global-outlet'))select.value=String(outletId);}openModule(event.detail.module,{staffId:event.detail.staffId});});
   root.querySelector('#drawer-open').onclick=openDrawer;root.querySelector('#drawer-close').onclick=closeDrawer;scrim.onclick=closeDrawer;
   root.querySelector('#brand-home').onclick=()=>openModule(landing);
   root.querySelector('#myProfilePicture')?.addEventListener('click',async()=>{try{await editProfilePhoto(supabase,profile);}catch(error){alert(error.message);}});
@@ -317,8 +318,9 @@ function renderWorkspace(root, supabase, profile) {
 }
 async function loadModule(view, supabase, profile, module, options={}) {
   if(!hasModuleAccess(profile,module)){view.innerHTML='<h2>Access unavailable</h2>';return;}
+  view._businessDashboardRequest=null;
   view.innerHTML = '<div class="loading">Loading…</div>';
-  if(['salary','people','summary','my-profile'].includes(module)){const {data,error}=await supabase.rpc('get_app_release');if(error||Number(data?.schema_build||0)<APP_BUILD){view.innerHTML='<h2>Update required</h2><p class="section-help">The database update is not ready yet. Please try again shortly.</p>';return;}}
+  if(['dashboard','salary','people','summary','my-profile'].includes(module)){const {data,error}=await supabase.rpc('get_app_release');if(error||Number(data?.schema_build||0)<APP_BUILD){view.innerHTML='<h2>Update required</h2><p class="section-help">The database update is not ready yet. Please try again shortly.</p>';return;}}
 
   if (module === 'dashboard') { await renderDashboard(view, supabase, profile); return; }
   if (module === 'attendance') { await renderAttendance(view, supabase, profile,options.staffId); return; }
@@ -351,53 +353,7 @@ async function loadModule(view, supabase, profile, module, options={}) {
 }
 
 async function renderDashboard(view, supabase, profile) {
-  if(profile.access_class!=='ADMIN'){view.innerHTML='<span class="eyebrow">Dashboard</span><h2>Admin access required</h2>';return;}
-  const [{data:outlets,error:outletError},{data:stockRows,error:stockError},{data:staffRows,error:staffError}]=await Promise.all([
-    supabase.from('outlets').select('id,name,theme_color').order('id'),
-    supabase.from('current_stock').select('outlet_id,item_id,item_name,minimum_stock,count_now,business_date'),
-    supabase.from('staff').select('id,outlet_id,employment_status,active')
-  ]);
-  if(outletError||stockError||staffError){view.innerHTML='<span class="eyebrow">Dashboard</span><h2>Dashboard unavailable</h2><p class="form-error">'+escapeHtml((outletError||stockError||staffError)?.message||'Unable to load dashboard.')+'</p>';return;}
-  const scopedOutlets=profile.context_outlet_id?(outlets||[]).filter(o=>Number(o.id)===Number(profile.context_outlet_id)):(outlets||[]);
-  const outletMap=new Map(scopedOutlets.map(o=>[Number(o.id),o]));
-  const todayByOutlet=new Map();
-  await Promise.all(scopedOutlets.map(async o=>{const {data}=await supabase.rpc('get_effective_business_day',{p_outlet_id:o.id,p_timestamp:new Date().toISOString()});if(data)todayByOutlet.set(Number(o.id),String(data));}));
-  const attendanceSets=await Promise.all(scopedOutlets.map(async o=>{const date=todayByOutlet.get(Number(o.id));if(!date)return {outlet:o,rows:[]};const {data,error}=await supabase.rpc('get_attendance_calendar',{p_outlet_id:o.id,p_start_date:date,p_end_date:date,p_staff_id:null});return {outlet:o,rows:error?[]:(data||[])};}));
-  const dateValues=[...todayByOutlet.values()];
-  let summaries=[];
-  if(dateValues.length){const min=dateValues.slice().sort()[0],max=dateValues.slice().sort().at(-1);const {data}=await supabase.from('daily_summaries').select('outlet_id,business_date,summary_status,short_excess').gte('business_date',min).lte('business_date',max);summaries=data||[];}
-  const alerts=[];
-  attendanceSets.forEach(({outlet,rows})=>{
-    const review=rows.filter(r=>r.day_status==='NEEDS_REVIEW').length;
-    const notIn=rows.filter(r=>r.day_status==='NOT_CHECKED_IN').length;
-    if(review)alerts.push({kind:'attendance',outlet:outlet.name,text:`${review} attendance record${review===1?'':'s'} need review`,module:'attendance'});
-    if(notIn)alerts.push({kind:'attendance',outlet:outlet.name,text:`${notIn} ${notIn===1?'person has':'people have'} not checked in`,module:'attendance'});
-  });
-  scopedOutlets.forEach(o=>{const date=todayByOutlet.get(Number(o.id));const row=summaries.find(x=>Number(x.outlet_id)===Number(o.id)&&String(x.business_date)===date);if(row&&row.summary_status!=='CLOSED')alerts.push({kind:'summary',outlet:o.name,text:'Daily Summary is open',module:'summary'});});
-  const latestStock=new Map();
-  (stockRows||[]).forEach(r=>{const key=Number(r.outlet_id)+'|'+r.item_id,old=latestStock.get(key);if(!old||String(r.business_date)>String(old.business_date))latestStock.set(key,r);});
-  const lowByOutlet=new Map();
-  [...latestStock.values()].filter(r=>!profile.context_outlet_id||Number(r.outlet_id)===Number(profile.context_outlet_id)).forEach(r=>{const min=Number(r.minimum_stock||0),count=Number(r.count_now||0);if(min>0&&count<min)lowByOutlet.set(Number(r.outlet_id),(lowByOutlet.get(Number(r.outlet_id))||0)+1);});
-  lowByOutlet.forEach((count,id)=>alerts.push({kind:'stock',outlet:outletMap.get(id)?.name||'Café',text:`${count} stock item${count===1?' is':'s are'} below minimum`,module:'stock'}));
-  const scopedStaff=profile.context_outlet_id?(staffRows||[]).filter(s=>Number(s.outlet_id)===Number(profile.context_outlet_id)):(staffRows||[]);const activeStaff=scopedStaff.filter(s=>s.active&&s.employment_status==='ACTIVE').length;
-  const awayStaff=scopedStaff.filter(s=>['VACATION','LEAVE'].includes(s.employment_status)).length;
-  const closedSummaries=scopedOutlets.filter(o=>{const d=todayByOutlet.get(Number(o.id));return summaries.some(x=>Number(x.outlet_id)===Number(o.id)&&String(x.business_date)===d&&x.summary_status==='CLOSED');}).length;
-  const hour=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',hour:'2-digit',hour12:false}).format(new Date()));
-  const greeting=hour<12?'Good morning':hour<17?'Good afternoon':'Good evening';
-  view.innerHTML=`
-    <div class="dashboard-head"><div><span class="eyebrow">${profile.context_outlet_id?escapeHtml(outletMap.get(Number(profile.context_outlet_id))?.name||'Selected café'):'All cafés'}</span><h2>${greeting}, ${escapeHtml(profile.name)}</h2><p class="muted">Here’s what needs attention across CafeTracker.</p></div><span class="soft-badge">${alerts.length} needing attention</span></div>
-    <section class="dashboard-attention"><div class="section-heading"><div><h3>Needs Attention</h3><span class="hint">Live from current CafeTracker records</span></div></div>
-      <div class="attention-list">${alerts.length?alerts.map(a=>`<button type="button" class="attention-row" data-open-module="${a.module}"><span class="attention-icon">${icon(a.kind==='summary'?'summary':a.kind==='stock'?'stock':'attendance',20)}</span><span class="attention-copy"><strong>${escapeHtml(a.outlet)}</strong><small>${escapeHtml(a.text)}</small></span><span class="person-chevron">›</span></button>`).join(''):`<div class="all-caught-up">${icon('check',24)}<div><strong>All caught up</strong><span>No current records need Admin attention.</span></div></div>`}</div>
-    </section>
-    <section class="dashboard-today"><div class="section-heading"><div><h3>Today across cafés</h3><span class="hint">Database records only</span></div></div>
-      <div class="today-grid">
-        <div class="today-stat"><strong>${scopedOutlets.length}</strong><span>Cafés</span></div>
-        <div class="today-stat"><strong>${activeStaff}</strong><span>Active staff</span></div>
-        <div class="today-stat"><strong>${awayStaff}</strong><span>On leave / vacation</span></div>
-        <div class="today-stat"><strong>${closedSummaries}</strong><span>Summaries closed</span></div>
-      </div>
-    </section>`;
-  view.querySelectorAll('[data-open-module]').forEach(btn=>btn.onclick=()=>document.querySelector('.drawer-item[data-module="'+btn.dataset.openModule+'"]')?.click());
+  return renderBusinessDashboard(view,supabase,profile);
 }
 
 async function renderDailySummary(view, supabase, profile) {
