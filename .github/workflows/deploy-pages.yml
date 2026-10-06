@@ -42,6 +42,10 @@ jobs:
         run: node tests/browser/cigarettes-layout.mjs
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+      - name: Check Daily Summary phone layouts and button labels
+        run: node tests/browser/daily-summary-layout.mjs
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
       - run: npm run check:release
       - name: Require matching database before publishing
         if: github.event_name != 'pull_request'
