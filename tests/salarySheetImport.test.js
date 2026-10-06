@@ -20,6 +20,7 @@ before(async()=>{
  insert into daily_summaries(id,outlet_id,business_date,cash_sale,net_sale) values('DAY',1,'2026-09-25',2000,2000);
  insert into summary_staff_payouts(summary_id,staff_id,staff_name,payout_type,amount) values('DAY',1,'Employee','Salary',750),('DAY',1,'Employee','Advance',200),('DAY',1,'Employee','OT',25);`);
  await db.exec(await fs.readFile(new URL('../supabase/migrations/20261006150713_payroll_dashboard_b142.sql',import.meta.url),'utf8'));
+ await db.exec(await fs.readFile(new URL('../supabase/migrations/20261006152617_salary_context_superseded.sql',import.meta.url),'utf8'));
 });
 after(async()=>db?.close());beforeEach(async()=>{await db.exec('begin');await db.query("select set_config('request.jwt.claim.sub',$1,false)",[admin]);});afterEach(async()=>{await db.exec('rollback;reset role');});
 test('last sheet row wins per salary start month even with backdated timestamps; net salary preserves advance deductions',async()=>{
@@ -42,6 +43,14 @@ test('superseded existing months retain their IDs and originals but do not enter
  const plan=buildSalaryImport(await input([row('OLD'),row('NEW',{PeriodStart:'2026-08-01'})]));await importPlan(plan);
  const d=await dashboard();assert.equal(d.payroll_records_not_marked_paid,0);assert.equal(Number((await db.query("select net_salary from salary_records where id='OLD'")).rows[0].net_salary),700);
  assert.equal((await db.query("select payroll_details->'salary_sheet_import'->>'superseded' value from salary_records where id='OLD'")).rows[0].value,'true');
+});
+test('salary picker skips a later-starting superseded duplicate and retains staff/self authorization',async()=>{
+ await db.exec("insert into salary_records(id,outlet_id,staff_id,period_start,period_end,net_salary,legacy_salary_id) values('OLD',1,1,'2026-08-23','2026-09-22',700,'OLD')");
+ await importPlan(buildSalaryImport(await input([row('OLD',{PeriodStart:'2026-08-23'}),row('NEW')])));
+ const context=async(id,month)=>(await db.query('select public.get_salary_payroll_context($1,$2) data',[id,month])).rows[0].data;
+ assert.equal((await context(1,'2026-08-01')).current.id,'NEW');assert.equal((await context(1,'2026-10-01')).prior.id,'NEW');
+ await db.exec("update users set access_class='STAFF',staff_id=1;set role authenticated");assert.equal((await context(1,'2026-08-01')).current.id,'NEW');
+ await db.exec('savepoint denied');await assert.rejects(context(2,'2026-08-01'),/only view your own salary/);await db.exec('rollback to denied;set role anon;savepoint denied');await assert.rejects(context(1,'2026-08-01'),/permission denied/);await db.exec('rollback to denied');
 });
 test('inspection drift and reused or foreign summary links are rejected atomically',async()=>{
  await db.exec("insert into salary_records(id,outlet_id,staff_id,period_start,period_end,net_salary,legacy_salary_id) values('SAL',1,1,'2026-08-12','2026-09-11',700,'SAL')");
