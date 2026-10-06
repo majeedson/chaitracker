@@ -42,7 +42,7 @@ declare baseline numeric:=0; closed_month date;
 begin
  select b.balance,b.period_month into baseline,closed_month from private.customer_credit_balances b
  join private.customer_credit_months c using(outlet_id,period_month)
- where b.outlet_id=p_outlet and b.customer_id=p_customer and c.status='CLOSED'
+ where b.outlet_id=p_outlet and b.customer_id=p_customer and c.status in('CLOSED','REOPENED')
  order by b.period_month desc limit 1;
  baseline:=coalesce(baseline,0);
  if exists(select 1 from (
@@ -69,7 +69,7 @@ begin
   m.effect movements,coalesce(b.balance,0)+m.effect balance
  from scoped o join private.credit_customers v on v.outlet_id=o.id and v.created_business_date<=o.as_of
  left join lateral(select cb.period_month,cb.balance from private.customer_credit_balances cb join private.customer_credit_months cm using(outlet_id,period_month)
-  where cb.outlet_id=o.id and cb.customer_id=v.id and cm.status='CLOSED' and (cb.period_month+interval '1 month - 1 day')::date<=o.as_of order by cb.period_month desc limit 1) b on true
+  where cb.outlet_id=o.id and cb.customer_id=v.id and cm.status in('CLOSED','REOPENED') and (cb.period_month+interval '1 month - 1 day')::date<=o.as_of order by cb.period_month desc limit 1) b on true
  cross join lateral(select coalesce(sum(effect),0) effect from private.customer_credit_movements
   where outlet_id=o.id and customer_id=v.id and voided_at is null and business_date<=o.as_of
    and (b.period_month is null or business_date>=b.period_month+interval '1 month')) m)
@@ -145,6 +145,7 @@ begin
    update private.customer_credit_months set status='REOPENED',note=v_note||' | Reopened: '||private.customer_credit_months.note where outlet_id=outlet and period_month=month_day;
   else
    if last_closed is not null and month_day<=last_closed then raise exception 'Month already closed or older than the latest closing'; end if;
+   if exists(select 1 from private.customer_credit_months where outlet_id=outlet and status='REOPENED' and period_month<>month_day) then raise exception 'Finish the reopened month before closing another month'; end if;
    if jsonb_typeof(p_payload->'balances') is distinct from 'array' then raise exception 'Confirmed customer balances required'; end if;
    if (select count(*) from jsonb_to_recordset(p_payload->'balances') x(customer_id uuid,balance numeric))<>(select count(*) from private.credit_customers where outlet_id=outlet and created_business_date<month_day+interval '1 month')
     or exists(select 1 from jsonb_to_recordset(p_payload->'balances') x(customer_id uuid,balance numeric) where x.balance is null or x.balance<0 or x.balance>=1000000000000 or not exists(select 1 from private.credit_customers v where v.id=x.customer_id and v.outlet_id=outlet and v.created_business_date<month_day+interval '1 month'))

@@ -79,12 +79,13 @@ test('closing applies to customers existing at month end, keeps outlets separate
  await rejects(()=>action('REOPEN',{month:'2026-08-01'}),/latest closed/);
  assert.notEqual(c,newCustomer);assert.equal((await read(2)).accounts.length,0);
 });
-test('month closing requires every eligible customer once and prevents a closing from leaving later overcollection',async()=>{
+test('month closing requires every eligible customer once; reopening retains a provisional balance and re-closing validates payments',async()=>{
  const c=await customer({amount:0});await db.query("update private.credit_customers set created_business_date='2026-09-01' where id=$1",[c]);
  for(const balances of [[],[{customer_id:c,balance:-1}],[{customer_id:c,balance:2},{customer_id:c,balance:3}],[{customer_id:id(),balance:0}]])await rejects(()=>action('CLOSE',{month:'2026-09-01',balances}),/every customer/);
  await action('CLOSE',{month:'2026-09-01',balances:[{customer_id:c,balance:100}]});await movement(c,{amount:90});
- await rejects(()=>action('REOPEN',{month:'2026-09-01'}),/exceeds customer credit/);
- assert.equal((await read()).accounts[0].balance,10);
+ await action('REOPEN',{month:'2026-09-01'});assert.equal((await read()).accounts[0].balance,10);
+ await rejects(()=>action('CLOSE',{month:'2026-09-01',balances:[{customer_id:c,balance:80}]}),/exceeds customer credit/);
+ await action('CLOSE',{month:'2026-09-01',balances:[{customer_id:c,balance:150}]});assert.equal((await read()).accounts[0].balance,60);
 });
 test('backdated collection cannot be supported by credit entered on a later day',async()=>{
  const c=await customer({amount:0});await db.query("update private.credit_customers set created_business_date='2026-10-01' where id=$1",[c]);
