@@ -1,3 +1,4 @@
+import { renderVendorCredits } from './vendorCredits.js';
 import { prepareAttendancePhoto,attendancePhotoError } from './attendancePhoto.js';
 import { renderBusinessDashboard } from './businessDashboard.js';
 import { loadStaffAvatars,staffAvatar,bindAvatarImages,refreshStaffAvatarElements,editProfilePhoto } from './staffAvatars.js';
@@ -8,9 +9,10 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 138;
+const APP_BUILD = 139;
 const modules = [
   ['dashboard', 'Dashboard'],
+  ['credits', 'Credits'],
   ['attendance', 'Attendance'],
   ['salary', 'Salary'],
   ['stock', 'Stock'],
@@ -48,6 +50,7 @@ function icon(name, size=20) {
     summary:'<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>',
     delta:'<path d="m7 7 5-4 5 4M12 3v8"/><path d="m17 17-5 4-5-4M12 21v-8"/>',
     salary:'<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 9H5v6h2M17 9h2v6h-2"/>',
+    credits:'<path d="M3 7h18v13H3zM3 7V4h15v3"/><path d="M14 11h7v5h-7zM6 11h4M6 16h4"/>',
     dashboard:'<path d="M4 13a8 8 0 1 1 16 0"/><path d="m12 13 4-4"/><path d="M5 18h14"/>',
     people:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-4 2-7 6-7s6 3 6 7"/><circle cx="17" cy="9" r="2"/><path d="M16 14c3 0 5 2 5 5"/>',
     user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c0-5 3-8 8-8s8 3 8 8"/>',
@@ -124,7 +127,7 @@ async function renderLogin(root, supabase) {
       <section class="login-card">
         ${reloadButton}
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=138" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=139" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -320,9 +323,11 @@ function renderWorkspace(root, supabase, profile) {
 async function loadModule(view, supabase, profile, module, options={}) {
   if(!hasModuleAccess(profile,module)){view.innerHTML='<h2>Access unavailable</h2>';return;}
   view._businessDashboardRequest=null;
+  view._creditsRequest=null;view._creditsClosingRequest=null;
   view.innerHTML = '<div class="loading">Loading…</div>';
-  if(['dashboard','salary','people','summary','my-profile'].includes(module)){const {data,error}=await supabase.rpc('get_app_release');if(error||Number(data?.schema_build||0)<APP_BUILD){view.innerHTML='<h2>Update required</h2><p class="section-help">The database update is not ready yet. Please try again shortly.</p>';return;}}
+  if(['dashboard','credits','salary','people','summary','my-profile'].includes(module)){const {data,error}=await supabase.rpc('get_app_release');if(error||Number(data?.schema_build||0)<APP_BUILD){view.innerHTML='<h2>Update required</h2><p class="section-help">The database update is not ready yet. Please try again shortly.</p>';return;}}
 
+  if (module === 'credits') { await renderVendorCredits(view, supabase, profile); return; }
   if (module === 'dashboard') { await renderDashboard(view, supabase, profile); return; }
   if (module === 'attendance') { await renderAttendance(view, supabase, profile,options.staffId); return; }
   if (module === 'summary') { await renderDailySummary(view, supabase, profile); return; }
