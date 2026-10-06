@@ -24,7 +24,7 @@ before(async()=>{
 after(async()=>db?.close());beforeEach(async()=>{await db.exec('begin');await actor(admin);});afterEach(async()=>db.exec('rollback;reset role'));
 test('unknown supplier balances stay unavailable; all vendors and cafés appear without netting debts against credits',async()=>{
  const initial=await read();assert.equal(initial.accounts.length,2);assert.ok(initial.accounts.every(a=>a.balance===null));assert.equal(creditTotals(initial.accounts).toPay,null);
- await closing();const data=await read(null);assert.equal(data.accounts.length,4);const t=creditTotals(data.accounts);assert.equal(t.toPay,1000);assert.equal(t.toReceive,300);assert.equal(t.unknown,2);
+ await closing();const data=await read(null);assert.equal(data.accounts.length,4);const t=creditTotals(data.accounts);assert.equal(t.toPay,1000);assert.equal(t.toReceive,0);assert.equal(t.unknown,2);
  assert.ok(data.accounts.filter(a=>a.outlet_id===2).every(a=>a.balance===null));
 });
 test('monthly confirmed balances carry forward with payment and receipt effects; receipts do not create café sales',async()=>{
@@ -61,15 +61,23 @@ test('only active administrators can read/write credit accounts; private tables 
  await db.exec('set role authenticated');await rejects(()=>db.query('select * from private.vendor_credit_balances'),/permission denied/);await db.exec('set role anon');await rejects(()=>read(),/permission denied/);
  assert.equal(hasModuleAccess({access_class:'ADMIN'},'credits'),true);assert.equal(hasModuleAccess({access_class:'STAFF',role:'Manager',permissions:{module_access:{credits:true}}},'credits'),false);
 });
-test('Credits UI filters vendors, requires a confirmed closing and submits vendor-specific payment directions',async()=>{
+test('vendor cards keep refunds separate from customer receivables and require closing confirmation',async()=>{
  await closing();const d=await read(),dom=new JSDOM('<main></main>'),view=dom.window.document.querySelector('main'),calls=[];
- const client={rpc:async(name,args)=>{calls.push({name,args});return {data:name==='get_vendor_credits'?args.p_month==='2026-08-01'?{...d,month:'2026-08-01',month_states:[]}:d:{action:'MOVEMENT'}};}};
- await renderVendorCredits(view,client,{access_class:'ADMIN',context_outlet_id:1});assert.equal(view.querySelectorAll('#creditVendorRows tr').length,2);
- view.querySelector('[data-credit-tab="receive"]').click();assert.equal(view.querySelectorAll('#creditVendorRows tr').length,1);assert.match(view.querySelector('#creditVendorRows').textContent,/Provit/);
- view.querySelector('#creditOpenMovement').click();const form=view.querySelector('#creditMovementForm');form.elements.vendor_id.value='2';form.elements.kind.value='RECEIVE_VENDOR';form.elements.amount.value='50';form.elements.note.value='Vendor refund';form.dispatchEvent(new dom.window.Event('submit',{cancelable:true}));
- await new Promise(resolve=>setTimeout(resolve,0));const write=calls.find(c=>c.name==='manage_vendor_credits');assert.equal(write.args.p_payload.vendor_id,2);assert.equal(write.args.p_payload.kind,'RECEIVE_VENDOR');assert.equal(write.args.p_payload.expected_revision,1);
- view.querySelector('#creditOpenClosing').click();await new Promise(resolve=>setTimeout(resolve,0));assert.match(view.querySelector('#creditClosingPanel').textContent,/is closed/);
- view.querySelector('#creditClosingMonth').value='2026-08';view.querySelector('#creditClosingMonth').dispatchEvent(new dom.window.Event('change'));await new Promise(resolve=>setTimeout(resolve,0));const closingForm=view.querySelector('#creditClosingForm');assert.equal(closingForm.elements.confirmed.required,true);assert.equal(closingForm.elements.amount_1.required,true);
- const beforeWrites=calls.filter(c=>c.name==='manage_vendor_credits').length;closingForm.elements.note.value='Verified';closingForm.dispatchEvent(new dom.window.Event('submit',{cancelable:true}));await new Promise(resolve=>setTimeout(resolve,0));assert.equal(calls.filter(c=>c.name==='manage_vendor_credits').length,beforeWrites);
+ const customerData={...d,customers:[],accounts:[],movements:[],month_states:[],revision:0};
+ const client={rpc:async(name,args)=>{calls.push({name,args});return {data:name==='get_customer_credits'?customerData:name==='get_vendor_credits'?args.p_month==='2026-08-01'?{...d,month:'2026-08-01',month_states:[]}:d:{action:'MOVEMENT'}};}};
+ await renderVendorCredits(view,client,{access_class:'ADMIN',context_outlet_id:1});
+ assert.equal(view.querySelectorAll('.credit-account').length,2);assert.equal(view.querySelectorAll('table').length,0);
+ assert.match(view.querySelector('#creditAccountRows').textContent,/Vendor credit/);
+ assert.match(view.querySelector('.credit-kpis').textContent,/To receive · Customers₹0/);
+ assert.equal(view.querySelector('.biz-methodology').open,false);assert.equal(view.querySelector('.biz-method-inline'),null);
+ view.querySelector('#creditOpenMovement').click();const form=view.querySelector('#creditMovementForm');
+ form.elements.vendor_id.value='2';form.elements.kind.value='RECEIVE_VENDOR';form.elements.amount.value='50';form.elements.note.value='Vendor refund';
+ form.dispatchEvent(new dom.window.Event('submit',{cancelable:true}));await new Promise(resolve=>setTimeout(resolve,0));
+ const write=calls.find(c=>c.name==='manage_vendor_credits');assert.equal(write.args.p_payload.vendor_id,2);assert.equal(write.args.p_payload.kind,'RECEIVE_VENDOR');assert.equal(write.args.p_payload.expected_revision,1);
+ view.querySelector('#creditOpenClosing').click();await new Promise(resolve=>setTimeout(resolve,0));assert.match(view.querySelector('#creditClosingPanel').textContent,/Closed/);
+ view.querySelector('#creditClosingMonth').value='2026-08';view.querySelector('#creditClosingMonth').dispatchEvent(new dom.window.Event('change'));await new Promise(resolve=>setTimeout(resolve,0));
+ const closingForm=view.querySelector('#creditClosingForm');assert.equal(closingForm.elements.confirmed.required,true);assert.equal(closingForm.elements.amount_1.required,true);
+ const beforeWrites=calls.filter(c=>c.name==='manage_vendor_credits').length;closingForm.elements.note.value='Verified';
+ closingForm.dispatchEvent(new dom.window.Event('submit',{cancelable:true}));await new Promise(resolve=>setTimeout(resolve,0));assert.equal(calls.filter(c=>c.name==='manage_vendor_credits').length,beforeWrites);
  dom.window.close();
 });

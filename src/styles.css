@@ -859,9 +859,63 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .biz-methodology{padding:15px 18px;border:1px solid #e7e9e3;border-radius:12px;color:#7c8378;font-size:11px;line-height:1.8}.biz-methodology summary{cursor:pointer;font-weight:700;color:#5d6954}.biz-methodology p{margin:12px 0 0}
 @media(max-width:900px){.biz-month-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.biz-two-column{grid-template-columns:1fr}}
 @media(max-width:600px){.business-dashboard{gap:15px}.biz-heading{flex-direction:column;gap:14px}.biz-heading h2{font-size:25px}.biz-date-controls{width:100%;justify-content:space-between}.biz-date-controls label{flex:1;min-width:0}.biz-date-controls input{width:100%;min-width:0}.biz-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.biz-kpi{padding:15px 12px;border-radius:12px}.biz-kpi>strong{font-size:23px}.biz-kpi>small,.biz-kpi-note{font-size:10px}.biz-section{padding:16px;border-radius:13px}.biz-section-heading{flex-direction:column;gap:8px}.biz-period-change{max-width:none;text-align:left}.biz-month-grid{gap:19px 10px}.biz-month-grid strong{font-size:22px}.biz-trend-bars{gap:4px}.biz-table th,.biz-table td{padding:12px 9px}.biz-comparison{gap:14px}.biz-comparison strong{font-size:17px}}
-.credit-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.credit-toolbar,.credit-form-buttons{display:flex;align-items:center;flex-wrap:wrap;gap:12px;margin:20px 0}.vendor-credits label{display:grid;gap:7px;font-size:13px;color:var(--muted)}.vendor-credits input,.vendor-credits select{width:100%;min-width:0;box-sizing:border-box}.credit-search{max-width:230px}.credit-tabs{display:flex;gap:8px;padding:4px;margin-bottom:20px;border-radius:14px;background:#f3f1ed}.credit-tabs button{flex:1;border:0;border-radius:11px;padding:12px 8px;font-weight:650;background:transparent;color:#5f625c}.credit-tabs button[aria-selected=true]{background:#173c33;color:#fff;box-shadow:0 2px 6px #173c3320}.credit-unconfirmed{color:#9b6517;font-size:12px}.credit-confirmed{color:#24614c;font-size:12px}.credit-month-label{max-width:240px;margin-bottom:18px}.credit-closing-table select{min-width:100px}.credit-closing-table input{min-width:120px;max-width:210px}.credit-confirm-check{display:flex!important;align-items:center;gap:10px!important;margin:18px 0}.credit-confirm-check input{width:18px;height:18px;flex:none}.credit-movement-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-top:20px}.credit-note-field,.credit-form-buttons,.credit-movement-form [role=status]{grid-column:1/-1}.credit-simple-form{display:flex;align-items:end;flex-wrap:wrap;gap:14px;margin:18px 0}.credit-simple-form label{flex:1;min-width:180px}.credit-simple-form [role=status]{width:100%}.credit-voided{opacity:.55}.credit-voided td:nth-child(3){text-decoration:line-through}.credit-closing{border-color:#b4cbc1}.credit-closing form>label{margin-top:18px}
-@media(max-width:640px){.credit-kpis{grid-template-columns:1fr}.credit-movement-form{grid-template-columns:1fr}.credit-search{max-width:100%;width:100%}.credit-toolbar>button{flex:1}.credit-closing-table th:first-child{min-width:110px}.credit-simple-form{align-items:stretch}.credit-simple-form label{min-width:100%;width:100%}.credit-closing-table input{min-width:100px}.credit-closing .biz-section-heading{align-items:start}.credit-tabs button{font-size:13px;padding:11px 5px}}
+.credit-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+.vendor-credits,.vendor-credits *{box-sizing:border-box}
+.vendor-credits{min-width:0;max-width:100%}
+.vendor-credits .biz-heading>div,.vendor-credits .biz-section,.vendor-credits .biz-section-heading>div,.vendor-credits form,.vendor-credits label{min-width:0}
+.vendor-credits strong,.vendor-credits p,.vendor-credits small,.vendor-credits a,.vendor-credits button{overflow-wrap:anywhere}
+.vendor-credits h3{margin:0 0 12px}
+.vendor-credits label{display:grid;gap:7px;font-size:13px;color:var(--muted)}
+.vendor-credits input,.vendor-credits select{width:100%;min-width:0;max-width:100%;box-sizing:border-box}
+.vendor-credits button{min-width:0;max-width:100%;white-space:normal}
+.credit-toolbar,.credit-form-buttons{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:12px 0}
+.credit-search{max-width:230px}
+.credit-tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:4px;border-radius:14px;background:#f3f1ed}
+.credit-tabs button{border:0;border-radius:11px;padding:12px 8px;font-weight:650;background:transparent;color:#5f625c}
+.credit-tabs button[aria-selected=true]{background:#173c33;color:#fff;box-shadow:0 2px 6px #173c3320}
+.credit-month-label{max-width:240px;margin-bottom:18px}
+.credit-account-list,.credit-entry-list,.credit-closing-list{display:grid;gap:10px}
+.credit-account,.credit-entry{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto);gap:12px;border:1px solid var(--line,#e4e7e5);border-radius:12px;padding:14px}
+.credit-account-main,.credit-entry-main,.credit-account-balance{display:grid;gap:5px;min-width:0;align-content:start}
+.credit-account-main small,.credit-entry small,.credit-account-balance small,.credit-closing-row small{color:var(--muted);font-size:12px;white-space:normal}
+.credit-account-balance{text-align:right;max-width:100%}
+.credit-account-balance strong{font-size:18px}
+.credit-account-balance button{justify-self:end;padding:5px 9px}
+.credit-phone,.credit-cafe-link{font-size:13px;color:#24614c;justify-self:start}
+.credit-cafe-link{border:0;background:none;padding:0;text-align:left}
+.credit-entry p{margin:3px 0;font-size:13px;white-space:normal}
+.credit-closing-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px;padding:14px;border:1px solid var(--line,#e4e7e5);border-radius:12px}
+.credit-closing-row>div{grid-column:1/-1;display:grid;gap:4px;min-width:0}
+.credit-confirm-check{display:flex!important;align-items:center;gap:10px!important;margin:18px 0}
+.credit-confirm-check input{width:18px;height:18px;flex:none}
+.credit-movement-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}
+.credit-note-field,.credit-form-buttons,.credit-movement-form [role=status]{grid-column:1/-1}
+.credit-simple-form{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin:16px 0}
+.credit-simple-form label{flex:1 1 180px}
+.credit-simple-form [role=status]{width:100%}
+.credit-voided{opacity:.55}
+.credit-voided .credit-account-balance strong{text-decoration:line-through}
+.credit-closing{border-color:#b4cbc1}
+.credit-closing-form{display:grid;gap:14px}
+.credit-closing-form>button{justify-self:start}
 .vendor-credits [hidden]{display:none!important}
+.business-dashboard .biz-heading>div,.business-dashboard .biz-section-heading>div{min-width:0}
+.business-dashboard .biz-kpi strong{overflow-wrap:anywhere}
+@media(max-width:640px){
+ .vendor-credits .biz-heading,.vendor-credits .biz-section-heading{flex-direction:column;align-items:stretch;gap:12px}
+ .vendor-credits .biz-date-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;width:100%}
+ .vendor-credits .biz-date-controls label{max-width:100%}
+ .vendor-credits .biz-section{padding:16px}
+ .credit-movement-form{grid-template-columns:minmax(0,1fr)}
+ .credit-search{max-width:100%;width:100%}
+ .credit-toolbar>button{flex:1 1 120px}
+ .credit-simple-form{align-items:stretch}
+ .credit-simple-form label{flex-basis:100%;width:100%}
+ .credit-account,.credit-entry{grid-template-columns:minmax(0,1fr) minmax(0,40%);padding:12px;gap:8px}
+ .credit-account-balance strong{font-size:16px}
+ .credit-tabs button{font-size:13px}
+}
+@media(max-width:360px){.credit-closing-row{grid-template-columns:minmax(0,1fr)}.credit-kpis .biz-kpi{padding:14px}.credit-kpis .biz-kpi strong{font-size:24px}}
 
 .attendance-correction-card .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 .attendance-correction-card input,.attendance-correction-card select{width:100%;min-width:0;max-width:100%;box-sizing:border-box}
