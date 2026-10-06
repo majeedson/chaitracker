@@ -15,6 +15,7 @@ ChaiTracker is the operational web/PWA application for Teapot and ChaiCafe.
 - Keep RLS enabled on every exposed public table. Add narrow policies and guarded RPCs for new workflows, and test anonymous, staff, manager, and owner access before deployment.
 - Keep business-date logic, stock, purchases, attendance, daily summary, PO, delta and salary behavior aligned with the legacy application.
 - Use Orders for the single suggested/manual ordering checklist and owner draft POs; use Purchases only to record goods or invoices after they arrive.
+- Purchases and Orders share collapsed vendor cards and one catalogue. Adding an item in either screen makes it available in both for the selected café; Purchases saves each vendor separately and supports item quantities or invoice totals.
 - Outlet opening hours support seasonal effective date ranges.
 
 ## Local development

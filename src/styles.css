@@ -919,3 +919,22 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 
 .attendance-correction-card .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 .attendance-correction-card input,.attendance-correction-card select{width:100%;min-width:0;max-width:100%;box-sizing:border-box}
+
+/* Purchases and Orders share collapsed vendor cards and the catalogue form. */
+.catalogue-item-form,.catalogue-item-form label,.vendor-invoice-area label{display:grid;gap:6px;min-width:0}
+.catalogue-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.catalogue-item-form input,.catalogue-item-form select,.vendor-invoice-area input{width:100%;min-width:0;max-width:100%;box-sizing:border-box}
+.catalogue-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.catalogue-matches{display:grid;gap:4px}.catalogue-matches:empty{display:none}
+.vendor-purchase-row{display:grid;grid-template-columns:minmax(0,1fr) 80px 45px 110px;gap:8px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border,#e9e5df)}
+.purchase-item-name{display:flex;gap:8px;align-items:center;min-width:0}.purchase-item-name input{width:18px;flex:0 0 18px}.purchase-item-name span{min-width:0}
+.purchase-item-name strong,.purchase-item-name small{display:block;overflow-wrap:anywhere}.purchase-item-name small{color:var(--muted);font-size:11px}
+.vendor-purchase-row>label:not(.purchase-item-name){display:grid;gap:4px;font-size:11px;min-width:0}.vendor-purchase-row input[type=number]{min-width:0;width:100%;box-sizing:border-box;padding:8px}
+.purchase-unit{overflow-wrap:anywhere;font-size:12px}.purchase-vendor-card .order-category-actions{flex-wrap:wrap;align-items:center}.vendor-purchase-total{margin-left:auto}
+.purchase-history-line{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--border,#e9e5df);min-width:0}.purchase-history-line span{min-width:0;overflow-wrap:anywhere}.purchase-history-line small{display:block;color:var(--muted)}.purchase-history-line b{flex-shrink:0}
+.order-category-group>summary>span{min-width:0;overflow-wrap:anywhere}.category-add-panel{min-width:0}
+@media(max-width:600px){.vendor-purchase-row{grid-template-columns:minmax(0,1fr) 40px minmax(0,1fr)}.purchase-item-name{grid-column:1/-1}.vendor-purchase-row>label:not(.purchase-item-name){grid-row:2}.purchase-unit{grid-row:2;text-align:center}.purchase-vendor-card .order-category-actions>.primary{width:100%}.catalogue-fields{grid-template-columns:minmax(0,1fr)}.purchase-history-line{flex-wrap:wrap}}
+.purchase-vendor-card [hidden],.catalogue-item-form [hidden]{display:none!important}
+.order-category-group>summary>span{flex:1;display:grid;gap:3px;margin-right:8px}
+.order-category-group>summary strong,.order-category-group>summary small,.order-suggestion-row>span{min-width:0;overflow-wrap:anywhere}
+.order-suggestion-row>em{max-width:45px;overflow-wrap:anywhere}

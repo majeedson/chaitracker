@@ -27,6 +27,8 @@ jobs:
       - run: npm test
       - name: Check Credits phone layouts
         run: node tests/browser/credits-layout.mjs
+      - name: Check Purchases and Orders phone layouts
+        run: node tests/browser/vendor-purchases-layout.mjs
       - run: npm run check:release
       - name: Require matching database before publishing
         if: github.event_name != 'pull_request'

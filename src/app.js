@@ -1,3 +1,5 @@
+import { bindItemAdder } from './vendorCatalogue.js';
+import { renderVendorPurchases } from './vendorPurchases.js';
 import { renderVendorCredits } from './vendorCredits.js';
 import { prepareAttendancePhoto,attendancePhotoError } from './attendancePhoto.js';
 import { renderBusinessDashboard } from './businessDashboard.js';
@@ -9,7 +11,7 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 142;
+const APP_BUILD = 143;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['credits', 'Credits'],
@@ -127,7 +129,7 @@ async function renderLogin(root, supabase) {
       <section class="login-card">
         ${reloadButton}
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=142" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=143" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -325,7 +327,7 @@ async function loadModule(view, supabase, profile, module, options={}) {
   view._businessDashboardRequest=null;
   view._creditsRequest=null;view._creditsClosingRequest=null;
   view.innerHTML = '<div class="loading">Loading…</div>';
-  if(['dashboard','credits','salary','people','summary','my-profile'].includes(module)){const {data,error}=await supabase.rpc('get_app_release');if(error||Number(data?.schema_build||0)<APP_BUILD){view.innerHTML='<h2>Update required</h2><p class="section-help">The database update is not ready yet. Please try again shortly.</p>';return;}}
+  if(['dashboard','credits','salary','people','summary','my-profile','orders','purchase'].includes(module)){const {data,error}=await supabase.rpc('get_app_release');if(error||Number(data?.schema_build||0)<APP_BUILD){view.innerHTML='<h2>Update required</h2><p class="section-help">The database update is not ready yet. Please try again shortly.</p>';return;}}
 
   if (module === 'credits') { await renderVendorCredits(view, supabase, profile); return; }
   if (module === 'dashboard') { await renderDashboard(view, supabase, profile); return; }
@@ -1013,6 +1015,9 @@ async function renderPurchases(view, supabase, profile, workspace='purchase') {
   }
 
   const businessDate = bizDate;
+  const {data:catalogue,error:catalogueError}=await supabase.rpc('get_vendor_catalogue',{p_outlet_id:outletId,p_module:workspace});
+  if(catalogueError){view.innerHTML='<p class="form-error">'+escapeHtml(catalogueError.message)+'</p>';return;}
+  if(!ordersOnly){await renderVendorPurchases(view,supabase,profile,{outletId,businessDate,catalogue});return;}
   view.innerHTML = `
     <div class="section-heading">
       <div><span class="eyebrow">Operations</span><h2>${ordersOnly?'Orders':'Purchases'}</h2></div>
@@ -1021,7 +1026,7 @@ async function renderPurchases(view, supabase, profile, workspace='purchase') {
 
 
     <section id="purchaseOrderWorkspace" ${ordersOnly?'':'hidden'}>
-      <div class="section-heading compact-heading"><div><span class="eyebrow">Stock intelligence</span><h3>To order</h3><p class="section-help">Check suggestions, add other items, then prepare each vendor order.</p></div></div>
+      <div class="section-heading compact-heading"><div><span class="eyebrow">Stock intelligence</span><h3>To order</h3></div></div>
       <div id="orderQuickSummary" class="order-quick-summary">Loading suggestions…</div>
       <div id="orderSaveMessage" class="purchase-message" hidden></div>
       <div id="tomorrowOrderRows"></div>
@@ -1030,50 +1035,8 @@ async function renderPurchases(view, supabase, profile, workspace='purchase') {
       <div id="stockUndoToast" class="stock-undo-toast" hidden><span>Item removed</span><button type="button">Undo</button></div>
       ${isOwner?'<section class="summary-section"><div class="summary-section-title"><span></span><h3>Recent drafts</h3></div><div id="recentOrderDrafts">Loading…</div></section>':''}
     </section>
-    <section id="purchaseEntryWorkspace" ${ordersOnly?'hidden':''}>
-    <div class="purchase-tabs">
-      <button class="purchase-tab active" data-purchase-mode="item">Item-wise</button>
-      <button class="purchase-tab" data-purchase-mode="invoice">Invoice total</button>
-    </div>
-
-    <div class="form-grid">
-      <label>Category
-        <select id="purCategory">
-          <option value="">Select category</option>
-          ${(categories || []).map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')}
-        </select>
-      </label>
-      <label>Vendor
-        <input id="purVendor" placeholder="Vendor name (optional)">
-      </label>
-    </div>
-
-    <div id="purItemArea">
-      <div class="purchase-item-head"><span>Item</span><span>Qty</span><span>Unit</span><span>Amount</span></div>
-      <div id="purRows"></div>
-      <button id="addPurRow" class="secondary">+ Add item</button>
-    </div>
-
-    <div id="purInvoiceArea" hidden>
-      <label class="purchase-invoice-field">Invoice amount
-        <input id="purInvoice" type="number" min="0" step="0.01" placeholder="0.00">
-      </label>
-    </div>
-
-    <div class="purchase-total" id="purTotal">Invoice total: 0.00</div>
-    <div class="action-row">
-      <button id="savePurchase" class="primary">Save Purchase</button>
-    </div>
-    <div id="purchaseMessage" class="purchase-message" hidden></div>
-
-    <div class="subsection">
-      <div class="section-heading"><h3>Recent purchases</h3><span class="soft-badge">${isOwner ? 'All entries' : 'This outlet'}</span></div>
-      <div id="purchaseHistory"><div class="loading">Loading…</div></div>
-    </div>
-    </section>
   `;
 
-  let mode = 'item';
   const loadRecentDrafts=async()=>{
     if(!isOwner)return;
     const target=view.querySelector('#recentOrderDrafts');
@@ -1104,34 +1067,34 @@ async function renderPurchases(view, supabase, profile, workspace='purchase') {
     const renderGroups=()=>{
       box.querySelectorAll('.order-suggestion-row').forEach(r=>{const prev=state.get(String(r.dataset.id))||{};state.set(String(r.dataset.id),{...prev,checked:r.querySelector('.order-include').checked,qty:r.querySelector('.order-qty').value});});
       const expanded=new Set([...box.querySelectorAll('.order-category-group[open]')].map(g=>g.dataset.category));
-      const groups=new Map();rows.filter(x=>!state.get(String(x.item_id))?.removed).forEach(x=>{const k=groupMode==='vendor'?(x.vendor_name||'Unassigned'):(x.category_name||'Other');if(!groups.has(k))groups.set(k,[]);groups.get(k).push(x);});
-box.innerHTML=[...groups].map(([name,list])=>`<details class="order-category-group" data-category="${escapeHtml(name)}" ${expanded.has(name)?'open':''}><summary><span><strong>${escapeHtml(name)}</strong><small>${list.filter(x=>state.get(String(x.item_id))?.checked&&Number(state.get(String(x.item_id))?.qty||0)>0).length} selected</small></span><button type="button" class="order-add-item" aria-label="Add item">+</button></summary><div class="order-category-body"><label class="order-select-all"><input type="checkbox" class="order-select-all-check" ${list.length&&list.every(x=>state.get(String(x.item_id))?.checked)?'checked':''}><span>Select all</span></label>${list.map(x=>{const st=state.get(String(x.item_id))||{checked:false,qty:''};return `<div class="order-suggestion-row" data-id="${x.item_id}" data-vendor="${escapeHtml(x.vendor_name||'Unassigned')}" data-name="${escapeHtml(x.item_name)}" data-unit="${escapeHtml(x.order_unit||'')}"><input class="order-include" type="checkbox" ${st.checked?'checked':''}><span><strong>${escapeHtml(x.item_name)}</strong><small>${manualIds.has(String(x.item_id))?'Added manually':'Stock '+Number(x.current_stock||0)}</small></span><input class="order-qty" type="number" min="0" step="0.01" value="${st.qty}" placeholder="0"><em>${escapeHtml(x.order_unit||'')}</em><button type="button" class="order-remove-item" aria-label="Remove ${escapeHtml(x.item_name)}" title="Remove">×</button></div>`;}).join('')}<div class="order-category-actions"><button type="button" class="summary-add category-message">${copiedGroups.has(name)?'Message copied ✓':'Generate message'}</button>${isOwner&&groupMode==='vendor'?'<button type="button" class="summary-add save-vendor-draft">Save draft</button>':''}</div><div class="category-add-panel" hidden><label>Find item<input class="category-add-search" type="search" placeholder="Search all items…"></label><div class="category-add-results"></div></div><div class="category-order-preview" hidden><textarea readonly></textarea><button type="button" class="summary-add copy-category-message">Copy</button></div></div></details>`).join('');
+      const groups=new Map(groupMode==='vendor'?catalogue.vendors.map(v=>[v.name,[]]):[]);rows.filter(x=>!state.get(String(x.item_id))?.removed).forEach(x=>{const k=groupMode==='vendor'?(x.vendor_name||'Unassigned'):(x.category_name||'Other');if(!groups.has(k))groups.set(k,[]);groups.get(k).push(x);});
+box.innerHTML=[...groups].map(([name,list])=>`<details class="order-category-group" data-category="${escapeHtml(name)}" ${expanded.has(name)?'open':''}><summary><span><strong>${escapeHtml(name)}</strong><small>${list.filter(x=>state.get(String(x.item_id))?.checked&&Number(state.get(String(x.item_id))?.qty||0)>0).length} selected</small></span><button type="button" class="order-add-item" aria-label="Add item">+</button></summary><div class="order-category-body"><label class="order-select-all"><input type="checkbox" class="order-select-all-check" ${list.length&&list.every(x=>state.get(String(x.item_id))?.checked)?'checked':''}><span>Select all</span></label>${list.map(x=>{const st=state.get(String(x.item_id))||{checked:false,qty:''};return `<div class="order-suggestion-row" data-id="${x.item_id}" data-vendor="${escapeHtml(x.vendor_name||'Unassigned')}" data-name="${escapeHtml(x.item_name)}" data-unit="${escapeHtml(x.order_unit||'')}"><input class="order-include" type="checkbox" ${st.checked?'checked':''}><span><strong>${escapeHtml(x.item_name)}</strong><small>${manualIds.has(String(x.item_id))?'Added manually':'Stock '+Number(x.current_stock||0)}</small></span><input class="order-qty" type="number" min="0" step="0.01" value="${st.qty}" placeholder="0"><em>${escapeHtml(x.order_unit||'')}</em><button type="button" class="order-remove-item" aria-label="Remove ${escapeHtml(x.item_name)}" title="Remove">×</button></div>`;}).join('')}<div class="order-category-actions"><button type="button" class="summary-add category-message">${copiedGroups.has(name)?'Message copied ✓':'Generate message'}</button>${groupMode==='vendor'?'<button type="button" class="summary-add order-card-add">＋ Add item</button>':''}${isOwner&&groupMode==='vendor'?'<button type="button" class="summary-add save-vendor-draft">Save draft</button>':''}</div><div class="category-add-panel" hidden></div><div class="category-order-preview" hidden><textarea readonly></textarea><button type="button" class="summary-add copy-category-message">Copy</button></div></div></details>`).join('');
       bindGroups();updateOrderSummary();
     };
     section.dataset.loaded='1';
     const buildMessage=(scope,title)=>{const lines=['*'+title.toUpperCase()+' — '+String(outletName||'CAFE').toUpperCase()+'*',String(businessDate),''];let last='';scope.querySelectorAll('.order-suggestion-row').forEach(r=>{if(!r.querySelector('.order-include').checked)return;const qty=Number(r.querySelector('.order-qty').value||0);if(qty<=0)return;const vendor=r.dataset.vendor;if(vendor!==last){if(last)lines.push('');lines.push('*'+vendor+'*');last=vendor;}lines.push(r.dataset.name+' — '+qty+' '+r.dataset.unit);});if(!last)lines.push('No items selected.');return lines.join('\n');};
-    const bindGroups=()=>view.querySelectorAll('.order-category-group').forEach(g=>{
+    const bindGroups=()=>box.querySelectorAll('.order-category-group').forEach(g=>{
       g.querySelectorAll('.order-remove-item').forEach(btn=>btn.onclick=e=>{e.preventDefault();e.stopPropagation();const row=btn.closest('.order-suggestion-row'),id=String(row.dataset.id),prev=state.get(id)||{};lastRemoved={id,prev};state.set(id,{...prev,checked:false,removed:true});renderGroups();const toast=view.querySelector('#stockUndoToast');if(toast){toast.hidden=false;clearTimeout(undoTimer);undoTimer=setTimeout(()=>toast.hidden=true,5000);}});
       const all=g.querySelector('.order-select-all-check');if(all)all.onchange=()=>{g.querySelectorAll('.order-suggestion-row').forEach(r=>{const ck=r.querySelector('.order-include'),q=r.querySelector('.order-qty');ck.checked=all.checked;const prev=state.get(String(r.dataset.id))||{};state.set(String(r.dataset.id),{...prev,checked:all.checked,qty:q.value,removed:false});});all.nextElementSibling.textContent=all.checked?'Unselect all':'Select all';updateOrderSummary();};
-      const add=g.querySelector('.order-add-item');add.onclick=e=>{e.preventDefault();e.stopPropagation();g.open=true;const p=g.querySelector('.category-add-panel');p.hidden=!p.hidden;if(!p.hidden)p.querySelector('input').focus();};
-      g.querySelectorAll('.order-suggestion-row').forEach(r=>{const q=r.querySelector('.order-qty'),ck=r.querySelector('.order-include');q.oninput=()=>{ck.checked=Number(q.value||0)>0;const prev=state.get(String(r.dataset.id))||{};state.set(String(r.dataset.id),{...prev,qty:q.value,checked:ck.checked,removed:false});updateOrderSummary();};ck.onchange=()=>{const prev=state.get(String(r.dataset.id))||{};state.set(String(r.dataset.id),{...prev,checked:ck.checked,qty:q.value,removed:false});const all=g.querySelector('.order-select-all-check');if(all){const checks=[...g.querySelectorAll('.order-include')];all.checked=checks.length>0&&checks.every(x=>x.checked);all.indeterminate=checks.some(x=>x.checked)&&!all.checked;all.nextElementSibling.textContent=all.checked?'Unselect all':'Select all';}updateOrderSummary();};});
-      const search=g.querySelector('.category-add-search'),results=g.querySelector('.category-add-results');
-      search.oninput=()=>{
-        const q=search.value.trim().toLowerCase();
-        if(!q){results.innerHTML='';return;}
-        const existing=new Set([...box.querySelectorAll('.order-suggestion-row')].map(r=>String(r.dataset.id)));
-        const found=catalog.filter(item=>!existing.has(String(item.item_id))&&item.item_name.toLowerCase().includes(q)).slice(0,8);
-        results.innerHTML=found.map(item=>`<button type="button" class="category-add-result" data-id="${escapeHtml(item.item_id)}"><span>${escapeHtml(item.item_name)}</span><small>${escapeHtml(item.category_name||'Other')} · ${escapeHtml(item.vendor_name||'Unassigned')}</small></button>`).join('')||'<small>No matching item at this café.</small>';
-        results.querySelectorAll('.category-add-result').forEach(btn=>btn.onclick=()=>{
-          const id=String(btn.dataset.id),item=catalog.find(x=>String(x.item_id)===id);
-          if(!item)return;
-          const gram=String(item.order_unit||'').trim().toLowerCase()==='g';
-          const added={...item,order_unit:gram?'kg':item.order_unit,current_stock:0,suggested_qty:0,order_strategy:'MANUAL'};
-          rows.push(added);manualIds.add(id);state.set(id,{checked:true,qty:'',removed:false});
-          search.value='';results.innerHTML='';renderGroups();
-          box.querySelector('.order-suggestion-row[data-id="'+CSS.escape(id)+'"] .order-qty')?.focus();
-        });
+      const openAdder=()=>{
+        g.open=true;const panel=g.querySelector('.category-add-panel');panel.hidden=!panel.hidden;
+        if(panel.hidden)return;
+        const vendor=groupMode==='vendor'?catalogue.vendors.find(v=>v.name===g.dataset.category):null;
+        if(!vendor){panel.innerHTML='<p class="section-help">Switch to Vendor to add an item.</p>';return;}
+        bindItemAdder(panel,{client:supabase,outletId,module:'orders',vendor,catalogue,onAdded:async item=>{
+          const id=String(item.item_id),gram=String(item.order_unit||'').toLowerCase()==='g';
+          if(!rows.some(x=>String(x.item_id)===id))rows.push({...item,order_unit:gram?'kg':item.order_unit,current_stock:0,suggested_qty:0,order_strategy:'MANUAL'});
+          manualIds.add(id);vendorIds.set(id,Number(item.vendor_id));stockUnits.set(id,String(item.order_unit||'').toLowerCase());
+          const prev=state.get(id)||{};state.set(id,{...prev,checked:true,qty:prev.qty||'',removed:false});
+          // Capture edits before the card HTML is rebuilt.
+          box.querySelectorAll('.order-suggestion-row').forEach(r=>{const st=state.get(String(r.dataset.id))||{};if(String(r.dataset.id)!==id)state.set(String(r.dataset.id),{...st,checked:r.querySelector('.order-include').checked,qty:r.querySelector('.order-qty').value});});
+          const current=box.querySelector('.order-suggestion-row[data-id="'+CSS.escape(id)+'"]');if(current)current.querySelector('.order-include').checked=true;
+          renderGroups();box.querySelector('.order-suggestion-row[data-id="'+CSS.escape(id)+'"] .order-qty')?.focus();
+        }});panel.querySelector('input').focus();
       };
+      const add=g.querySelector('.order-add-item');add.onclick=e=>{e.preventDefault();e.stopPropagation();openAdder();};
+      const cardAdd=g.querySelector('.order-card-add');if(cardAdd)cardAdd.onclick=openAdder;
+      g.querySelectorAll('.order-suggestion-row').forEach(r=>{const q=r.querySelector('.order-qty'),ck=r.querySelector('.order-include');q.oninput=()=>{ck.checked=Number(q.value||0)>0;const prev=state.get(String(r.dataset.id))||{};state.set(String(r.dataset.id),{...prev,qty:q.value,checked:ck.checked,removed:false});updateOrderSummary();};ck.onchange=()=>{const prev=state.get(String(r.dataset.id))||{};state.set(String(r.dataset.id),{...prev,checked:ck.checked,qty:q.value,removed:false});const all=g.querySelector('.order-select-all-check');if(all){const checks=[...g.querySelectorAll('.order-include')];all.checked=checks.length>0&&checks.every(x=>x.checked);all.indeterminate=checks.some(x=>x.checked)&&!all.checked;all.nextElementSibling.textContent=all.checked?'Unselect all':'Select all';}updateOrderSummary();};});
       g.querySelector('.category-message').onclick=()=>{const p=g.querySelector('.category-order-preview'),ta=p.querySelector('textarea');ta.value=buildMessage(g,g.dataset.category+' order');p.hidden=false;ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,300)+'px';};
       g.querySelector('.copy-category-message').onclick=async()=>{const ta=g.querySelector('textarea');try{await navigator.clipboard.writeText(ta.value);}catch{ta.select();}copiedGroups.add(g.dataset.category);g.querySelector('.category-message').textContent='Message copied ✓';};
       const draftBtn=g.querySelector('.save-vendor-draft');
@@ -1159,150 +1122,6 @@ box.innerHTML=[...groups].map(([name,list])=>`<details class="order-category-gro
   };
 
   if(ordersOnly){await loadOrders();await loadRecentDrafts();return;}
-
-  const categoryName = () => {
-    const id = Number(view.querySelector('#purCategory').value);
-    return (categories || []).find(c => Number(c.id) === id)?.name || '';
-  };
-
-  const availableItems = () => {
-    const cat = Number(view.querySelector('#purCategory').value);
-    return (items || []).filter(i => !cat || Number(i.category_id) === cat);
-  };
-
-  const itemOptions = (selected='') => availableItems().map(i =>
-    `<option value="${escapeHtml(i.id)}" ${i.id === selected ? 'selected' : ''}>${escapeHtml(i.name)}${i.pack_size ? ' · ' + escapeHtml(i.pack_size) : ''}</option>`
-  ).join('');
-
-  const updateTotal = () => {
-    let total = 0;
-    if (mode === 'invoice') total = Number(view.querySelector('#purInvoice')?.value || 0);
-    else total = [...view.querySelectorAll('.purAmount')].reduce((s, el) => s + Number(el.value || 0), 0);
-    view.querySelector('#purTotal').textContent = `Invoice total: ${total.toFixed(2)}`;
-  };
-
-  const addRow = (data={}) => {
-    const wrap = document.createElement('div');
-    wrap.className = 'purchase-entry-row';
-    wrap.innerHTML = `
-      <select class="purItem"><option value="">Select item</option>${itemOptions(data.item_id || '')}</select>
-      <input class="purQty" type="number" min="0" step="0.01" placeholder="Qty" value="${data.qty || ''}">
-      <input class="purUnit" value="${escapeHtml(data.unit || '')}" readonly>
-      <input class="purAmount" type="number" min="0" step="0.01" placeholder="Amount" value="${data.invoice_amount || ''}">
-      <button class="ghost remove-pur-row" type="button">×</button>
-    `;
-    const itemSelect = wrap.querySelector('.purItem');
-    const unitInput = wrap.querySelector('.purUnit');
-    itemSelect.addEventListener('change', () => {
-      const item = (items || []).find(i => i.id === itemSelect.value);
-      unitInput.value = item?.unit || '';
-    });
-    wrap.querySelector('.remove-pur-row').onclick = () => { wrap.remove(); updateTotal(); };
-    wrap.querySelectorAll('input').forEach(el => el.addEventListener('input', updateTotal));
-    view.querySelector('#purRows').appendChild(wrap);
-  };
-
-  const refreshRows = () => {
-    const rows = [...view.querySelectorAll('.purchase-entry-row')];
-    rows.forEach(r => {
-      const selected = r.querySelector('.purItem').value;
-      r.querySelector('.purItem').innerHTML = '<option value="">Select item</option>' + itemOptions(selected);
-      const item = (items || []).find(i => i.id === selected);
-      r.querySelector('.purUnit').value = item?.unit || '';
-    });
-  };
-
-  addRow();
-  view.querySelector('#purCategory').addEventListener('change', () => refreshRows());
-
-  view.querySelectorAll('[data-purchase-mode]').forEach(btn => btn.onclick = () => {
-    mode = btn.dataset.purchaseMode;
-    view.querySelectorAll('[data-purchase-mode]').forEach(b => b.classList.toggle('active', b === btn));
-    view.querySelector('#purItemArea').hidden = mode !== 'item';
-    view.querySelector('#purInvoiceArea').hidden = mode !== 'invoice';
-    updateTotal();
-  });
-
-  view.querySelector('#addPurRow').onclick = () => addRow();
-  view.querySelector('#purInvoice').addEventListener('input', updateTotal);
-
-  const loadHistory = async () => {
-    let query = supabase
-      .from('purchases')
-      .select('id,business_date,vendor_name,item_id,qty,unit,invoice_amount,entry_type');
-    query = query.eq('outlet_id', outletId);
-    query = query.eq('business_date', businessDate).order('created_at', { ascending: false }).limit(50);
-    const { data: history, error } = await query;
-    if (error) {
-      view.querySelector('#purchaseHistory').innerHTML = '<p class="form-error">' + escapeHtml(error.message) + '</p>';
-      return;
-    }
-    const itemMap = new Map((items || []).map(i => [i.id, i]));
-    const rows = history || [];
-    if (!rows.length) {
-      view.querySelector('#purchaseHistory').innerHTML = '<div class="notice">No purchases recorded for this business day.</div>';
-      return;
-    }
-    view.querySelector('#purchaseHistory').innerHTML = `
-      <div class="table-wrap"><table>
-        <thead><tr><th>Entry</th><th>Item</th><th>Qty</th><th>Amount</th></tr></thead>
-        <tbody>
-          ${rows.map(r => {
-            const item = itemMap.get(r.item_id);
-            return `<tr><td>${escapeHtml(r.entry_type || 'item')}</td><td>${escapeHtml(item?.name || 'Invoice')}</td><td>${r.qty ? Number(r.qty) + ' ' + escapeHtml(r.unit || '') : '—'}</td><td>${r.invoice_amount ? Number(r.invoice_amount).toFixed(2) : '—'}</td></tr>`;
-          }).join('')}
-        </tbody>
-      </table></div>`;
-  };
-
-  const showMessage=(message,type='error')=>{const box=view.querySelector('#purchaseMessage');box.textContent=message;box.className='purchase-message '+(type==='success'?'success':'error');box.hidden=false;if(type==='success')setTimeout(()=>{if(box.isConnected)box.hidden=true;},2400);else box.scrollIntoView({behavior:'smooth',block:'nearest'});};
-
-  view.querySelector('#savePurchase').onclick = async () => {
-    const categoryId = Number(view.querySelector('#purCategory').value) || null;
-    const vendorName = view.querySelector('#purVendor').value.trim();
-    if (!categoryId && !vendorName) return showMessage('Select a category or enter a vendor.','error');
-    let payloads = [];
-
-    if (mode === 'invoice') {
-      const amount = Number(view.querySelector('#purInvoice').value || 0);
-      if (amount <= 0) return showMessage('Enter the invoice amount.','error');
-      payloads = [{ item_id: null, qty: 0, unit: '', invoice_amount: amount, entry_type: 'invoice' }];
-    } else {
-      payloads = [...view.querySelectorAll('.purchase-entry-row')].map(row => {
-        const itemId = row.querySelector('.purItem').value;
-        const item = (items || []).find(i => i.id === itemId);
-        return {
-          item_id: itemId || null,
-          qty: Number(row.querySelector('.purQty').value || 0),
-          unit: row.querySelector('.purUnit').value || item?.unit || '',
-          invoice_amount: Number(row.querySelector('.purAmount').value || 0),
-          entry_type: 'item'
-        };
-      }).filter(r => r.item_id && r.qty > 0);
-      if (!payloads.length) return showMessage('Add at least one item with a quantity.','error');
-    }
-
-    const saveBtn = view.querySelector('#savePurchase');
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving…';
-
-    try {
-      const {data:savedCount,error}=await supabase.rpc('save_purchase_entries',{p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_vendor_name:vendorName||'',p_entries:payloads});
-      if(error)throw error;
-      showMessage((savedCount||payloads.length)+' purchase entr'+((savedCount||payloads.length)===1?'y':'ies')+' saved.','success');
-      await loadHistory();
-      view.querySelector('#purRows').innerHTML = '';
-      if (mode === 'item') addRow(); else view.querySelector('#purInvoice').value = '';
-      updateTotal();
-    } catch (err) {
-      showMessage(err.message || 'Purchase could not be saved.','error');
-    } finally {
-      saveBtn.disabled = false;
-      saveBtn.textContent = 'Save Purchase';
-    }
-  };
-
-  await loadHistory();
 
 }
 
