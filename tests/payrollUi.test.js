@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import {JSDOM} from 'jsdom';
 import * as rules from '../src/payrollRules.js';
 import * as access from '../src/moduleAccess.js';
+import {attendancePhotoError} from '../src/attendancePhoto.js';
 import {loadSalaryTransfers} from '../src/payrollData.js';
 import {onboardingDetailsHtml,bindProfileDocuments,renderMyProfile} from '../src/employeeProfiles.js';
 const source=(await fs.readFile(new URL('../src/app.js',import.meta.url),'utf8')).replace(/^import .*;\n/gm,'').replace('export async function renderApp','async function renderApp').replaceAll('import.meta.env','({})');
@@ -14,7 +15,7 @@ const est={basic_salary:15000,period_days:30,present_equivalent_days:27,absent_d
 function harness({staffRows=[structuredClone(person)],current=null,saveError=null,emptyActive=false,estimate=est,userRow={staff_id:null,outlet_id:1},employeeProfile=null,peopleError=null}={}) {
  const dom=new JSDOM('<section id="view"></section>',{url:'https://example.test'}),calls=[];
  class Clock extends Date {constructor(...args){super(...(args.length?args:['2026-10-02T12:00:00Z']));}}
- const context=vm.createContext({...rules,...access,loadSalaryTransfers,onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog:async()=>null,document:dom.window.document,CustomEvent:dom.window.CustomEvent,Intl,Date:Clock,Map,Set,console,setTimeout,clearTimeout,confirm:()=>true,loadStaffAvatars:async()=>new Map(),staffAvatar:()=>'',bindAvatarImages:()=>{},refreshStaffAvatarElements:()=>{},editProfilePhoto:async()=>false});
+ const context=vm.createContext({...rules,...access,loadSalaryTransfers,onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog:async()=>null,FormData,attendancePhotoError,prepareAttendancePhoto:async()=>new Blob(['compressed'],{type:'image/jpeg'}),document:dom.window.document,CustomEvent:dom.window.CustomEvent,Intl,Date:Clock,Map,Set,console,setTimeout,clearTimeout,confirm:()=>true,loadStaffAvatars:async()=>new Map(),staffAvatar:()=>'',bindAvatarImages:()=>{},refreshStaffAvatarElements:()=>{},editProfilePhoto:async()=>false});
  vm.runInContext(source,context);
  const client={from(table){const filters=[];const result=()=>{
   if(table==='users'&&peopleError)return {data:null,error:{message:peopleError}};
@@ -94,4 +95,19 @@ test('admin sees complete onboarding details inside Profile and deletion stays s
 test('superuser gets Delete user but archived staff open read-only history and settlement links',async()=>{
  const h=harness();await h.context.renderPeople(h.view,h.client,{...owner,is_super_user:true,context_outlet_id:null});await h.view.querySelector('.manage-staff').onclick();assert.equal(h.view.querySelector('#deleteUser').textContent,'Delete user');h.dom.window.close();
  const archived={...structuredClone(person),active:false,employment_status:'LEFT'};archived.users.deleted_at='2026-10-03';const a=harness({staffRows:[archived]});await a.context.renderPeople(a.view,a.client,{...owner,context_outlet_id:null});assert.equal(a.view.querySelector('.manage-staff'),null);a.view.querySelector('[data-status="DELETED"]').click();await a.view.querySelector('.manage-staff').onclick();assert.equal(a.view.querySelector('#saveStaff'),null);assert.ok(a.view.querySelector('[data-archive-module="salary"]'));let navigation;a.view.addEventListener('app:navigate',e=>navigation=e.detail);a.view.querySelector('[data-archive-module="salary"]').click();assert.equal(navigation.staffId,2);a.dom.window.close();
+});
+
+test('check-in uploads the prepared JPEG and a failed save remains retryable',async()=>{
+ const h=harness({userRow:{staff_id:2,outlet_id:2}});let uploads=0;
+ h.client.functions={invoke:async(name,{body})=>{uploads++;assert.equal(name,'chaitracker-attendance');const photo=body.get('photo');assert.equal(photo.name,'attendance.jpg');assert.equal(photo.type,'image/jpeg');assert.equal(await photo.text(),'compressed');return {data:{ok:false,error:'Upload failed'}};}};
+ await h.context.renderAttendance(h.view,h.client,{id:'employee',role:'Staff',access_class:'STAFF',outlet_id:2});
+ const input=h.view.querySelector('#attendancePhoto'),btn=h.view.querySelector('#checkinBtn');Object.defineProperty(input,'files',{value:[new File(['original'],'large.jpg',{type:'image/jpeg'})]});
+ await input.onchange();assert.equal(uploads,1);assert.equal(btn.disabled,false);assert.equal(input.value,'');assert.match(h.view.querySelector('#checkinMsg').textContent,/Upload failed/);
+ await input.onchange();assert.equal(uploads,2);h.dom.window.close();
+});
+test('history refresh failure after successful check-in preserves success and blocks duplicate submission',async()=>{
+ const h=harness({userRow:{staff_id:2,outlet_id:2}});await h.context.renderAttendance(h.view,h.client,{id:'employee',role:'Staff',access_class:'STAFF',outlet_id:2});
+ let uploads=0;h.client.functions={invoke:async()=>{uploads++;h.client.rpc=async()=>{throw Error('Refresh unavailable');};return {data:{ok:true}};}};
+ const input=h.view.querySelector('#attendancePhoto'),btn=h.view.querySelector('#checkinBtn');Object.defineProperty(input,'files',{value:[new File(['original'],'large.jpg',{type:'image/jpeg'})]});
+ await input.onchange();assert.equal(btn.disabled,true);assert.match(h.view.querySelector('#checkinMsg').textContent,/Attendance recorded/);await input.onchange();assert.equal(uploads,1);h.dom.window.close();
 });

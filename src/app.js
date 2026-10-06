@@ -1,3 +1,4 @@
+import { prepareAttendancePhoto,attendancePhotoError } from './attendancePhoto.js';
 import { renderBusinessDashboard } from './businessDashboard.js';
 import { loadStaffAvatars,staffAvatar,bindAvatarImages,refreshStaffAvatarElements,editProfilePhoto } from './staffAvatars.js';
 import { renderExtraTime } from './extraTime.js';
@@ -7,7 +8,7 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 137;
+const APP_BUILD = 138;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['attendance', 'Attendance'],
@@ -123,7 +124,7 @@ async function renderLogin(root, supabase) {
       <section class="login-card">
         ${reloadButton}
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=137" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=138" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -1750,6 +1751,30 @@ async function renderAttendance(view, supabase, profile,selectedStaffId=null) {
   const moveMonth=offset=>{const[y,m]=selectedMonth.split('-').map(Number);return selectMonth(new Date(Date.UTC(y,m-1+offset,1)).toISOString().slice(0,7));};
   view.querySelector('#attPreviousMonth').onclick=()=>moveMonth(-1);
   view.querySelector('#attNextMonth').onclick=()=>moveMonth(1);
-  if(!isOwner){const photo=view.querySelector('#attendancePhoto'),btn=view.querySelector('#checkinBtn'),msg=view.querySelector('#checkinMsg');btn.onclick=()=>photo.click();photo.onchange=async()=>{const file=photo.files?.[0];if(!file)return;btn.disabled=true;btn.textContent='Checking in…';msg.hidden=true;try{const body=new FormData();body.append('photo',file);const{data,error}=await supabase.functions.invoke('chaitracker-attendance',{body});if(error||!data?.ok){let detail=data?.error;if(!detail&&error?.context){try{detail=(await error.context.json()).error;}catch{}}throw new Error(detail||error?.message||'Check-in failed');}msg.textContent='Attendance recorded';msg.className='summary-inline-status ok';msg.hidden=false;await refresh();await refreshStaffAvatarElements(supabase,[Number(userRow.staff_id)]);}catch(error){msg.textContent=error.message||'Check-in failed. Please retry.';msg.className='summary-inline-status bad';msg.hidden=false;btn.disabled=false;btn.textContent='Take photo & check in';}finally{photo.value='';}};}
+  if(!isOwner){
+    const photo=view.querySelector('#attendancePhoto'),btn=view.querySelector('#checkinBtn'),msg=view.querySelector('#checkinMsg');
+    btn.onclick=()=>photo.click();
+    photo.onchange=async()=>{
+      const file=photo.files?.[0];if(!file||btn.disabled)return;
+      btn.disabled=true;btn.textContent='Preparing selfie…';msg.hidden=true;
+      let recorded=false;
+      try{
+        const prepared=await prepareAttendancePhoto(file),body=new FormData();
+        body.append('photo',prepared,'attendance.jpg');btn.textContent='Saving attendance…';
+        const{data,error}=await supabase.functions.invoke('chaitracker-attendance',{body});
+        if(error||!data?.ok){
+          let detail=data?.error;
+          if(!detail&&error?.context){try{detail=(await error.context.json()).error;}catch{}}
+          throw new Error(detail||error?.message||'Check-in failed');
+        }
+        recorded=true;msg.textContent='Attendance recorded';msg.className='summary-inline-status ok';msg.hidden=false;btn.textContent='Checked in';
+        await refresh();await refreshStaffAvatarElements(supabase,[Number(userRow.staff_id)]);
+      }catch(error){
+        msg.textContent=recorded?'Attendance recorded. Refresh to update the history.':attendancePhotoError(error);
+        msg.className='summary-inline-status '+(recorded?'ok':'bad');msg.hidden=false;
+        btn.disabled=recorded;btn.textContent=recorded?'Checked in':'Take photo & check in';
+      }finally{photo.value='';}
+    };
+  }
   await refresh();
 }
