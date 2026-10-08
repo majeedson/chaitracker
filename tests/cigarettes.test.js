@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import {PGlite} from '@electric-sql/pglite';
 import {JSDOM} from 'jsdom';
-import {cigaretteGroups,packPieces} from '../src/cigaretteMetrics.js';
+import {cigaretteGroups,packPieces,PK_PRICES} from '../src/cigaretteMetrics.js';
 import {renderCigarettes} from '../src/cigarettes.js';
 let db;const admin='00000000-0000-0000-0000-000000000001',staff='00000000-0000-0000-0000-000000000002';
 const migration=await fs.readFile(new URL('../supabase/migrations/20261006163828_cigarettes_b145.sql',import.meta.url),'utf8');
+const packMigration=await fs.readFile(new URL('../supabase/migrations/20261008164423_cigarette_packs_b147.sql',import.meta.url),'utf8');
 const actor=id=>db.query("select set_config('request.jwt.claim.sub',$1,false)",[id]);
-const call=(action,payload={},outlet=1,date='2026-10-06')=>db.query('select public.save_cigarette_action($1,$2,$3,$4) result',[outlet,date,action,JSON.stringify(payload)]);
+const packSales=(packs=0,price=260)=>PK_PRICES.map(p=>({price:p,packs:p===price?packs:0,amount:p===price?packs*p:0}));
+const call=(action,payload={},outlet=1,date='2026-10-06')=>db.query('select public.save_cigarette_action($1,$2,$3,$4) result',[outlet,date,action,JSON.stringify({...action==='sales'?{pack_entries:packSales()}:action==='add'?{pack_price:0}:{},...payload})]);
 const work=async(outlet=1,date='2026-10-06')=>(await db.query('select public.get_cigarette_workspace($1,$2) result',[outlet,date])).rows[0].result;
 const reject=async(fn,pattern)=>{await db.exec('savepoint expected_failure');try{await assert.rejects(fn(),pattern);}finally{await db.exec('rollback to expected_failure;release savepoint expected_failure');}};
 const sales=(pieces=5)=>[10,15,20,25,28,30].map(price=>({price,pieces:price===10?pieces:0,amount:price===10?pieces*10:0}));
@@ -34,7 +36,7 @@ before(async()=>{
  `);
  const guards=await fs.readFile(new URL('../supabase/stock_function_guards_b109.sql',import.meta.url),'utf8');
  const start=guards.indexOf('CREATE OR REPLACE FUNCTION public.get_tonights_stock');const end=guards.indexOf('$function$;',start)+12;
- await db.exec(guards.slice(start,end));await db.exec(migration);
+ await db.exec(guards.slice(start,end));await db.exec(migration);await db.exec(packMigration);
 });
 after(()=>db?.close());beforeEach(async()=>{await db.exec('begin');await actor(admin);});afterEach(()=>db.exec('rollback;reset role'));
 test('Teapot uses only Kini; Chai has separate ITC and Advance brand cards',async()=>{
@@ -42,7 +44,7 @@ test('Teapot uses only Kini; Chai has separate ITC and Advance brand cards',asyn
  assert.deepEqual(c.vendors.map(v=>v.name),['Advance','ITC']);assert.equal(c.items.find(i=>i.item_id==='a').vendor_name,'ITC');
 });
 test('purchase requires SK and whole packs; canonical quantity and vendor feed existing credits; retry cannot duplicate',async()=>{
- await actor(staff);const p={vendor_id:1,request_id:crypto.randomUUID(),entries:[{item_id:'a',packs:2,amount:180,pos_price:10}]};
+ await actor(staff);const p={vendor_id:1,request_id:crypto.randomUUID(),entries:[{item_id:'a',packs:2,amount:180,pos_price:10,pack_price:260}]};
  await call('purchase',p);await call('purchase',p);
  const rows=(await db.query('select * from purchases')).rows;assert.equal(rows.length,1);assert.equal(Number(rows[0].base_qty),20);assert.equal(rows[0].unit,'Pack');assert.equal(rows[0].vendor_name,'Kini');
  const w=await work();assert.equal(w.items.find(i=>i.item_id==='a').purchased,20);assert.equal(w.items.find(i=>i.item_id==='a').pos_price,10);
@@ -57,7 +59,7 @@ test('SK assignment is café-specific; historical close snapshots retain their m
 });
 test('daily POS sales require all groups; close requires all brands; closed movements need owner reopening',async()=>{
  await reject(()=>call('sales',{entries:sales().slice(0,2)}),/every SK group/);
- await reject(()=>call('close',{entries:[{item_id:'a',pieces:10},{item_id:'b',pieces:0}]}),/Save POS sales/);
+ await reject(()=>call('close',{entries:[{item_id:'a',pieces:10},{item_id:'b',pieces:0}]}),/Save SK and PK POS sales/);
  await call('sales',{entries:sales()});await reject(()=>call('close',{entries:[{item_id:'a',pieces:10}]}),/every cigarette brand/);
  await call('close',{entries:[{item_id:'a',pieces:10},{item_id:'b',pieces:0}]});assert.ok((await work()).day.closed_at);
  await reject(()=>call('sales',{entries:sales(6)}),/Day is closed/);
@@ -92,8 +94,9 @@ test('purchase UI demands SK beside every brand; sales UI uses SK groups; blank 
  const client={rpc:async(name,args)=>{calls.push({name,args});if(name==='get_effective_business_day')return{data:'2026-10-06'};if(name==='get_cigarette_workspace')return{data};return{data:{saved:true}};}};
  const profile={access_class:'ADMIN',context_outlet_id:1,_cigaretteTab:'purchase'};await renderCigarettes(view,client,profile);assert.equal(view.querySelectorAll('details[open]').length,0);assert.equal(view.querySelector('.cig-sk').required,true);
  const r=view.querySelector('.cig-entry-row');r.querySelector('.cig-include').checked=true;r.querySelector('.cig-packs').value=2;r.querySelector('.cig-amount').value=180;await view.querySelector('.cig-save').onclick();assert.equal(calls.some(c=>c.name==='save_cigarette_action'),false);
- r.querySelector('.cig-sk').value='10';await view.querySelector('.cig-save').onclick();assert.equal(calls.find(c=>c.name==='save_cigarette_action').args.p_payload.entries[0].pos_price,10);
- view.querySelector('[data-cig-tab="sales"]').click();assert.equal(view.querySelectorAll('.cig-sales-row').length,6);assert.match(view.textContent,/SK10/);assert.equal(view.querySelectorAll('.cig-sold')[0].value,'');
+ r.querySelector('.cig-sk').value='10';await view.querySelector('.cig-save').onclick();assert.equal(calls.some(c=>c.name==='save_cigarette_action'),false);
+ assert.equal(r.querySelector('.cig-pk').required,true);r.querySelector('.cig-pk').value='260';await view.querySelector('.cig-save').onclick();assert.equal(calls.find(c=>c.name==='save_cigarette_action').args.p_payload.entries[0].pos_price,10);assert.equal(calls.find(c=>c.name==='save_cigarette_action').args.p_payload.entries[0].pack_price,260);
+ view.querySelector('[data-cig-tab="sales"]').click();assert.equal(view.querySelectorAll('.cig-sales-row').length,10);assert.match(view.textContent,/SK10/);assert.match(view.textContent,/PK400/);assert.equal(view.querySelectorAll('.cig-sold')[0].value,'');
  view.querySelector('[data-cig-tab="stock"]').click();assert.equal(view.querySelector('.cig-count-packs').value,'');assert.equal(view.querySelector('#cigVerified').checked,false);dom.window.close();
 });
 
@@ -101,4 +104,58 @@ test('general catalogue and old count endpoints cannot bypass cigarette monitori
  const c=(await db.query("select private.vendor_catalogue(1,'purchase') result")).rows[0].result;assert.equal(c.items.length,0);assert.deepEqual(c.cigarette_item_ids.sort(),['a','b']);
  for(const fn of ['save_tonights_stocktake','save_monthly_stocktake'])await reject(()=>db.query('select public.'+fn+'(1,$1,$2,$3)',['2026-10-06',admin,JSON.stringify([{item_id:'a',count_now:10,unit:'Pc'}])]),/Cigarettes module/);
  await reject(()=>call('receive',{transfer_id:crypto.randomUUID()},2,'2026-10-05'),/unavailable/);
+});
+
+test('PK mapping is café-specific, preserves SK, and freezes with audited close and summary totals',async()=>{
+ await call('settings',{item_id:'a',pos_price:10,pack_price:260});await call('settings',{item_id:'b',pos_price:15,pack_price:0});
+ await call('settings',{item_id:'a',pack_price:350});let w=await work();assert.equal(w.items.find(i=>i.item_id==='a').pos_price,10);assert.equal(w.items.find(i=>i.item_id==='a').pack_price,350);assert.equal((await work(2)).items.find(i=>i.item_id==='a').pack_price,null);
+ await call('sales',{entries:sales(5),pack_entries:packSales(2,350)});await call('close',{entries:[{item_id:'a',pieces:10},{item_id:'b',pieces:0}]});
+ await call('settings',{item_id:'a',pack_price:400});w=await work();assert.equal(w.day.report.brands.find(i=>i.item_id==='a').pack_price,350);assert.equal(w.day.report.pack_sales.find(p=>p.price===350).packs,2);
+ const summary=(await db.query("select public.get_cigarette_summary(1,'2026-10-06') result")).rows[0].result;assert.equal([...summary.sales,...summary.pack_sales].reduce((n,s)=>n+s.amount,0),750);
+ assert.ok(w.audit.some(a=>a.action==='sales'&&a.payload.input.pack_entries.find(p=>p.price===350).packs===2));
+ await reject(()=>call('settings',{item_id:'a',pack_price:999}),/PK140/);
+});
+test('PK POS entries require all four codes and whole nonnegative packs; closed-day protections apply',async()=>{
+ await reject(()=>call('sales',{entries:sales(),pack_entries:null}),/every PK/);
+ await reject(()=>call('sales',{entries:sales(),pack_entries:packSales().slice(0,3)}),/every PK/);
+ await reject(()=>call('sales',{entries:sales(),pack_entries:[...packSales().slice(0,3),packSales()[0]]}),/Duplicate PK/);
+ for(const packs of [-1,1.5])await reject(()=>call('sales',{entries:sales(),pack_entries:packSales(packs)}),/whole packs/);
+ await reject(()=>call('sales',{entries:sales(),pack_entries:packSales().map((p,i)=>i===0?{...p,price:999}:p)}),/Invalid PK/);
+ assert.equal((await work()).day,null);await call('sales',{entries:sales(),pack_entries:packSales(2)});
+ await call('close',{entries:[{item_id:'a',pieces:10},{item_id:'b',pieces:0}]});await reject(()=>call('sales',{entries:sales(),pack_entries:packSales(3)}),/Day is closed/);
+ await call('reopen',{reason:'Correct pack sales'});await call('sales',{entries:sales(),pack_entries:packSales(3)});assert.equal((await work()).day.pack_sales.find(p=>p.price===260).packs,3);
+});
+test('purchase and add require explicit PK or No pack sales; orders also remember PK',async()=>{
+ const entry={item_id:'a',packs:1,amount:100,pos_price:10};const p={vendor_id:1,request_id:crypto.randomUUID(),entries:[entry]};
+ await reject(()=>call('purchase',p),/Set the PK/);assert.equal((await db.query('select count(*) n from purchases')).rows[0].n,0);
+ await call('purchase',{...p,entries:[{...entry,pack_price:0}]});assert.equal((await work()).items.find(i=>i.item_id==='a').pack_price,0);
+ await call('order',{vendor_id:1,request_id:crypto.randomUUID(),entries:[{item_id:'a',packs:1,pack_price:260}]});assert.equal((await work()).items.find(i=>i.item_id==='a').pack_price,260);
+ await reject(()=>call('add',{name:'Missing PK',pack:10,vendor_id:1,pack_price:null}),/Set the PK/);
+ await call('add',{name:'New PK brand',pack:10,vendor_id:1,pack_price:140});assert.equal((await work()).items.find(i=>i.item_name==='New PK brand').pack_price,140);
+});
+test('pack reconciliation converts packs to pieces without allocating brand sales or double-counting connected groups',()=>{
+ const items=[{item_id:'a',pos_price:10,pack_price:260,pieces_per_pack:10,opening:50,opening_date:'2026-10-05',cost_per_piece:8},{item_id:'b',pos_price:15,pack_price:260,pieces_per_pack:10,opening:30,opening_date:'2026-10-05',cost_per_piece:9}];
+ const groups=cigaretteGroups(items,sales(5),{a:30,b:20},'2026-10-06',packSales(2));const g=groups.find(g=>g.brands.length);
+ assert.equal(g.label,'SK10 / SK15 / PK260');assert.equal(g.sold,25);assert.equal(g.movement,30);assert.equal(g.difference,5);assert.equal(g.cost,250);assert.equal(g.exposure,null);
+ assert.equal(groups.reduce((n,g)=>n+g.brands.length,0),2);assert.equal(groups.reduce((n,g)=>n+(g.movement||0),0),30);
+ const single=cigaretteGroups([items[0]],sales(5),{a:20},'2026-10-06',packSales(2)).find(g=>g.brands.length);assert.equal(single.difference,5);assert.equal(single.exposure,50);
+ const looseOnly=cigaretteGroups(items,sales(5),{a:45,b:30},'2026-10-06',packSales());assert.equal(looseOnly.find(g=>g.label==='SK10').difference,0);assert.equal(looseOnly.find(g=>g.label==='SK15').difference,0);assert.equal(looseOnly.reduce((n,g)=>n+g.brands.length,0),2);
+});
+test('mixed pack sizes, missing PK mapping and missing counts cannot produce a false match',()=>{
+ const a={item_id:'a',pos_price:10,pack_price:260,pieces_per_pack:10,opening:50,opening_date:'2026-10-05'};
+ const b={...a,item_id:'b',pieces_per_pack:20};
+ let g=cigaretteGroups([a,b],sales(5),{a:20,b:20},'2026-10-06',packSales(2)).find(g=>g.brands.length);assert.equal(g.difference,null);assert.equal(g.reason,'Mixed pack sizes');
+ g=cigaretteGroups([a,{...b,pack_price:null}],sales(),{a:20,b:20},'2026-10-06',packSales(2)).find(g=>g.brands.length);assert.equal(g.complete,false);
+ g=cigaretteGroups([a],sales(),{},'2026-10-06',packSales(2)).find(g=>g.brands.length);assert.equal(g.complete,false);
+ const zero=cigaretteGroups([{...a,pack_price:null}],sales(5),{a:45},'2026-10-06',packSales()).find(g=>g.brands.length);assert.equal(zero.difference,0);
+});
+test('PK sales UI calculates amounts, preserves drafts, saves packs separately and excludes them from SK entries',async()=>{
+ const dom=new JSDOM('<main></main>',{url:'https://example.test'}),view=dom.window.document.querySelector('main'),calls=[];
+ const data={vendors:[{id:1,name:'Kini'}],items:[{item_id:'a',item_name:'Brand',vendor_id:1,pieces_per_pack:10,pos_price:140,pack_price:260}],purchases:[],audit:[],history:[],transfers:[],outlets:[],day:null};
+ const client={rpc:async(name,args)=>{calls.push({name,args});return {data:name==='get_effective_business_day'?'2026-10-06':name==='get_cigarette_workspace'?data:{saved:true}};}};
+ const profile={access_class:'ADMIN',context_outlet_id:1,_cigaretteTab:'sales'};await renderCigarettes(view,client,profile);
+ view.querySelector('#cigZero').click();const row=view.querySelector('[data-sale-code="PK260"]');row.querySelector('.cig-sold').value='2';row.querySelector('.cig-sold').dispatchEvent(new dom.window.Event('input',{bubbles:true}));assert.equal(row.querySelector('.cig-revenue').value,'520.00');
+ row.querySelector('.cig-revenue').value='510';row.querySelector('.cig-revenue').dispatchEvent(new dom.window.Event('input',{bubbles:true}));
+ view.querySelector('[data-cig-tab="purchase"]').click();view.querySelector('[data-cig-tab="sales"]').click();assert.equal(view.querySelector('[data-sale-code="PK260"] .cig-sold').value,'2');assert.equal(view.querySelector('[data-sale-code="PK260"] .cig-revenue').value,'510');assert.equal(view.querySelector('[data-sale-code="SK140"] .cig-sold').value,'0');
+ await view.querySelector('#cigSales').onsubmit({preventDefault(){}});const input=calls.find(c=>c.name==='save_cigarette_action').args.p_payload;assert.equal(input.entries.length,7);assert.equal(input.pack_entries.length,4);assert.deepEqual(input.pack_entries.find(p=>p.price===260),{price:260,packs:2,amount:510});assert.ok(input.entries.every(p=>'pieces' in p&&!('packs' in p)));dom.window.close();
 });

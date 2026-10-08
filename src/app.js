@@ -12,7 +12,7 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 146;
+const APP_BUILD = 147;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['credits', 'Credits'],
@@ -132,7 +132,7 @@ async function renderLogin(root, supabase) {
       <section class="login-card">
         ${reloadButton}
         <div class="login-art" aria-hidden="true"><img src="/chaitracker/login-art.svg" alt=""></div>
-        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=146" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
+        <div class="brand-lockup"><div class="brand-mark"><img src="/chaitracker/icons/favicon.svg?v=147" alt="" width="44" height="44"></div><div><div class="login-brand">CafeTracker</div><div class="login-subtitle">Your café. Your day. · Build ${APP_BUILD}</div></div></div>
         <div id="login-picker">
           <div class="login-mode-tabs"><button type="button" class="active" data-login-mode="staff">Staff</button><button type="button" data-login-mode="admin">Admin</button></div>
           <div class="login-step" id="login-cafe-step"><label>Café</label><select id="outlet-select"><option value="">Select your café</option>${(outlets||[]).map(o=>`<option value="${o.id}">${escapeHtml(o.name)}</option>`).join('')}</select></div>
@@ -424,7 +424,7 @@ async function renderDailySummary(view, supabase, profile) {
 
       <section class="summary-section">
         <div class="summary-section-title"><span></span><h3>Sales</h3></div>
-        <p class="hint">Cigarette POS sales: ${cigSummaryError?'unavailable':cigSummary?.sales?money(cigSummary.sales.reduce((n,x)=>n+Number(x.amount),0))+' · included in total sales':'not recorded'}</p>
+        <p class="hint">Cigarette POS sales: ${cigSummaryError?'unavailable':cigSummary?.sales?money([...cigSummary.sales,...(cigSummary.pack_sales||[])].reduce((n,x)=>n+Number(x.amount),0))+' · included in total sales':'not recorded'}</p>
         <div class="summary-two">
           <label class="summary-label">Cash ₹<input id="sCash" type="number" inputmode="decimal" value="${existing?.cash_sale??0}"></label>
           <label class="summary-label">UPI ₹<input id="sUpi" type="number" inputmode="decimal" value="${existing?.upi_sale??0}"></label>

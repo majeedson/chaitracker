@@ -6,7 +6,7 @@ import {spawn} from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 const root=new URL('../../',import.meta.url);
-const html=String.raw`<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/src/styles.css"><style>body{margin:0;padding:14px;min-width:0}main{max-width:900px;margin:auto;min-width:0}</style></head><body><main class="module-view card"></main><script id="result" type="application/json"></script><script type="module">
+const html=String.raw`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/src/styles.css"><style>body{margin:0;padding:14px;min-width:0}main{max-width:900px;margin:auto;min-width:0}</style></head><body><main class="module-view card"></main><script id="result" type="application/json"></script><script type="module">
 import {renderDailySummary} from '/fixture-summary.js';
 const view=document.querySelector('main'),states=[];
 let closed=false,theme='teapot';
@@ -18,9 +18,10 @@ const client={from(table){
   if(table==='stocktakes')return {id:'STOCK',status:'SUBMITTED'};
   if(table==='vendors')return [{id:1,name:'Long Supplier Name'}];return [];
  }return q;
-},async rpc(name){if(name==='get_effective_business_day')return {data:'2026-10-06'};if(name==='get_cigarette_summary')return {data:{closed:true,sales:[{pos_price:10,qty:10,amount:100}]}};if(name==='get_daily_summary_reopen_deadline')return {data:'2026-10-07T12:00:00Z'};return {data:[]}}};
+},async rpc(name){if(name==='get_effective_business_day')return {data:'2026-10-06'};if(name==='get_cigarette_summary')return {data:{closed:true,sales:[{price:10,pieces:10,amount:100}],pack_sales:[{price:260,packs:2,amount:520}]}};if(name==='get_daily_summary_reopen_deadline')return {data:'2026-10-07T12:00:00Z'};return {data:[]}}};
 const profile={id:'owner',name:'Owner',access_class:'ADMIN',context_outlet_id:1};
 const check=name=>{
+ if(!view.textContent.includes('Cigarette POS sales: ₹620 · included in total sales'))throw Error('Daily Summary includes SK + PK revenue exactly once: '+[...view.querySelectorAll('.hint')].map(e=>e.textContent).join(' | '));
  const width=innerWidth,overflow=[...view.querySelectorAll('*')].filter(e=>e.getClientRects().length&&getComputedStyle(e).display!=='none'&&(e.getBoundingClientRect().right>width+1||e.getBoundingClientRect().left< -1)).map(e=>e.id||e.className||e.tagName);
  const buttons=[...view.querySelectorAll('.summary-actions > button')].filter(e=>e.getClientRects().length).map(e=>({text:e.textContent.trim(),color:getComputedStyle(e).color,background:getComputedStyle(e).backgroundColor,height:e.getBoundingClientRect().height}));
  states.push({name,width,scrollWidth:document.documentElement.scrollWidth,overflow,buttons});

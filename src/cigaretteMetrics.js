@@ -1,5 +1,7 @@
 export const SK_PRICES=[10,15,20,25,28,30];
-export function cigaretteGroups(items,sales=[],counts={},date){
+export const PK_PRICES=[140,260,350,400];
+export function cigaretteGroups(items,sales=[],counts={},date,packSales=null){
+ if(Array.isArray(packSales))return combinedGroups(items,sales,counts,date,packSales);
  const yesterday=new Date(date+'T12:00:00Z');yesterday.setUTCDate(yesterday.getUTCDate()-1);
  const prices=[...new Set([...SK_PRICES,...items.map(i=>Number(i.pos_price)).filter(n=>n>0),...sales.map(s=>Number(s.price))])].sort((a,b)=>a-b);
  const unassigned=items.filter(i=>!Number(i.pos_price));
@@ -9,7 +11,44 @@ export function cigaretteGroups(items,sales=[],counts={},date){
   const movement=complete?brands.reduce((sum,i)=>sum+Number(i.opening||0)+Number(i.purchased||0)+Number(i.transfer_in||0)-Number(i.transfer_out||0)+Number(i.adjustment||0)-Number(counts[i.item_id]),0):null;
   const difference=complete&&sale?movement-Number(sale.pieces):null;
   const cost=complete&&brands.every(i=>i.cost_per_piece!=null)?brands.reduce((sum,i)=>sum+(Number(i.opening||0)+Number(i.purchased||0)+Number(i.transfer_in||0)-Number(i.transfer_out||0)+Number(i.adjustment||0)-Number(counts[i.item_id]))*Number(i.cost_per_piece),0):null;
-  return {price,brands,sold:sale?Number(sale.pieces):null,revenue:sale?Number(sale.amount):null,movement,difference,cost,complete,unassigned:unassigned.length};
+  return {price,label:'SK'+price,brands,sold:sale?Number(sale.pieces):null,revenue:sale?Number(sale.amount):null,movement,difference,cost,complete,unassigned:unassigned.length};
  });
 }
 export const packPieces=(packs,loose,size)=>Number(packs)*Number(size)+Number(loose);
+
+// A PK code can cover several brands / SK codes. Check the connected group once;
+// allocating a pack sale to a particular brand or SK would invent information.
+function combinedGroups(items,sales,counts,date,packSales){
+ const parents=new Map(),find=k=>{if(!parents.has(k))parents.set(k,k);if(parents.get(k)!==k)parents.set(k,find(parents.get(k)));return parents.get(k);};
+ const join=(a,b)=>parents.set(find(a),find(b));
+ const sks=[...new Set([...SK_PRICES,...items.map(i=>Number(i.pos_price)).filter(n=>n>0),...sales.map(s=>Number(s.price))])].sort((a,b)=>a-b);
+ sks.forEach(p=>find('SK'+p));PK_PRICES.forEach(p=>find('PK'+p));
+ const activePK=new Set(packSales.filter(s=>Number(s.packs)>0).map(s=>Number(s.price)));
+ items.forEach(i=>{if(Number(i.pos_price)>0&&activePK.has(Number(i.pack_price)))join('SK'+i.pos_price,'PK'+i.pack_price);});
+ const nodes=new Map();for(const key of parents.keys()){const root=find(key);if(!nodes.has(root))nodes.set(root,[]);nodes.get(root).push(key);}
+ const previous=new Date(date+'T12:00:00Z');previous.setUTCDate(previous.getUTCDate()-1);
+ const openingDate=previous.toISOString().slice(0,10),hasPackSales=packSales.some(s=>Number(s.packs)>0);
+ const unassigned=items.filter(i=>!Number(i.pos_price)||(hasPackSales&&i.pack_price==null)).length;
+ return [...nodes.values()].map(keys=>{
+  const sk=keys.filter(k=>k.startsWith('SK')).map(k=>Number(k.slice(2))),pk=keys.filter(k=>k.startsWith('PK')).map(k=>Number(k.slice(2)));
+  const brands=items.filter(i=>sk.includes(Number(i.pos_price))||(activePK.has(Number(i.pack_price))&&pk.includes(Number(i.pack_price))));
+  let sold=0,revenue=0,reason='',salesComplete=true;
+  for(const price of sk){const s=sales.find(s=>Number(s.price)===price);if(!s)salesComplete=false;else{sold+=Number(s.pieces);revenue+=Number(s.amount);}}
+  for(const price of pk){
+   const s=packSales.find(s=>Number(s.price)===price);if(!s){salesComplete=false;continue;}
+   revenue+=Number(s.amount);if(Number(s.packs)===0)continue;
+   const sizes=[...new Set(items.filter(i=>Number(i.pack_price)===price).map(i=>Number(i.pieces_per_pack)))];
+   if(sizes.length!==1||!sizes[0]){salesComplete=false;reason=sizes.length?'Mixed pack sizes':'Set PK mapping';}
+   else sold+=Number(s.packs)*sizes[0];
+  }
+  const countsComplete=brands.every(i=>String(i.opening_date)===openingDate&&counts[i.item_id]!=null&&Number.isFinite(Number(counts[i.item_id])));
+  const complete=unassigned===0&&countsComplete&&salesComplete&&(brands.length>0||sold===0);
+  const movement=complete?brands.reduce((n,i)=>n+brandMovement(i,counts),0):null;
+  const difference=complete?movement-sold:null;
+  const cost=complete&&brands.every(i=>i.cost_per_piece!=null)?brands.reduce((n,i)=>n+brandMovement(i,counts)*Number(i.cost_per_piece),0):null;
+  const price=sk.length===1?sk[0]:null;
+  const exposure=difference===0?0:difference==null||price==null?null:Math.max(0,difference)*price;
+  return {price,label:[...sk.map(p=>'SK'+p),...pk.map(p=>'PK'+p)].join(' / '),brands,sold:salesComplete?sold:null,revenue,movement,difference,cost,exposure,complete,unassigned,reason};
+ });
+}
+const brandMovement=(i,counts)=>Number(i.opening||0)+Number(i.purchased||0)+Number(i.transfer_in||0)-Number(i.transfer_out||0)+Number(i.adjustment||0)-Number(counts[i.item_id]);

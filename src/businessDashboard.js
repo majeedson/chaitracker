@@ -100,10 +100,10 @@ export async function renderBusinessDashboard(view,supabase,profile){
     else if(cigarettes.data?.items?.length){
      const day=cigarettes.data.day;
      if(!day?.closed_at)alerts.push({id:o.id,outlet:o.name,text:'Previous day cigarette closing pending',module:'cigarettes'});
-     else {const report=day.report,groups=cigaretteGroups(report.brands,report.sales,Object.fromEntries(report.brands.map(b=>[b.item_id,b.closing])),shiftDay(o.business_day,-1));
+     else {const report=day.report,groups=cigaretteGroups(report.brands,report.sales,Object.fromEntries(report.brands.map(b=>[b.item_id,b.closing])),shiftDay(o.business_day,-1),report.pack_sales);
       const missing=groups.reduce((n,g)=>n+Math.max(0,g.difference||0),0),excess=groups.reduce((n,g)=>n+Math.max(0,-(g.difference||0)),0);
       if(missing||excess)alerts.push({id:o.id,outlet:o.name,text:`Cigarettes: ${missing} unaccounted · ${excess} excess pieces`,module:'cigarettes'});
-      if(groups.some(g=>!g.complete))alerts.push({id:o.id,outlet:o.name,text:'Cigarette SK check incomplete',module:'cigarettes'});
+      if(groups.some(g=>!g.complete))alerts.push({id:o.id,outlet:o.name,text:'Cigarette SK / PK check incomplete',module:'cigarettes'});
      }
     }
     return alerts;
