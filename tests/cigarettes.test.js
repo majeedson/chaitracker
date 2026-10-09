@@ -36,7 +36,7 @@ before(async()=>{
  `);
  const guards=await fs.readFile(new URL('../supabase/stock_function_guards_b109.sql',import.meta.url),'utf8');
  const start=guards.indexOf('CREATE OR REPLACE FUNCTION public.get_tonights_stock');const end=guards.indexOf('$function$;',start)+12;
- await db.exec(guards.slice(start,end));await db.exec(migration);await db.exec(packMigration);await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009175425_cigarette_order_authority_b148.sql',import.meta.url),'utf8'));await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009183320_cigarette_pk450_b149.sql',import.meta.url),'utf8'));await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009183745_cigarette_order_pack_size_b150.sql',import.meta.url),'utf8'));
+ await db.exec(guards.slice(start,end));await db.exec(migration);await db.exec(packMigration);await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009175425_cigarette_order_authority_b148.sql',import.meta.url),'utf8'));await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009183320_cigarette_pk450_b149.sql',import.meta.url),'utf8'));await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009183745_cigarette_order_pack_size_b150.sql',import.meta.url),'utf8'));await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009190924_cigarette_purchase_pack_size_b151.sql',import.meta.url),'utf8'));
 });
 after(()=>db?.close());beforeEach(async()=>{await db.exec('begin');await actor(admin);});afterEach(()=>db.exec('rollback;reset role'));
 test('Teapot uses only Kini; Chai has separate ITC and Advance brand cards',async()=>{
@@ -65,6 +65,14 @@ test('purchase requires SK and whole packs; canonical quantity and vendor feed e
  assert.equal((await db.query('select count(*) n from purchases')).rows[0].n,1);
  await reject(()=>call('purchase',{...p,vendor_id:2,request_id:crypto.randomUUID()}),/Wrong cigarette vendor/);
  await reject(()=>call('purchase',{...p,request_id:crypto.randomUUID(),entries:[{...p.entries[0],packs:1.5}]}),/whole packs/);
+});
+test('purchase uses entered pack size, preserves earlier receipts and defaults independently per café',async()=>{
+ const buy=async(size,packs,amount,date)=>call('purchase',{vendor_id:1,request_id:crypto.randomUUID(),entries:[{item_id:'a',packs,amount,pos_price:10,pack_price:260,pieces_per_pack:size}]},1,date);
+ await buy(10,2,160,'2026-10-06');await buy(20,3,480,'2026-10-07');
+ const old=(await work(1,'2026-10-06')).items.find(i=>i.item_id==='a'),now=(await work(1,'2026-10-07')).items.find(i=>i.item_id==='a');
+ assert.equal(old.purchased,20);assert.equal(now.purchased,60);assert.equal(now.pieces_per_pack,20);assert.equal(now.cost_per_piece,8);assert.equal((await work(2)).items.find(i=>i.item_id==='a').pieces_per_pack,10);
+ assert.equal((await work(1,'2026-10-07')).purchases[0].pieces_per_pack,20);
+ for(const size of [0,1.5,101,null])await reject(()=>buy(size,1,80,'2026-10-07'),/pieces per pack/);
 });
 test('SK assignment is café-specific; historical close snapshots retain their mapping',async()=>{
  await call('settings',{item_id:'a',pos_price:10});assert.equal((await work()).items.find(i=>i.item_id==='a').pos_price,10);assert.equal((await work(2)).items.find(i=>i.item_id==='a').pos_price,null);
@@ -108,7 +116,7 @@ test('purchase UI demands SK beside every brand; sales UI uses SK groups; blank 
  const profile={access_class:'ADMIN',context_outlet_id:1,_cigaretteTab:'purchase'};await renderCigarettes(view,client,profile);assert.equal(view.querySelectorAll('details[open]').length,0);assert.equal(view.querySelector('.cig-sk').required,true);
  const r=view.querySelector('.cig-entry-row');r.querySelector('.cig-include').checked=true;r.querySelector('.cig-packs').value=2;r.querySelector('.cig-amount').value=180;await view.querySelector('.cig-save').onclick();assert.equal(calls.some(c=>c.name==='save_cigarette_action'),false);
  r.querySelector('.cig-sk').value='10';await view.querySelector('.cig-save').onclick();assert.equal(calls.some(c=>c.name==='save_cigarette_action'),false);
- assert.equal(r.querySelector('.cig-pk').required,true);r.querySelector('.cig-pk').value='260';await view.querySelector('.cig-save').onclick();assert.equal(calls.find(c=>c.name==='save_cigarette_action').args.p_payload.entries[0].pos_price,10);assert.equal(calls.find(c=>c.name==='save_cigarette_action').args.p_payload.entries[0].pack_price,260);
+ assert.equal(r.querySelector('.cig-pk').required,true);assert.equal(r.querySelector('.cig-pack-size').value,'10');r.querySelector('.cig-pack-size').value='20';r.querySelector('.cig-pk').value='260';await view.querySelector('.cig-save').onclick();assert.equal(calls.find(c=>c.name==='save_cigarette_action').args.p_payload.entries[0].pos_price,10);assert.equal(calls.find(c=>c.name==='save_cigarette_action').args.p_payload.entries[0].pack_price,260);assert.equal(calls.find(c=>c.name==='save_cigarette_action').args.p_payload.entries[0].pieces_per_pack,20);
  view.querySelector('[data-cig-tab="sales"]').click();assert.equal(view.querySelectorAll('.cig-sales-row').length,10);assert.match(view.textContent,/SK10/);assert.match(view.textContent,/PK400/);assert.equal(view.querySelectorAll('.cig-sold')[0].value,'');
  view.querySelector('[data-cig-tab="stock"]').click();assert.equal(view.querySelector('.cig-count-packs').value,'');assert.equal(view.querySelector('#cigVerified').checked,false);dom.window.close();
 });
