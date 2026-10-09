@@ -36,7 +36,7 @@ before(async()=>{
  `);
  const guards=await fs.readFile(new URL('../supabase/stock_function_guards_b109.sql',import.meta.url),'utf8');
  const start=guards.indexOf('CREATE OR REPLACE FUNCTION public.get_tonights_stock');const end=guards.indexOf('$function$;',start)+12;
- await db.exec(guards.slice(start,end));await db.exec(migration);await db.exec(packMigration);await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009175425_cigarette_order_authority_b148.sql',import.meta.url),'utf8'));
+ await db.exec(guards.slice(start,end));await db.exec(migration);await db.exec(packMigration);await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009175425_cigarette_order_authority_b148.sql',import.meta.url),'utf8'));await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009183320_cigarette_pk450_b149.sql',import.meta.url),'utf8'));
 });
 after(()=>db?.close());beforeEach(async()=>{await db.exec('begin');await actor(admin);});afterEach(()=>db.exec('rollback;reset role'));
 test('Teapot uses only Kini; Chai has separate ITC and Advance brand cards',async()=>{
@@ -113,14 +113,16 @@ test('general catalogue and old count endpoints cannot bypass cigarette monitori
 
 test('PK mapping is café-specific, preserves SK, and freezes with audited close and summary totals',async()=>{
  await call('settings',{item_id:'a',pos_price:10,pack_price:260});await call('settings',{item_id:'b',pos_price:15,pack_price:0});
- await call('settings',{item_id:'a',pack_price:350});let w=await work();assert.equal(w.items.find(i=>i.item_id==='a').pos_price,10);assert.equal(w.items.find(i=>i.item_id==='a').pack_price,350);assert.equal((await work(2)).items.find(i=>i.item_id==='a').pack_price,null);
- await call('sales',{entries:sales(5),pack_entries:packSales(2,350)});await call('close',{entries:[{item_id:'a',pieces:10},{item_id:'b',pieces:0}]});
- await call('settings',{item_id:'a',pack_price:400});w=await work();assert.equal(w.day.report.brands.find(i=>i.item_id==='a').pack_price,350);assert.equal(w.day.report.pack_sales.find(p=>p.price===350).packs,2);
- const summary=(await db.query("select public.get_cigarette_summary(1,'2026-10-06') result")).rows[0].result;assert.equal([...summary.sales,...summary.pack_sales].reduce((n,s)=>n+s.amount,0),750);
- assert.ok(w.audit.some(a=>a.action==='sales'&&a.payload.input.pack_entries.find(p=>p.price===350).packs===2));
+ await call('settings',{item_id:'a',pack_price:450});let w=await work();assert.equal(w.items.find(i=>i.item_id==='a').pos_price,10);assert.equal(w.items.find(i=>i.item_id==='a').pack_price,450);assert.equal((await work(2)).items.find(i=>i.item_id==='a').pack_price,null);
+ await call('sales',{entries:sales(5),pack_entries:packSales(2,450)});await call('close',{entries:[{item_id:'a',pieces:10},{item_id:'b',pieces:0}]});
+ await call('settings',{item_id:'a',pack_price:400});w=await work();assert.equal(w.day.report.brands.find(i=>i.item_id==='a').pack_price,450);assert.equal(w.day.report.pack_sales.find(p=>p.price===450).packs,2);
+ const summary=(await db.query("select public.get_cigarette_summary(1,'2026-10-06') result")).rows[0].result;assert.equal([...summary.sales,...summary.pack_sales].reduce((n,s)=>n+s.amount,0),950);
+ assert.ok(w.audit.some(a=>a.action==='sales'&&a.payload.input.pack_entries.find(p=>p.price===450).packs===2));
  await reject(()=>call('settings',{item_id:'a',pack_price:999}),/PK140/);
 });
 test('PK POS entries require all four codes and whole nonnegative packs; closed-day protections apply',async()=>{
+ await reject(()=>call('settings',{item_id:'a',pack_price:350}),/PK450/);
+ await reject(()=>call('sales',{entries:sales(),pack_entries:packSales().map(p=>p.price===450?{...p,price:350}:p)}),/Invalid PK sale/);
  await reject(()=>call('sales',{entries:sales(),pack_entries:null}),/every PK/);
  await reject(()=>call('sales',{entries:sales(),pack_entries:packSales().slice(0,3)}),/every PK/);
  await reject(()=>call('sales',{entries:sales(),pack_entries:[...packSales().slice(0,3),packSales()[0]]}),/Duplicate PK/);

@@ -1,5 +1,5 @@
 export const SK_PRICES=[10,15,20,25,28,30];
-export const PK_PRICES=[140,260,350,400];
+export const PK_PRICES=[140,260,400,450];
 export function cigaretteGroups(items,sales=[],counts={},date,packSales=null){
  if(Array.isArray(packSales))return combinedGroups(items,sales,counts,date,packSales);
  const yesterday=new Date(date+'T12:00:00Z');yesterday.setUTCDate(yesterday.getUTCDate()-1);
@@ -22,7 +22,7 @@ function combinedGroups(items,sales,counts,date,packSales){
  const parents=new Map(),find=k=>{if(!parents.has(k))parents.set(k,k);if(parents.get(k)!==k)parents.set(k,find(parents.get(k)));return parents.get(k);};
  const join=(a,b)=>parents.set(find(a),find(b));
  const sks=[...new Set([...SK_PRICES,...items.map(i=>Number(i.pos_price)).filter(n=>n>0),...sales.map(s=>Number(s.price))])].sort((a,b)=>a-b);
- sks.forEach(p=>find('SK'+p));PK_PRICES.forEach(p=>find('PK'+p));
+ sks.forEach(p=>find('SK'+p));(packSales.length?packSales.map(s=>Number(s.price)):PK_PRICES).forEach(p=>find('PK'+p));
  const activePK=new Set(packSales.filter(s=>Number(s.packs)>0).map(s=>Number(s.price)));
  items.forEach(i=>{if(Number(i.pos_price)>0&&activePK.has(Number(i.pack_price)))join('SK'+i.pos_price,'PK'+i.pack_price);});
  const nodes=new Map();for(const key of parents.keys()){const root=find(key);if(!nodes.has(root))nodes.set(root,[]);nodes.get(root).push(key);}
