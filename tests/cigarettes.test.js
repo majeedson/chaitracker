@@ -36,7 +36,7 @@ before(async()=>{
  `);
  const guards=await fs.readFile(new URL('../supabase/stock_function_guards_b109.sql',import.meta.url),'utf8');
  const start=guards.indexOf('CREATE OR REPLACE FUNCTION public.get_tonights_stock');const end=guards.indexOf('$function$;',start)+12;
- await db.exec(guards.slice(start,end));await db.exec(migration);await db.exec(packMigration);await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009175425_cigarette_order_authority_b148.sql',import.meta.url),'utf8'));await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009183320_cigarette_pk450_b149.sql',import.meta.url),'utf8'));
+ await db.exec(guards.slice(start,end));await db.exec(migration);await db.exec(packMigration);await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009175425_cigarette_order_authority_b148.sql',import.meta.url),'utf8'));await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009183320_cigarette_pk450_b149.sql',import.meta.url),'utf8'));await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009183745_cigarette_order_pack_size_b150.sql',import.meta.url),'utf8'));
 });
 after(()=>db?.close());beforeEach(async()=>{await db.exec('begin');await actor(admin);});afterEach(()=>db.exec('rollback;reset role'));
 test('Teapot uses only Kini; Chai has separate ITC and Advance brand cards',async()=>{
@@ -47,6 +47,14 @@ test('saved order remains available after more than thirty later daily actions',
  await call('order',{vendor_id:1,request_id:crypto.randomUUID(),entries:[{item_id:'a',packs:5,pack_price:null}]});
  await db.exec(`insert into public.cigarette_audit(outlet_id,business_date,action,actor_id,payload) select 1,'2026-10-06','settings','${admin}','{"input":{}}'::jsonb from generate_series(1,35)`);
  assert.equal((await work()).audit.filter(a=>a.action==='order').length,1);
+});
+test('order pack sizes persist for later orders without changing stock conversion; new brands need no order PK',async()=>{
+ await call('order',{vendor_id:1,request_id:crypto.randomUUID(),entries:[{item_id:'a',packs:5,pieces_per_pack:20}]});
+ const item=(await work(1,'2026-10-07')).items.find(i=>i.item_id==='a');assert.equal(item.order_pack_size,20);assert.equal(item.pieces_per_pack,10);
+ assert.equal((await work(2)).items.find(i=>i.item_id==='a').order_pack_size,10);
+ for(const size of [0,1.5,101,null])await reject(()=>call('order',{vendor_id:1,request_id:crypto.randomUUID(),entries:[{item_id:'a',packs:1,pieces_per_pack:size}]}),/pieces per pack/);
+ await call('add',{name:'Goldflake small',pack:10,pack_price:null,source:'orders',vendor_id:1});
+ assert.ok((await work(1,'2026-10-07')).items.some(i=>i.item_name==='Goldflake small'));
 });
 test('purchase requires SK and whole packs; canonical quantity and vendor feed existing credits; retry cannot duplicate',async()=>{
  await actor(staff);const p={vendor_id:1,request_id:crypto.randomUUID(),entries:[{item_id:'a',packs:2,amount:180,pos_price:10,pack_price:260}]};
