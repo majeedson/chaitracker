@@ -36,12 +36,17 @@ before(async()=>{
  `);
  const guards=await fs.readFile(new URL('../supabase/stock_function_guards_b109.sql',import.meta.url),'utf8');
  const start=guards.indexOf('CREATE OR REPLACE FUNCTION public.get_tonights_stock');const end=guards.indexOf('$function$;',start)+12;
- await db.exec(guards.slice(start,end));await db.exec(migration);await db.exec(packMigration);
+ await db.exec(guards.slice(start,end));await db.exec(migration);await db.exec(packMigration);await db.exec(await fs.readFile(new URL('../supabase/migrations/20261009175425_cigarette_order_authority_b148.sql',import.meta.url),'utf8'));
 });
 after(()=>db?.close());beforeEach(async()=>{await db.exec('begin');await actor(admin);});afterEach(()=>db.exec('rollback;reset role'));
 test('Teapot uses only Kini; Chai has separate ITC and Advance brand cards',async()=>{
  const t=await work(),c=await work(2);assert.deepEqual(t.vendors.map(v=>v.name),['Kini']);assert.ok(t.items.every(i=>i.vendor_name==='Kini'));
  assert.deepEqual(c.vendors.map(v=>v.name),['Advance','ITC']);assert.equal(c.items.find(i=>i.item_id==='a').vendor_name,'ITC');
+});
+test('saved order remains available after more than thirty later daily actions',async()=>{
+ await call('order',{vendor_id:1,request_id:crypto.randomUUID(),entries:[{item_id:'a',packs:5,pack_price:null}]});
+ await db.exec(`insert into public.cigarette_audit(outlet_id,business_date,action,actor_id,payload) select 1,'2026-10-06','settings','${admin}','{"input":{}}'::jsonb from generate_series(1,35)`);
+ assert.equal((await work()).audit.filter(a=>a.action==='order').length,1);
 });
 test('purchase requires SK and whole packs; canonical quantity and vendor feed existing credits; retry cannot duplicate',async()=>{
  await actor(staff);const p={vendor_id:1,request_id:crypto.randomUUID(),entries:[{item_id:'a',packs:2,amount:180,pos_price:10,pack_price:260}]};

@@ -7,6 +7,9 @@ const priceSelect=(data,current)=>`<option value="">Set SK</option>${prices(data
 const packSelect=current=>`<option value="">Set PK</option><option value="0" ${current!=null&&Number(current)===0?'selected':''}>No pack sales</option>${PK_PRICES.map(n=>`<option value="${n}" ${Number(current)===n?'selected':''}>PK${n}</option>`).join('')}`;
 const saleRows=(data,kind)=>{const isPack=kind==='PK',list=isPack?PK_PRICES:prices(data),savedSales=isPack?data.day?.pack_sales:data.day?.sales;return list.map(price=>{const saved=savedSales?.find(s=>Number(s.price)===price);return {price,kind,code:kind+price,quantity:saved?.[isPack?'packs':'pieces'],amount:saved?.amount};});};
 const uuid=()=>crypto.randomUUID();
+const orderSignature=entries=>JSON.stringify(entries.map(x=>({item_id:x.item_id,packs:Number(x.packs),pack_price:x.pack_price==null?null:Number(x.pack_price)})).sort((a,b)=>a.item_id.localeCompare(b.item_id)));
+const savedOrders=data=>(data.audit||[]).filter(a=>a.action==='order').sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+const latestOrder=(data,vendor)=>savedOrders(data).find(a=>Number(a.payload.input.vendor_id)===Number(vendor));
 
 export async function renderCigarettes(view,client,profile){
  const outletId=Number(profile.access_class==='ADMIN'?profile.context_outlet_id:profile.outlet_id);
@@ -22,7 +25,7 @@ export async function renderCigarettes(view,client,profile){
   if(view._cigaretteRequest!==request)return false;
   if(response.error)throw response.error;data=response.data;return true;
  };
- const draftKey=()=>`cafetracker-cigarettes:${outletId}:${date}:${tab}`;
+ const draftKey=()=>`cafetracker-cigarettes:${outletId}:${date}:${tab}${tab==='orders'?':entered-v148':''}`;
  const readDraft=()=>{try{return JSON.parse(view.ownerDocument.defaultView.localStorage.getItem(draftKey())||'{}');}catch{return {};}};
  const writeDraft=d=>{try{view.ownerDocument.defaultView.localStorage.setItem(draftKey(),JSON.stringify(d));}catch{}};
  const saveDraft=()=>{
@@ -41,7 +44,7 @@ export async function renderCigarettes(view,client,profile){
   const response=await client.rpc('save_cigarette_action',{p_outlet_id:outletId,p_date:date,p_action:action,p_payload:payload});
   if(response.error)throw response.error;
   if(['sales','close'].includes(action))writeDraft({});
-  if(['purchase','order'].includes(action)){const d=readDraft();payload.entries.forEach(i=>delete d[i.item_id]);writeDraft(d);}
+  if(['purchase','order'].includes(action)){const d=readDraft();const ids=action==='order'?data.items.filter(i=>Number(i.vendor_id)===Number(payload.vendor_id)).map(i=>i.item_id):payload.entries.map(i=>i.item_id);ids.forEach(id=>delete d[id]);writeDraft(d);}
  };
  const status=(message,error=false)=>{const el=view.querySelector('#cigMessage');if(el){el.hidden=false;el.textContent=message;el.className='purchase-message '+(error?'error':'success');}};
  const submit=(button,fn)=>async event=>{
@@ -58,7 +61,7 @@ export async function renderCigarettes(view,client,profile){
   const closed=!!data.day?.closed_at;
   const revenue=data.day?.sales?[...data.day.sales,...(data.day.pack_sales||[])].reduce((n,s)=>n+Number(s.amount),0):null;
   view.innerHTML=`<div class="cig-workspace"><div class="section-heading"><div><h2>Cigarettes</h2><small>${closed?'Closed':'Closing pending'} · ${data.items.length} brands</small></div><label class="cig-date">Date<input id="cigDate" type="date" max="${e(today)}" value="${e(date)}"></label></div><div class="cig-tabs" role="tablist">${[['orders','Orders'],['purchase','Purchases'],['stock','Stock / Close'],['sales','Sales']].map(([id,label])=>`<button type="button" role="tab" aria-selected="${tab===id}" data-cig-tab="${id}" class="${tab===id?'active':''}">${label}</button>`).join('')}</div><div id="cigMessage" class="purchase-message" role="status" hidden></div><div class="cig-overview"><span>POS sales <strong>${money(revenue)}</strong></span><span>Unassigned SK <strong>${data.items.filter(i=>!i.pos_price).length}</strong></span></div><div id="cigPane"></div></div>`;
-  const pane=view.querySelector('#cigPane');let refreshCheck=null;
+  const pane=view.querySelector('#cigPane');let refreshCheck=null;const orderChecks=[];
   view.querySelector('#cigDate').onchange=async event=>{saveDraft();date=event.target.value;profile._cigaretteDate=date;try{if(await fetchData())render();}catch(err){status(err.message,true);}};
   view.querySelectorAll('[data-cig-tab]').forEach(b=>b.onclick=()=>{saveDraft();tab=b.dataset.cigTab;profile._cigaretteTab=tab;render();});
   if(!data.vendors.length){pane.innerHTML='<p class="notice">No cigarette supplier is configured for this café.</p>';return;}
@@ -66,12 +69,15 @@ export async function renderCigarettes(view,client,profile){
    for(const vendor of data.vendors){
     const card=view.ownerDocument.createElement('details');card.className='order-category-group cig-vendor';
     const list=data.items.filter(i=>Number(i.vendor_id)===Number(vendor.id));
+    const savedOrder=tab==='orders'?latestOrder(data,vendor.id):null;
+    const savedEntries=savedOrder?.payload.input.entries||[];
     card.innerHTML=`<summary><span><strong>${e(vendor.name)}</strong><small>${list.length} brands</small></span></summary><div class="order-category-body">${closed&&tab==='purchase'?'<p class="notice">Reopen the day to add purchases.</p>':''}<div class="cig-vendor-items">${list.map(i=>{
      const stock=Number(i.last_count||0),suggested=i.last_count_date?Math.ceil(Math.max(0,Number(i.target_stock||0)-stock)/i.pieces_per_pack):0;
      return `<div class="cig-entry-row" data-id="${e(i.item_id)}"><label class="cig-brand"><input class="cig-include" type="checkbox" ${tab==='orders'&&suggested>0?'checked':''} ${closed&&tab==='purchase'?'disabled':''}><span><strong>${e(i.item_name)}</strong><small>${i.pieces_per_pack}/pack · ${qty(stock)} pieces${i.last_count_date?' · '+e(i.last_count_date):' · no count'}</small></span></label><div class="cig-entry-controls ${tab==='purchase'?'cig-purchase-controls':'cig-order-controls'}"><label>Packs<input class="cig-packs" type="number" inputmode="numeric" min="0" step="1" value="${tab==='orders'&&suggested>0?suggested:''}" ${closed&&tab==='purchase'?'disabled':''}></label>${tab==='purchase'?`<label>Total ₹<input class="cig-amount" type="number" inputmode="decimal" min="0.01" step="0.01" ${closed?'disabled':''}></label><label>SK category<select class="cig-sk" required ${closed?'disabled':''}>${priceSelect(data,i.pos_price)}</select></label><label>PK category<select class="cig-pk" required ${closed?'disabled':''}>${packSelect(i.pack_price)}</select></label>`:`<label>PK category<select class="cig-pk">${packSelect(i.pack_price)}</select></label>`}</div></div>`;
     }).join('')}</div><div class="cig-add-panel" hidden></div><div class="cig-actions"><button class="summary-add cig-add" type="button" ${closed?'disabled':''}>＋ Add brand</button><button class="primary cig-save" type="button" ${closed&&tab==='purchase'?'disabled':''}>${tab==='purchase'?'Save purchase':'Save order'}</button>${tab==='orders'?'<button type="button" class="secondary cig-message">Generate message</button>':''}</div><div class="category-order-preview" hidden><textarea readonly></textarea><button class="secondary cig-copy" type="button">Copy</button></div></div>`;
     const requestId=uuid();
     const selected=()=>[...card.querySelectorAll('.cig-entry-row')].filter(r=>r.querySelector('.cig-include').checked).map(r=>({item_id:r.dataset.id,packs:Number(r.querySelector('.cig-packs').value),amount:tab==='purchase'?Number(r.querySelector('.cig-amount').value):null,pos_price:tab==='purchase'?Number(r.querySelector('.cig-sk').value):null,pack_price:r.querySelector('.cig-pk').value===''?null:Number(r.querySelector('.cig-pk').value)}));
+    if(savedOrder)card.querySelectorAll('.cig-entry-row').forEach(r=>{const entry=savedEntries.find(x=>x.item_id===r.dataset.id);r.querySelector('.cig-include').checked=!!entry;r.querySelector('.cig-packs').value=entry?.packs??'';r.querySelector('.cig-pk').value=entry?.pack_price??'';});
     card.querySelectorAll('.cig-entry-row').forEach(r=>{
      const i=list.find(i=>i.item_id===r.dataset.id),amount=r.querySelector('.cig-amount');let auto=true;
      r.querySelector('.cig-packs').oninput=()=>{r.querySelector('.cig-include').checked=Number(r.querySelector('.cig-packs').value)>0;if(amount&&auto&&i.cost_per_piece!=null)amount.value=(Number(r.querySelector('.cig-packs').value)*i.pieces_per_pack*i.cost_per_piece).toFixed(2);};
@@ -80,16 +86,21 @@ export async function renderCigarettes(view,client,profile){
     card.querySelector('.cig-add').onclick=()=>addBrand(vendor,card.querySelector('.cig-add-panel'));
     card.querySelector('.cig-save').onclick=submit(card.querySelector('.cig-save'),async()=>{
      const entries=selected();if(!entries.length||entries.some(r=>!Number.isInteger(r.packs)||r.packs<=0||(tab==='purchase'&&(!r.pos_price||r.pack_price==null||r.amount<=0))))throw Error('Choose brands, whole packs, amount, SK and PK categories.');
+     if(tab==='orders'&&savedOrder&&orderSignature(entries)===orderSignature(savedEntries))return;
      await act(tab==='purchase'?'purchase':'order',{vendor_id:vendor.id,entries,request_id:requestId});
     });
     if(tab==='orders'){
-     card.querySelector('.cig-message').onclick=()=>{const lines=selected().filter(i=>i.packs>0);if(!lines.length){status('Select brands and packs first.',true);return;}card.querySelector('.category-order-preview').hidden=false;card.querySelector('textarea').value=`*${vendor.name.toUpperCase()} — CIGARETTES*\n${date}\n`+lines.map(x=>list.find(i=>i.item_id===x.item_id).item_name+' — '+x.packs+' packs').join('\n');};
-     card.querySelector('.cig-copy').onclick=async()=>{try{await navigator.clipboard.writeText(card.querySelector('textarea').value);status('Copied.');}catch{card.querySelector('textarea').select();status('Select and copy the message.');}};
+     const clean=()=>!!savedOrder&&orderSignature(selected())===orderSignature(savedEntries);
+     const state=view.ownerDocument.createElement('small');state.className='hint cig-order-state';card.querySelector('.cig-actions').before(state);
+     const check=()=>{state.textContent=clean()?'Saved order':savedOrder?'Unsaved changes — save before messaging':'Suggestions only — enter and save';if(!clean()){card.querySelector('.category-order-preview').hidden=true;card.querySelector('textarea').value='';}};
+     card.addEventListener('input',check);card.addEventListener('change',check);orderChecks.push(check);
+     card.querySelector('.cig-message').onclick=()=>{if(!clean()){status('Save your order before generating the message.',true);return;}card.querySelector('.category-order-preview').hidden=false;card.querySelector('textarea').value=`*${vendor.name.toUpperCase()} — CIGARETTES*\n${date}\n`+savedEntries.map(x=>(list.find(i=>i.item_id===x.item_id)?.item_name||x.item_id)+' — '+x.packs+' packs').join('\n');};
+     card.querySelector('.cig-copy').onclick=async()=>{if(!clean()||!card.querySelector('textarea').value){check();status('Save your order and generate the message first.',true);return;}try{await navigator.clipboard.writeText(card.querySelector('textarea').value);status('Copied.');}catch{card.querySelector('textarea').select();status('Select and copy the message.');}};
     }
     pane.append(card);
    }
    if(tab==='purchase')pane.insertAdjacentHTML('beforeend',`<details class="cig-review"><summary>Purchases recorded today</summary>${data.purchases.map(p=>`<div class="purchase-history-line"><span><strong>${e(p.item_name)}</strong><small>${e(p.vendor_name)} · ${qty(p.qty)} ${e(p.unit)}</small></span><b>${money(p.invoice_amount)}</b></div>`).join('')||'<p>No purchases recorded.</p>'}</details>`);
-   if(tab==='orders')pane.insertAdjacentHTML('beforeend',`<details class="cig-review"><summary>Saved orders</summary>${data.audit.filter(a=>a.action==='order').map(a=>`<div class="cig-history">${e(a.actor_name)} · ${e(new Date(a.created_at).toLocaleTimeString())}<ul>${(a.payload.input.entries||[]).map(x=>`<li>${e(data.items.find(i=>i.item_id===x.item_id)?.item_name||x.item_id)} — ${x.packs} packs</li>`).join('')}</ul></div>`).join('')||'<p>No orders saved.</p>'}</details>`);
+   if(tab==='orders')pane.insertAdjacentHTML('beforeend',`<details class="cig-review"><summary>Saved orders / revisions</summary>${savedOrders(data).map(a=>`<div class="cig-history"><strong>${latestOrder(data,a.payload.input.vendor_id)===a?'Latest order':'Earlier revision'} · ${e(data.vendors.find(v=>Number(v.id)===Number(a.payload.input.vendor_id))?.name||'Vendor')}</strong><br>${e(a.actor_name)} · ${e(new Date(a.created_at).toLocaleTimeString())}<ul>${(a.payload.input.entries||[]).map(x=>`<li>${e(data.items.find(i=>i.item_id===x.item_id)?.item_name||x.item_id)} — ${x.packs} packs</li>`).join('')}</ul></div>`).join('')||'<p>No orders saved.</p>'}</details>`);
   }
   if(tab==='sales'){
    const rows=[...saleRows(data,'SK'),...saleRows(data,'PK')];
@@ -126,7 +137,7 @@ export async function renderCigarettes(view,client,profile){
    const dispatch=m.querySelector('#cigDispatch');if(dispatch)dispatch.onsubmit=submit(dispatch.querySelector('button'),async()=>{if(!dispatch.reportValidity())throw Error('Complete transfer fields.');await act('dispatch',{item_id:dispatch.elements.item.value,destination:Number(dispatch.elements.destination.value),pieces:Number(dispatch.elements.pieces.value)});});
    const adjust=m.querySelector('#cigAdjust');if(adjust)adjust.onsubmit=submit(adjust.querySelector('button'),async()=>{if(!adjust.reportValidity())throw Error('Complete adjustment fields.');await act('adjust',{item_id:adjust.elements.item.value,pieces:Number(adjust.elements.pieces.value),reason:adjust.elements.reason.value});});
   }
-  restoreDraft();refreshCheck?.();pane.addEventListener('input',saveDraft);pane.addEventListener('change',saveDraft);
+  restoreDraft();refreshCheck?.();orderChecks.forEach(check=>check());pane.addEventListener('input',saveDraft);pane.addEventListener('change',saveDraft);
  };
  try{if(await fetchData())render();}catch(err){view.innerHTML=`<h2>Cigarettes unavailable</h2><p class="form-error">${e(err.message)}</p>`;}
 }
