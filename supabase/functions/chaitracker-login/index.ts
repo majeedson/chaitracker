@@ -20,7 +20,7 @@ export default {fetch:withSupabase({auth:"none"},async(req,ctx)=>{
   if(!/^\d{4,8}$/.test(pin))return json({error:"Enter a valid PIN."},400);
 
   // Admin first-login bootstrap. Jazeel keeps 123456 as a permanent recovery/sign-in route.
-  if(user.access_class==="ADMIN"&&pin==="123456"){
+  if(user.access_class==="ADMIN"&&pin==="123456"&&(user.is_super_user===true||!user.auth_user_id)){
    const isJazeel=user.is_super_user===true&&String(user.name).toLowerCase()==="jazeel";
    const mayBootstrap=!user.auth_user_id;
    if(!isJazeel&&!mayBootstrap)return json({error:"Incorrect PIN."},401);
