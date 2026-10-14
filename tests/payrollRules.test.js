@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {salaryStartForMonth,salaryPeriodEnd,latePenaltyFromHours,chargeableLateHours,latePenalty,holidayDutyDays,balanceAttendance,payrollAbsenceDeduction} from '../src/payrollRules.js';
+import {salaryStartForMonth,salaryPeriodEnd,latePenaltyFromHours,chargeableLateHours,latePenalty,holidayDutyDays,balanceAttendance,payrollAbsenceDeduction,salaryPayDate} from '../src/payrollRules.js';
 
 test('late tiers use the stated inclusive boundaries',()=>{
   for(const [minutes,hours] of [[0,0],[15,0],[16,.5],[30,.5],[31,1],[60,1],[61,2],[120,2],[121,3],[180,3],[181,4]]){
@@ -38,4 +38,11 @@ test('every joining anchor has contiguous periods, including leap years and shor
   }
   assert.equal(salaryPeriodEnd('2026-09-10','2025-01-07'),'2026-10-09');
   assert.equal(latePenaltyFromHours(15000,3*chargeableLateHours(16)),63);
+});
+
+test('approved payday is ten calendar days after period end',()=>{
+  assert.equal(salaryPayDate('2026-10-31'),'2026-11-10');
+  assert.equal(salaryPayDate('2026-10-09'),'2026-10-19');
+  assert.equal(salaryPayDate('2028-02-29'),'2028-03-10');
+  assert.throws(()=>salaryPayDate('2026-02-30'),/Invalid salary period end/);
 });
