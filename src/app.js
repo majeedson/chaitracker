@@ -7,12 +7,12 @@ import { renderBusinessDashboard } from './businessDashboard.js';
 import { loadStaffAvatars,staffAvatar,bindAvatarImages,refreshStaffAvatarElements,editProfilePhoto } from './staffAvatars.js';
 import { renderExtraTime } from './extraTime.js';
 import { APP_DOMAINS,roleModuleAccess,effectiveModuleAccess,hasModuleAccess } from './moduleAccess.js';
-import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,latePenaltyFromHours,holidayDutyDays,balanceAttendance,payrollAbsenceDeduction } from './payrollRules.js';
+import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,latePenaltyFromHours,holidayDutyDays,balanceAttendance,payrollAbsenceDeduction,salaryPayDate } from './payrollRules.js';
 
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 151;
+const APP_BUILD = 152;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['credits', 'Credits'],
@@ -1211,7 +1211,7 @@ async function renderSalary(view, supabase, profile, initialView='salary',select
 async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff,selectedStaffId=null,initialView='salary'){
   const money=n=>'₹'+Math.round(Number(n||0)).toLocaleString('en-IN');
   const periodEndFor=(date,joining)=>salaryPeriodEnd(date,joining);
-  const payDateAfter=end=>{const pay=new Date(end+'T00:00:00Z');pay.setUTCDate(pay.getUTCDate()+10);return pay.toISOString().slice(0,10);};
+  const payDateAfter=salaryPayDate;
   const payDateFor=(date,joining)=>payDateAfter(periodEndFor(date,joining));
   const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   const month=today.slice(0,7);
@@ -1330,6 +1330,7 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff,se
     };
     form.addEventListener('input',e=>{
       const el=e.target;
+      if(!['period_start','period_end','pay_date'].includes(el.name))form.dataset.manualPayrollEdits='true';
       if(['present_days','absent_days'].includes(el.name))balanceAttendanceFields(el.name);
       if(el.name==='holiday_days'){el.dataset.auto='false';updateAutoHolidayPay();}
       if(el.name==='holiday_pay'||el.name==='half_day_deduction'||el.name==='absent_deduction'||el.name==='late_penalty')el.dataset.auto='false';
@@ -1363,11 +1364,13 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff,se
     panel.querySelector('#finalizePayroll')?.addEventListener('click',()=>action('FINALIZE'));
     panel.querySelector('#refreshPayroll')?.addEventListener('click',async()=>{
       const btn=panel.querySelector('#refreshPayroll'),msg=panel.querySelector('#payrollMessage'),periodStart=form.elements.period_start.value,periodEnd=form.elements.period_end.value;
+      if(form.dataset.manualPayrollEdits==='true'&&!confirm('Refresh payroll figures? Unsaved manual edits will be replaced.'))return;
       if(!periodStart||!periodEnd||periodEnd<periodStart){msg.textContent='Enter a valid salary period first.';msg.className='purchase-message error';msg.hidden=false;return;}
       btn.disabled=true;btn.textContent='Fetching…';msg.hidden=true;
       const{data:fetched,error:fetchError}=await supabase.rpc('get_salary_estimate_v2',{p_staff_id:sid,p_start:periodStart,p_end:periodEnd});
       if(fetchError){msg.textContent=fetchError.message;msg.className='purchase-message error';msg.hidden=false;btn.disabled=false;btn.textContent='↻ Fetch attendance data';return;}
       estimate=fetched;
+      form.dataset.manualPayrollEdits='false';
       const fetchedAbsent=Number(fetched.absent_days||0)+Number(fetched.leave_days||0),fetchedHalf=Number(fetched.half_days||0);
       const complete=fetched.data_complete!==false&&Number(fetched.period_days||0)===num(form,'period_days');
       for(const [field,value] of Object.entries({basic_salary:fetched.basic_salary,present_days:Number(fetched.present_equivalent_days||0)+fetchedHalf/2,absent_days:fetchedAbsent,half_days:fetchedHalf,late_mins:fetched.late_mins,holiday_days:complete?holidayDutyDays(fetchedAbsent):fetched.holiday_duty_days,advance_deduction:fetched.advance_deduction,advance_installment_deduction:fetched.advance_installment_deduction,loan_deduct_this_month:fetched.loan_deduction,late_hours:fetched.deductible_late_hours}))if(form.elements[field]&&value!==undefined)form.elements[field].value=value;
