@@ -50,3 +50,12 @@ export function payrollAbsenceDeduction(basic,daysOff,periodDays) {
 export function latePenalty(basic,minutes) {
   return latePenaltyFromHours(basic,chargeableLateHours(minutes));
 }
+
+/** Approved payroll payday: ten calendar days after the inclusive period end. */
+export function salaryPayDate(periodEnd) {
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(periodEnd)))throw new Error('Invalid salary period end');
+  const date=new Date(periodEnd+'T00:00:00Z');
+  if(Number.isNaN(date.getTime())||date.toISOString().slice(0,10)!==periodEnd)throw new Error('Invalid salary period end');
+  date.setUTCDate(date.getUTCDate()+10);
+  return date.toISOString().slice(0,10);
+}
