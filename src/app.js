@@ -1358,7 +1358,7 @@ async function renderOwnerSalaryProcessor(view,supabase,profile,userRow,staff,se
       btn.disabled=true;btn.textContent=which==='SAVE_DRAFT'?'Saving…':'Finalizing…';msg.hidden=true;
       const{data,error}=await supabase.rpc('save_salary_payroll',{p_staff_id:sid,p_period_start:form.elements.period_start.value,p_period_end:form.elements.period_end.value,p_pay_date:form.elements.pay_date.value,p_details:payload(),p_action:which,p_user_id:profile.id,p_payment_method:null,p_payment_reference:null});
       if(error){msg.textContent=error.message;msg.className='purchase-message error';msg.hidden=false;btn.disabled=false;btn.textContent=which==='SAVE_DRAFT'?'Save draft':current?.payroll_status==='FINALIZED'?'Update finalized payroll':'Finalize payroll';return;}
-      msg.textContent=which==='SAVE_DRAFT'?'Draft saved.':'Payroll finalized.';msg.className='purchase-message';msg.hidden=false;await load();
+      msg.textContent=which==='SAVE_DRAFT'?'Draft saved. Entries retained.':'Payroll finalized.';msg.className='purchase-message';msg.hidden=false;if(which==='SAVE_DRAFT'){btn.disabled=false;btn.textContent='Save draft';form.dataset.manualPayrollEdits='false';}else await load();
     };
     panel.querySelector('#savePayrollDraft')?.addEventListener('click',()=>action('SAVE_DRAFT'));
     panel.querySelector('#finalizePayroll')?.addEventListener('click',()=>action('FINALIZE'));
