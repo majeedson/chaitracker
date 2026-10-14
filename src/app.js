@@ -12,7 +12,7 @@ import { PAID_DAYS_OFF,SALARY_DAY_DIVISOR,salaryStartForMonth,salaryPeriodEnd,la
 import { loadSalaryTransfers } from './payrollData.js';
 import { onboardingDetailsHtml,bindProfileDocuments,renderMyProfile,deleteUserDialog } from './employeeProfiles.js';
 
-const APP_BUILD = 152;
+const APP_BUILD = 151;
 const modules = [
   ['dashboard', 'Dashboard'],
   ['credits', 'Credits'],
