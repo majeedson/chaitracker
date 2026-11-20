@@ -11,7 +11,7 @@ import {renderDailySummary} from '/fixture-summary.js';
 const view=document.querySelector('main'),states=[];
 let closed=false,theme='teapot';
 const client={from(table){
- const filters=[],q={select(){return q},eq(k,v){filters.push([k,v]);return q},lt(){return q},order(){return q},limit(){return q},maybeSingle:async()=>({data:data(true)}),then(resolve,reject){return Promise.resolve({data:data(false)}).then(resolve,reject)}};
+ const filters=[],q={select(){return q},eq(k,v){filters.push([k,v]);return q},lt(){return q},gt(){return q},order(){return q},limit(){return q},maybeSingle:async()=>({data:data(true)}),then(resolve,reject){return Promise.resolve({data:data(false)}).then(resolve,reject)}};
  function data(single){
   if(table==='outlets'){const outlet={id:1,name:'Test Café',theme_key:theme};return single?outlet:[outlet]}
   if(table==='daily_summaries')return filters.some(([k])=>k==='business_date')?{id:'SUM',business_date:'2026-10-06',cash_sale:6300,physical_cash:0,is_closed:closed}:null;
@@ -33,6 +33,12 @@ try{
   view.querySelector('#whatsappSummary').click();check(theme+'-message');
   closed=true;await renderDailySummary(view,client,profile);check(theme+'-closed');
  }
+ closed=false;await renderDailySummary(view,client,profile,{date:'2026-10-03'});
+ if(view.querySelector('#summaryDate').value!=='2026-10-03'||!view.querySelector('#summaryToday'))throw Error('Past business day is selectable');
+ check('past-day');
+ closed=true;await renderDailySummary(view,client,profile,{date:'2026-10-03'});
+ if(view.querySelector('#summaryDate').disabled)throw Error('Date picker stays usable on a closed day');
+ check('past-day-closed');
  document.querySelector('#result').textContent=JSON.stringify({states});
 }catch(e){document.querySelector('#result').textContent=JSON.stringify({error:e.stack});}
 </script></body></html>`;
@@ -70,9 +76,9 @@ try{
    await new Promise(r=>setTimeout(r,50));
    const result=await cdp('Runtime.evaluate',{expression:"document.querySelector('#result')?.textContent||''",returnByValue:true},sessionId);raw=result.result?.value||'';
   }
-  assert.ok(raw,'Browser fixture completed');const result=JSON.parse(raw);assert.ok(!result.error,result.error);assert.equal(result.states.length,20);
+  assert.ok(raw,'Browser fixture completed');const result=JSON.parse(raw);assert.ok(!result.error,result.error);assert.equal(result.states.length,22);
   for(const state of result.states){assert.equal(state.width,width,'Browser uses requested viewport');assert.ok(state.scrollWidth<=state.width+1,JSON.stringify(state));assert.deepEqual(state.overflow,[],JSON.stringify(state));for(const button of state.buttons){assert.ok(button.text,'Action has a visible label');assert.notEqual(button.color,button.background,JSON.stringify(button));assert.ok(button.height>=44,JSON.stringify(button));}const close=state.buttons.find(b=>b.text==='Close Day');assert.ok(close,'Close Day is always labeled');assert.equal(close.color,'rgb(255, 255, 255)','Close Day retains white text in every café theme');}
-  console.log('Daily Summary: 20 layout and label states fit '+width+'px');
+  console.log('Daily Summary: 22 layout and label states fit '+width+'px');
   await cdp('Target.closeTarget',{targetId});
  }
 }finally{

@@ -29,6 +29,9 @@ const modules = [
   ['my-profile', 'My profile']
 ];
 
+function shiftIsoDate(iso, days) {
+  const d=new Date(String(iso)+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);
+}
 function escapeHtml(value = '') {
   return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
@@ -369,7 +372,7 @@ async function renderDashboard(view, supabase, profile) {
   return renderBusinessDashboard(view,supabase,profile);
 }
 
-async function renderDailySummary(view, supabase, profile) {
+async function renderDailySummary(view, supabase, profile, opts={}) {
   if(profile.access_class==='ADMIN'&&!profile.context_outlet_id){view.innerHTML='<span class="eyebrow">Café required</span><h2>Select a café</h2><p class="section-help">Choose a café from the top bar to use this operational screen.</p>';return;}
   const isOwner=profile.access_class==='ADMIN';
   const canManageSummary=hasModuleAccess(profile,'summary');
@@ -379,7 +382,12 @@ async function renderDailySummary(view, supabase, profile) {
   if(isOwner){const {data}=await supabase.from('outlets').select('id,name,theme_key,theme_color').order('id');outlets=data||[];outletId=Number(profile.context_outlet_id||profile.outlet_id||outlets[0]?.id||1);}
   const {data:businessDay,error:businessDayError}=await supabase.rpc('get_effective_business_day',{p_outlet_id:outletId,p_timestamp:new Date().toISOString()});
   if(businessDayError||!businessDay){view.innerHTML='<span class="eyebrow">Daily Summary</span><h2>Business day unavailable</h2><p class="form-error">'+escapeHtml(businessDayError?.message||'Could not determine the café business day.')+'</p>';return;}
-  const businessDate=String(businessDay);
+  const todayBusinessDate=String(businessDay);
+  const earliestEditable=isOwner?'':shiftIsoDate(todayBusinessDate,-7);
+  const requestedDate=/^\d{4}-\d{2}-\d{2}$/.test(String(opts.date||''))?String(opts.date):todayBusinessDate;
+  const businessDate=requestedDate>todayBusinessDate?todayBusinessDate:(earliestEditable&&requestedDate<earliestEditable?earliestEditable:requestedDate);
+  const isPastDay=businessDate<todayBusinessDate;
+  const rerender=()=>renderDailySummary(view,supabase,profile,{date:businessDate});
   const [{data:vendors},{data:staff},{data:existing},{data:previous},{data:outlet},{data:stocktake},{data:advances,error:advanceError},{data:cigSummary,error:cigSummaryError}]=await Promise.all([
     supabase.from('vendors').select('id,name').order('name'),
     supabase.rpc('get_staff_roster',{p_outlet_id:outletId}),
@@ -390,6 +398,7 @@ async function renderDailySummary(view, supabase, profile) {
     supabase.rpc('get_summary_advances',{p_outlet_id:outletId,p_business_date:businessDate}),
     supabase.rpc('get_cigarette_summary',{p_outlet_id:outletId,p_date:businessDate})
   ]);
+  const {data:nextSummary}=isPastDay?await supabase.from('daily_summaries').select('business_date,opening_cash_system').eq('outlet_id',outletId).gt('business_date',businessDate).order('business_date',{ascending:true}).limit(1).maybeSingle():{data:null};
   if(advanceError){view.innerHTML='<h2>Daily Summary unavailable</h2><p class="form-error">'+escapeHtml(advanceError.message||'Could not reconcile advance payouts. Please retry.')+'</p>';return;}
   const paidAdvances=(advances||[]).filter(a=>a.status==='PAID'&&a.business_date===businessDate);
   const pendingAdvances=(advances||[]).filter(a=>a.status==='APPROVED');
@@ -397,7 +406,7 @@ async function renderDailySummary(view, supabase, profile) {
   const cashAdvances=paidAdvances.filter(a=>a.mode==='Cash').reduce((sum,a)=>sum+Number(a.amount),0);
   applyTheme(outlet);
   const swRate=Number(outlet?.swiggy_payout_rate??.5),zoRate=Number(outlet?.zomato_payout_rate??.5);
-  const systemOpening=Number(existing?.opening_cash_system??previous?.physical_cash??0);
+  const systemOpening=Number(previous?.physical_cash??existing?.opening_cash_system??0);
   const actualOpening=Number(existing?.opening_cash_actual??systemOpening);
   const money=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:2});
   const statusText=existing?.is_closed?('Closed · '+businessDate):existing?('Editing · '+businessDate):('New summary · '+businessDate);
@@ -409,6 +418,12 @@ async function renderDailySummary(view, supabase, profile) {
         <div><span class="eyebrow">Daily closing</span><h2>Daily Summary</h2><p>${escapeHtml(outlet?.name||'')} · ${businessDate}</p></div>
         <span class="summary-state">${escapeHtml(statusText)}</span>
       </div>
+      <div class="summary-date-row">
+        <label class="summary-label">Business day<input id="summaryDate" type="date" value="${businessDate}" max="${todayBusinessDate}" ${earliestEditable?`min="${earliestEditable}"`:''}></label>
+        ${isPastDay?'<button id="summaryToday" class="summary-add" type="button">Back to today</button>':''}
+      </div>
+      ${isPastDay?`<div class="notice warning">Editing a past day (${escapeHtml(businessDate)}).${isOwner?'':' Managers can edit the last 7 days.'}</div>`:''}
+      ${nextSummary&&!existing?.is_closed?`<p id="nextDayOpening" class="section-help" data-next-date="${escapeHtml(nextSummary.business_date)}" data-next-opening="${Number(nextSummary.opening_cash_system||0)}"></p>`:''}
       <div class="close-status-strip">
         <span class="${cigSummary?.closed?'done':'pending'}">Cigarettes <b>${cigSummary?.closed?'✓':'○'}</b></span><span id="closeSalesStatus">Sales <b>○</b></span><span id="closeExpenseStatus">Expenses <b>○</b></span><span class="${stocktake?'done':'pending'}">Stock <b>${stocktake?'✓':'○'}</b></span><span class="${ordersDone?'done':'pending'}">Orders <b>${ordersDone?'✓':'○'}</b></span>
       </div>
@@ -548,6 +563,12 @@ async function renderDailySummary(view, supabase, profile) {
   view.querySelectorAll('.denom-count').forEach(i=>i.addEventListener('input',calcCounter));
   const useCountedBtn=view.querySelector('#useCountedCash');if(useCountedBtn)useCountedBtn.hidden=true;
 
+  view.querySelector('#summaryDate').onchange=e=>{const value=e.target.value;if(value&&value!==businessDate)renderDailySummary(view,supabase,profile,{date:value});};
+  const todayBtn=view.querySelector('#summaryToday');if(todayBtn)todayBtn.onclick=()=>renderDailySummary(view,supabase,profile);
+  const nextHint=view.querySelector('#nextDayOpening');
+  const updateNextHint=()=>{if(!nextHint)return;const recorded=Number(nextHint.dataset.nextOpening),now=n('sPhysical');nextHint.textContent=recorded===now?'':`Next saved day (${nextHint.dataset.nextDate}) recorded an opening of ${money(recorded)}. After saving, open ${nextHint.dataset.nextDate} and save it again so its opening uses this day's closing (${money(now)}).`;nextHint.hidden=recorded===now;};
+  view.querySelector('#sPhysical').addEventListener('input',updateNextHint);updateNextHint();
+
   const disabled=!!existing?.is_closed;
   let reopenDeadline=null,canReopen=false;
   if(disabled){
@@ -560,7 +581,8 @@ async function renderDailySummary(view, supabase, profile) {
     if(actionBar){
       const b=document.createElement('button');b.id='reopenSummary';b.className='primary';b.type='button';
       b.textContent=canReopen?'Reopen Day':'Admin required to reopen';b.disabled=!canReopen;actionBar.appendChild(b);
-      if(canReopen)b.onclick=async()=>{b.disabled=true;const {error}=await supabase.rpc('reopen_daily_summary',{p_summary_id:existing.id,p_user_id:profile.id});if(error){const msg=view.querySelector('#summaryMessage');msg.textContent=error.message;msg.hidden=false;b.disabled=false;return;}await renderDailySummary(view,supabase,profile);};
+      ['#summaryDate','#summaryToday'].forEach(sel=>{const el=view.querySelector(sel);if(el)el.disabled=false;});
+      if(canReopen)b.onclick=async()=>{b.disabled=true;const {error}=await supabase.rpc('reopen_daily_summary',{p_summary_id:existing.id,p_user_id:profile.id});if(error){const msg=view.querySelector('#summaryMessage');msg.textContent=error.message;msg.hidden=false;b.disabled=false;return;}await rerender();};
     }
   }
   calc();
@@ -578,7 +600,7 @@ async function renderDailySummary(view, supabase, profile) {
       const id=existing?.id||`SUM-${outletId}-${businessDate}`;
       const args={p_summary_id:id,p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_user_name:profile.name,p_role:profile.access_class==='ADMIN'?'Admin':profile.role,p_cash_sale:n('sCash'),p_upi_sale:n('sUpi'),p_swiggy_gross:n('sSwGross'),p_swiggy_payout:n('sSwPay'),p_zomato_gross:n('sZoGross'),p_zomato_payout:n('sZoPay'),p_own_digital:n('sOwn'),p_discount:n('sDisc'),p_opening_cash_system:systemOpening,p_opening_cash_actual:n('sOpen'),p_physical_cash:n('sPhysical'),p_expenses:expenses,p_vendor_payouts:vendorPayouts,p_staff_payouts:staffPayouts};
       const {error}=await supabase.rpc('save_daily_summary',args);if(error)throw error;
-      await renderDailySummary(view,supabase,profile);return true;
+      await rerender();return true;
     }catch(e){msg.textContent=e.message||'Could not save summary.';msg.hidden=false;return false;}finally{if(btn.isConnected){btn.disabled=false;btn.textContent='Save Summary';}}
   };
   const saveWithoutRender=async()=>{try{const {expenses,vendorPayouts,staffPayouts}=collect();const id=existing?.id||`SUM-${outletId}-${businessDate}`;const args={p_summary_id:id,p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_user_name:profile.name,p_role:profile.access_class==='ADMIN'?'Admin':profile.role,p_cash_sale:n('sCash'),p_upi_sale:n('sUpi'),p_swiggy_gross:n('sSwGross'),p_swiggy_payout:n('sSwPay'),p_zomato_gross:n('sZoGross'),p_zomato_payout:n('sZoPay'),p_own_digital:n('sOwn'),p_discount:n('sDisc'),p_opening_cash_system:systemOpening,p_opening_cash_actual:n('sOpen'),p_physical_cash:n('sPhysical'),p_expenses:expenses,p_vendor_payouts:vendorPayouts,p_staff_payouts:staffPayouts};const {error}=await supabase.rpc('save_daily_summary',args);if(error)throw error;return true;}catch(e){const msg=view.querySelector('#summaryMessage');msg.textContent=e.message||'Could not save summary.';msg.hidden=false;return false;}};
@@ -621,7 +643,7 @@ async function renderDailySummary(view, supabase, profile) {
     }catch(e){status.textContent='Could not copy. Press and hold the message to copy it.';status.className='summary-inline-status bad';status.hidden=false;}
   };
   view.querySelector('#saveSummary').onclick=save;
-  view.querySelector('#closeSummary').onclick=async()=>{const msg=view.querySelector('#summaryMessage');msg.hidden=true;if(!stocktake){msg.textContent='Tonight’s stock is not finished yet. Complete Stock before closing the day.';msg.hidden=false;return;}if(!confirm('Close this business day? Once closed, editing stops until the day is reopened.'))return;const btn=view.querySelector('#closeSummary');btn.disabled=true;btn.textContent='Closing…';let summaryId=existing?.id;if(!summaryId){const {expenses,vendorPayouts,staffPayouts}=collect();summaryId=`SUM-${outletId}-${businessDate}`;const args={p_summary_id:summaryId,p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_user_name:profile.name,p_role:profile.access_class==='ADMIN'?'Admin':profile.role,p_cash_sale:n('sCash'),p_upi_sale:n('sUpi'),p_swiggy_gross:n('sSwGross'),p_swiggy_payout:n('sSwPay'),p_zomato_gross:n('sZoGross'),p_zomato_payout:n('sZoPay'),p_own_digital:n('sOwn'),p_discount:n('sDisc'),p_opening_cash_system:systemOpening,p_opening_cash_actual:n('sOpen'),p_physical_cash:n('sPhysical'),p_expenses:expenses,p_vendor_payouts:vendorPayouts,p_staff_payouts:staffPayouts};const saved=await supabase.rpc('save_daily_summary',args);if(saved.error){msg.textContent=saved.error.message;msg.hidden=false;btn.disabled=false;btn.textContent='Close Day';return;}}else{const ok=await saveWithoutRender();if(!ok){btn.disabled=false;btn.textContent='Close Day';return;}}const {error}=await supabase.rpc('close_daily_summary',{p_summary_id:summaryId,p_user_id:profile.id});if(error){msg.textContent=error.message;msg.hidden=false;btn.disabled=false;btn.textContent='Close Day';return;}await renderDailySummary(view,supabase,profile);const share=view.querySelector('#whatsappSummary');if(share)share.click();};
+  view.querySelector('#closeSummary').onclick=async()=>{const msg=view.querySelector('#summaryMessage');msg.hidden=true;if(!stocktake){msg.textContent='Tonight’s stock is not finished yet. Complete Stock before closing the day.';msg.hidden=false;return;}if(!confirm('Close this business day? Once closed, editing stops until the day is reopened.'))return;const btn=view.querySelector('#closeSummary');btn.disabled=true;btn.textContent='Closing…';let summaryId=existing?.id;if(!summaryId){const {expenses,vendorPayouts,staffPayouts}=collect();summaryId=`SUM-${outletId}-${businessDate}`;const args={p_summary_id:summaryId,p_outlet_id:outletId,p_business_date:businessDate,p_user_id:profile.id,p_user_name:profile.name,p_role:profile.access_class==='ADMIN'?'Admin':profile.role,p_cash_sale:n('sCash'),p_upi_sale:n('sUpi'),p_swiggy_gross:n('sSwGross'),p_swiggy_payout:n('sSwPay'),p_zomato_gross:n('sZoGross'),p_zomato_payout:n('sZoPay'),p_own_digital:n('sOwn'),p_discount:n('sDisc'),p_opening_cash_system:systemOpening,p_opening_cash_actual:n('sOpen'),p_physical_cash:n('sPhysical'),p_expenses:expenses,p_vendor_payouts:vendorPayouts,p_staff_payouts:staffPayouts};const saved=await supabase.rpc('save_daily_summary',args);if(saved.error){msg.textContent=saved.error.message;msg.hidden=false;btn.disabled=false;btn.textContent='Close Day';return;}}else{const ok=await saveWithoutRender();if(!ok){btn.disabled=false;btn.textContent='Close Day';return;}}const {error}=await supabase.rpc('close_daily_summary',{p_summary_id:summaryId,p_user_id:profile.id});if(error){msg.textContent=error.message;msg.hidden=false;btn.disabled=false;btn.textContent='Close Day';return;}await rerender();const share=view.querySelector('#whatsappSummary');if(share)share.click();};
 }
 
 function staffWelcomeMessage(name) {
