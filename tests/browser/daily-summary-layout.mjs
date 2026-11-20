@@ -9,7 +9,7 @@ const root=new URL('../../',import.meta.url);
 const html=String.raw`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/src/styles.css"><style>body{margin:0;padding:14px;min-width:0}main{max-width:900px;margin:auto;min-width:0}</style></head><body><main class="module-view card"></main><script id="result" type="application/json"></script><script type="module">
 import {renderDailySummary} from '/fixture-summary.js';
 const view=document.querySelector('main'),states=[];
-let closed=false,theme='teapot',advances=[];
+let closed=false,theme='teapot';
 const client={from(table){
  const filters=[],q={select(){return q},eq(k,v){filters.push([k,v]);return q},lt(){return q},gt(){return q},order(){return q},limit(){return q},maybeSingle:async()=>({data:data(true)}),then(resolve,reject){return Promise.resolve({data:data(false)}).then(resolve,reject)}};
  function data(single){
@@ -18,7 +18,7 @@ const client={from(table){
   if(table==='stocktakes')return {id:'STOCK',status:'SUBMITTED'};
   if(table==='vendors')return [{id:1,name:'Long Supplier Name'}];return [];
  }return q;
-},async rpc(name){if(name==='get_effective_business_day')return {data:'2026-10-06'};if(name==='get_cigarette_summary')return {data:{closed:true,sales:[{price:10,pieces:10,amount:100}],pack_sales:[{price:260,packs:2,amount:520}]}};if(name==='get_daily_summary_reopen_deadline')return {data:'2026-10-07T12:00:00Z'};if(name==='get_summary_advances')return {data:advances};return {data:[]}}};
+},async rpc(name){if(name==='get_effective_business_day')return {data:'2026-10-06'};if(name==='get_cigarette_summary')return {data:{closed:true,sales:[{price:10,pieces:10,amount:100}],pack_sales:[{price:260,packs:2,amount:520}]}};if(name==='get_daily_summary_reopen_deadline')return {data:'2026-10-07T12:00:00Z'};return {data:[]}}};
 const profile={id:'owner',name:'Owner',access_class:'ADMIN',context_outlet_id:1};
 const check=name=>{
  if(!view.textContent.includes('Cigarette POS sales: ₹620 · included in total sales'))throw Error('Daily Summary includes SK + PK revenue exactly once: '+[...view.querySelectorAll('.hint')].map(e=>e.textContent).join(' | '));
@@ -33,13 +33,12 @@ try{
   view.querySelector('#whatsappSummary').click();check(theme+'-message');
   closed=true;await renderDailySummary(view,client,profile);check(theme+'-closed');
  }
- closed=false;advances=[{id:'A1',staff_id:3,amount:12500,mode:'Cash',status:'PAID',business_date:'2026-10-03',installments:1,source:'SUMMARY',self_recorded:true}];
- await renderDailySummary(view,client,profile,{date:'2026-10-03'});
+ closed=false;await renderDailySummary(view,client,profile,{date:'2026-10-03'});
  if(view.querySelector('#summaryDate').value!=='2026-10-03'||!view.querySelector('#summaryToday'))throw Error('Past business day is selectable');
- if(!view.textContent.includes('self-recorded')||!view.querySelector('[data-void-advance="A1"]'))throw Error('Summary advances show their flag and void control');
  check('past-day');
- view.querySelector('#addSummaryAdvance').click();if(view.querySelector('#summaryAdvanceForm').hidden)throw Error('Advance form opens');check('past-day-advance-form');
- advances=[];
+ closed=true;await renderDailySummary(view,client,profile,{date:'2026-10-03'});
+ if(view.querySelector('#summaryDate').disabled)throw Error('Date picker stays usable on a closed day');
+ check('past-day-closed');
  document.querySelector('#result').textContent=JSON.stringify({states});
 }catch(e){document.querySelector('#result').textContent=JSON.stringify({error:e.stack});}
 </script></body></html>`;
