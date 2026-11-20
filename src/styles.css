@@ -440,7 +440,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid rgba(var(--accent-rgb,
 .close-status-strip span{display:flex;align-items:center;justify-content:center;gap:4px;min-width:0;padding:7px 4px;border:1px solid #e7e7e7;border-radius:10px;background:#fafafa;color:#888;font-size:11px;font-weight:700}
 .close-status-strip span.done{border-color:rgba(var(--accent-rgb,203,32,45),.18);background:var(--accent-soft);color:var(--accent)}
 .close-status-strip b{font-size:12px}
-#closeSummary.close-ready{box-shadow:0 0 0 3px var(--accent-soft)}
+
 .summary-actions #closeSummary{min-height:48px;font-weight:800}
 @media(max-width:360px){.close-status-strip{gap:3px}.close-status-strip span{font-size:10px;padding:7px 2px}}
 
